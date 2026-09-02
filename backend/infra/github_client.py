@@ -8,6 +8,12 @@ logger = logging.getLogger(__name__)
 
 _API = "https://api.github.com"
 
+PLATFORM_TOPIC = "data-mesh-platform"
+
+
+class RepoNameUnavailable(RuntimeError):
+    """Repo name is taken by a repo the platform must not adopt."""
+
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
@@ -128,16 +134,42 @@ class GitHubClient:
                 )
                 self._raise_for_status(existing)
                 data = existing.json()
+                if data.get("archived") or PLATFORM_TOPIC not in (
+                    data.get("topics") or []
+                ):
+                    raise RepoNameUnavailable(
+                        f"{self._owner}/{name} already exists and is not an "
+                        "active platform-managed repository"
+                    )
                 return {
                     "html_url": data["html_url"],
                     "full_name": data["full_name"],
                 }
             self._raise_for_status(r)
             data = r.json()
+            await self._tag_platform_repo(client, data["full_name"])
             return {
                 "html_url": data["html_url"],
                 "full_name": data["full_name"],
             }
+
+    async def _tag_platform_repo(
+        self, client: httpx.AsyncClient, repo_full_name: str
+    ) -> None:
+        """Mark the repo as platform-managed. Never fatal: an untagged repo is
+        merely refused for adoption later, which is the safe outcome."""
+        r = await client.put(
+            f"{_API}/repos/{repo_full_name}/topics",
+            headers=self._headers,
+            json={"names": [PLATFORM_TOPIC]},
+        )
+        if not r.is_success:
+            logger.warning(
+                "Failed to tag %s with topic %s: GitHub API %s",
+                repo_full_name,
+                PLATFORM_TOPIC,
+                r.status_code,
+            )
 
     async def push_scaffold(self, repo_full_name: str, files: dict[str, str]) -> None:
         async with httpx.AsyncClient(timeout=15.0) as client:

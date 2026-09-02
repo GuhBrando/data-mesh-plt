@@ -9,6 +9,7 @@ from backend.domain.entities.data_product import DataProduct
 from backend.domain.entities.user import User
 from backend.domain.value_objects.email import Email
 from backend.domain.value_objects.user_role import UserRole
+from backend.infra.github_client import RepoNameUnavailable
 from backend.infra.postgres import get_db_connection
 from backend.interface.dependencies import (
     get_create_data_product_use_case,
@@ -360,3 +361,80 @@ def test_delete_data_product_without_repo_url_does_not_archive(admin_client):
     resp = admin_client.delete(f"/api/v1/data-products/{PRODUCT_ID}")
     assert resp.status_code == 204
     mock_github.archive_repo.assert_not_awaited()
+
+
+def test_create_data_product_retries_with_suffixed_name_when_name_unavailable(
+    admin_client,
+):
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _product(name="Attribution Model")
+    suffixed_url = (
+        f"https://github.com/acme/dp-marketing-attribution-model-{PRODUCT_ID.hex[:8]}"
+    )
+    mock_github = AsyncMock()
+    mock_github.create_product_repo.side_effect = [
+        RepoNameUnavailable("archived repo holds the name"),
+        {
+            "html_url": suffixed_url,
+            "full_name": f"acme/dp-marketing-attribution-model-{PRODUCT_ID.hex[:8]}",
+        },
+    ]
+    mock_contract_repo = AsyncMock()
+    mock_contract_repo.get_by_id.return_value = _StubContract("Marketing")
+    mock_product_repo = AsyncMock()
+
+    app.dependency_overrides[get_create_data_product_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_github_client] = lambda: mock_github
+    app.dependency_overrides[get_data_contract_repository] = lambda: mock_contract_repo
+    app.dependency_overrides[get_data_product_repository] = lambda: mock_product_repo
+
+    resp = admin_client.post(
+        "/api/v1/data-products",
+        json={
+            "name": "Attribution Model",
+            "description": "desc",
+            "data_contracts_id": str(CONTRACT_ID),
+        },
+    )
+
+    assert resp.status_code == 201
+    attempted = [c.args[0] for c in mock_github.create_product_repo.await_args_list]
+    assert attempted == [
+        "dp-marketing-attribution-model",
+        f"dp-marketing-attribution-model-{PRODUCT_ID.hex[:8]}",
+    ]
+    assert resp.json()["repo_url"] == suffixed_url
+    mock_product_repo.update_repo_url.assert_awaited_once_with(PRODUCT_ID, suffixed_url)
+
+
+def test_create_data_product_persists_repo_url_when_scaffold_fails(admin_client):
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _product(name="Attribution Model")
+    repo_url = "https://github.com/acme/dp-marketing-attribution-model"
+    mock_github = AsyncMock()
+    mock_github.create_product_repo.return_value = {
+        "html_url": repo_url,
+        "full_name": "acme/dp-marketing-attribution-model",
+    }
+    mock_github.push_scaffold.side_effect = RuntimeError("scaffold boom")
+    mock_contract_repo = AsyncMock()
+    mock_contract_repo.get_by_id.return_value = _StubContract("Marketing")
+    mock_product_repo = AsyncMock()
+
+    app.dependency_overrides[get_create_data_product_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_github_client] = lambda: mock_github
+    app.dependency_overrides[get_data_contract_repository] = lambda: mock_contract_repo
+    app.dependency_overrides[get_data_product_repository] = lambda: mock_product_repo
+
+    resp = admin_client.post(
+        "/api/v1/data-products",
+        json={
+            "name": "Attribution Model",
+            "description": "desc",
+            "data_contracts_id": str(CONTRACT_ID),
+        },
+    )
+
+    assert resp.status_code == 201
+    mock_product_repo.update_repo_url.assert_awaited_once_with(PRODUCT_ID, repo_url)
+    assert resp.json()["repo_url"] == repo_url

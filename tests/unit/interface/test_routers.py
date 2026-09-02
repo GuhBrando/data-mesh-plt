@@ -445,3 +445,47 @@ def test_remove_stakeholder_steward_contract_not_found(admin_client):
         f"/api/v1/data-contracts/{CONTRACT_ID}/stakeholders/{USER_ID}"
     )
     assert resp.status_code == 404
+
+
+# ── data_contract.py: YAML endpoint stakeholder restriction ──────────────────
+
+@pytest.fixture
+def consumer_client():
+    """TestClient authenticated as DATA_CONSUMER with a mocked DB."""
+    mock_db = AsyncMock()
+    consumer = _user(UserRole.DATA_CONSUMER)
+    app.dependency_overrides[get_current_user] = lambda: consumer
+    app.dependency_overrides[get_db_connection] = lambda: mock_db
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_get_data_contract_yaml_forbidden_for_non_stakeholder_consumer(
+    consumer_client,
+):
+    """A DATA_CONSUMER who is not a stakeholder must not read the ODCS YAML.
+
+    The YAML is a superset of the JSON detail endpoint, which already returns
+    403 for this caller. Both endpoints must agree.
+    """
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _contract()
+    mock_sr = AsyncMock()
+    mock_sr.is_stakeholder = AsyncMock(return_value=False)
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
+    assert resp.status_code == 403
+
+
+def test_get_data_contract_yaml_allowed_for_stakeholder_consumer(consumer_client):
+    """A DATA_CONSUMER who is a registered stakeholder keeps YAML access."""
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _contract()
+    mock_sr = AsyncMock()
+    mock_sr.is_stakeholder = AsyncMock(return_value=True)
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
+    assert resp.status_code == 200
+    assert "Orders" in resp.text

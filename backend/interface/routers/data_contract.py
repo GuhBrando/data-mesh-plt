@@ -72,6 +72,23 @@ async def _push_to_github(
         )
 
 
+async def _require_contract_read_access(
+    contract_id: uuid.UUID,
+    current_user: User,
+    stakeholder_repo,
+) -> None:
+    """Authorize reading a single contract, in any representation.
+
+    A DATA_CONSUMER may only read a contract they are a registered stakeholder
+    of. Every endpoint returning contract detail must call this — the JSON and
+    YAML representations expose the same information and must not diverge.
+    """
+    if current_user.role != UserRole.DATA_CONSUMER:
+        return
+    if not await stakeholder_repo.is_stakeholder(contract_id, current_user.id):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
 def _to_response(contract: DataContract) -> DataContractResponseModel:
     return DataContractResponseModel(
         id=contract.id,
@@ -145,8 +162,10 @@ async def list_data_contracts(
 async def get_data_contract_yaml(
     contract_id: uuid.UUID,
     use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
-    _: User = Depends(get_current_user),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
 ):
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
     contract = await use_case.execute(contract_id)
     if not contract:
         raise HTTPException(status_code=404, detail="Data contract not found")
@@ -160,10 +179,7 @@ async def get_data_contract(
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
 ):
-    is_consumer = current_user.role == UserRole.DATA_CONSUMER
-    is_stakeholder = await stakeholder_repo.is_stakeholder(contract_id, current_user.id)
-    if is_consumer and not is_stakeholder:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
     contract = await use_case.execute(contract_id)
     if not contract:
         raise HTTPException(status_code=404, detail="Data contract not found")

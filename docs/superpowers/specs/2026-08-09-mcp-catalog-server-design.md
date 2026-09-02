@@ -281,15 +281,17 @@ would turn a hard-to-hit inconsistency into a tool an agent reaches for routinel
 
 **This design does not fix it** — that is a separate change to the REST API with its own
 test and review. It is recorded here so the decision is explicit rather than accidental.
-Two options for the eventual fix:
+Two options were considered:
 
 1. Apply the stakeholder check to the YAML endpoint, matching the JSON endpoint. Consistent,
    but arguably contradicts the README's "contracts are public by design" stance.
 2. Remove the stakeholder check from the JSON endpoint, making contract *reads* uniformly
    open to authenticated users and reserving stakeholder status for notification routing.
 
-Option 2 is more consistent with the stated architecture, but is a behavior change with
-frontend impact. **Open question — see below.**
+**Resolved in PR #25** — option 1 was taken: the YAML endpoint now enforces the same
+stakeholder check, and the rule was extracted into a shared helper so the two
+representations cannot drift apart again. Option 2 broadens access and remains available
+as a separate, deliberate governance change if the "public by design" reading wins.
 
 ---
 
@@ -508,10 +510,9 @@ correctness problem into a CI failure.
    single organization-wide HTTP endpoint from day one, the auth section grows substantially
    and phase 1 and 2 collapse into one larger piece of work.
 
-2. **Stakeholder check on the YAML endpoint.** Which way should the inconsistency be
-   resolved — tighten the YAML endpoint, or loosen the JSON endpoint to match the "contracts
-   are public by design" stance? This is out of scope for the MCP work but should be decided
-   before `get_contract_yaml` ships, since the tool makes the gap routinely reachable.
+2. ~~**Stakeholder check on the YAML endpoint.**~~ **Resolved** — PR #25 tightened the
+   YAML endpoint to match the JSON one. `get_contract_yaml` inherits the corrected rule and
+   needs no special handling.
 
 3. **MCP SDK version.** Which beta of the Python SDK to pin, and whether to wait for a
    stable `2026-07-28` release before merging.

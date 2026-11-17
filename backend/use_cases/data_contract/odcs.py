@@ -3,9 +3,20 @@
 import re
 import unicodedata
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
+from backend.domain.contract_metadata import (
+    CLASSIFICATIONS,
+    DESCRIPTION_KEYS,
+    MEMBER_KEYS,
+    SERVER_KEYS,
+    SUPPORT_KEYS,
+    empty_description,
+    empty_server,
+    server_problems,
+)
 from backend.domain.entities.data_contract import DataContract
 
 ODCS_API_VERSION = "v3.2.0"
@@ -27,6 +38,10 @@ class ParsedContract:
     status: str
     models: dict[str, Any]
     servicelevels: dict[str, Any]
+    description: dict[str, str] = field(default_factory=empty_description)
+    team_members: list[dict[str, Any]] = field(default_factory=list)
+    support: list[dict[str, Any]] = field(default_factory=list)
+    servers: list[dict[str, Any]] = field(default_factory=list)
 
 
 _ODCS_STATUS = {"in_review": "proposed"}
@@ -72,15 +87,43 @@ def _schema_name(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", folded.lower()).strip("_") or "contract"
 
 
-def _to_property(field: dict[str, Any]) -> dict[str, Any]:
-    field_type = field.get("type")
-    return {
-        "name": field.get("name"),
-        "description": field.get("description", ""),
+def _to_property(stored: dict[str, Any]) -> dict[str, Any]:
+    field_type = stored.get("type")
+    prop: dict[str, Any] = {
+        "name": stored.get("name"),
+        "description": stored.get("description", ""),
         "logicalType": _ODCS_LOGICAL_TYPE.get(field_type, field_type),
-        "required": not field.get("nullable", True),
-        "primaryKey": bool(field.get("primary_key", False)),
+        "required": not stored.get("nullable", True),
+        "primaryKey": bool(stored.get("primary_key", False)),
     }
+    # Fields stored before these attributes existed do not carry them.
+    if stored.get("physical_type"):
+        prop["physicalType"] = stored["physical_type"]
+    if stored.get("classification"):
+        prop["classification"] = stored["classification"]
+    if stored.get("unique"):
+        prop["unique"] = True
+    return prop
+
+
+def _filled(row: Mapping[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    """The row's non-empty values, in key order."""
+    return {key: row[key] for key in keys if row.get(key) not in (None, "")}
+
+
+def _to_server(row: Mapping[str, Any]) -> dict[str, Any]:
+    server = _filled(row, SERVER_KEYS)
+    if "schema_name" in server:
+        server["schema"] = server.pop("schema_name")
+    return server
+
+
+def _to_team(contract: DataContract) -> dict[str, Any]:
+    team: dict[str, Any] = {"name": contract.owner}
+    members = [_filled(row, MEMBER_KEYS) for row in contract.team_members or []]
+    if members:
+        team["members"] = members
+    return team
 
 
 def _to_rule(rule: dict[str, Any], position: int, known_column: bool) -> dict[str, Any]:
@@ -147,8 +190,17 @@ def to_odcs(contract: DataContract) -> dict[str, Any]:
         "version": contract.version,
         "status": _ODCS_STATUS.get(contract.status, contract.status),
         "domain": contract.domain,
-        "team": {"name": contract.owner},
     }
+    description = _filled(contract.description or {}, DESCRIPTION_KEYS)
+    if description:
+        doc["description"] = description
+    doc["team"] = _to_team(contract)
+    support = [_filled(row, SUPPORT_KEYS) for row in contract.support or []]
+    if support:
+        doc["support"] = support
+    servers = [_to_server(row) for row in contract.servers or []]
+    if servers:
+        doc["servers"] = servers
     schema = _to_schema(contract)
     if schema:
         doc["schema"] = schema
@@ -173,18 +225,37 @@ _DOCUMENT_KEYS = frozenset(
         "version",
         "status",
         "domain",
+        "description",
         "team",
+        "support",
+        "servers",
         "schema",
         "slaProperties",
         "customProperties",
     }
 )
-_TEAM_KEYS = frozenset({"name"})
+_TEAM_KEYS = frozenset({"name", "members"})
+_DESCRIPTION_KEYS = frozenset(DESCRIPTION_KEYS)
+_MEMBER_KEYS = frozenset(MEMBER_KEYS)
+_SUPPORT_KEYS = frozenset(SUPPORT_KEYS)
+_SERVER_KEYS = frozenset(
+    "schema" if key == "schema_name" else key for key in SERVER_KEYS
+)
 _SCHEMA_KEYS = frozenset(
     {"name", "logicalType", "physicalType", "properties", "quality"}
 )
 _PROPERTY_KEYS = frozenset(
-    {"name", "description", "logicalType", "required", "primaryKey", "quality"}
+    {
+        "name",
+        "description",
+        "logicalType",
+        "required",
+        "primaryKey",
+        "quality",
+        "classification",
+        "unique",
+        "physicalType",
+    }
 )
 _RULE_KEYS = frozenset({"type", "dimension", "description", "customProperties"})
 _RULE_CUSTOM_KEYS = frozenset(
@@ -217,6 +288,8 @@ _STORED_TYPE = {
 
 
 def _reject_unknown(keys: Any, allowed: frozenset[str], where: str) -> None:
+    if not isinstance(keys, Mapping):
+        raise OdcsParseError(f"{where} must be an object")
     unknown = sorted(str(key) for key in keys if key not in allowed)
     if unknown:
         raise OdcsParseError(f"{where} has unsupported keys: {', '.join(unknown)}")
@@ -242,6 +315,45 @@ def _parse_owner(doc: dict[str, Any]) -> str:
         raise OdcsParseError("team must be an object, not the deprecated array")
     _reject_unknown(team, _TEAM_KEYS, "team")
     return team.get("name", "")
+
+
+def _parse_rows(
+    rows: Any, allowed: frozenset[str], keys: tuple[str, ...], where: str
+) -> list[dict[str, Any]]:
+    parsed = []
+    for index, row in enumerate(rows or []):
+        _reject_unknown(row, allowed, f"{where}[{index}]")
+        parsed.append({key: row.get(key, "") for key in keys})
+    return parsed
+
+
+def _parse_description(doc: dict[str, Any]) -> dict[str, str]:
+    description = doc.get("description")
+    if description is None:
+        return empty_description()
+    _reject_unknown(description, _DESCRIPTION_KEYS, "description")
+    return {key: description.get(key, "") for key in DESCRIPTION_KEYS}
+
+
+def _parse_members(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    team = doc.get("team") or {}
+    return _parse_rows(team.get("members"), _MEMBER_KEYS, MEMBER_KEYS, "team.members")
+
+
+def _parse_servers(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    servers = []
+    for index, row in enumerate(doc.get("servers") or []):
+        where = f"servers[{index}]"
+        _reject_unknown(row, _SERVER_KEYS, where)
+        server = empty_server()
+        for key, value in row.items():
+            server["schema_name" if key == "schema" else key] = value
+        problems = server_problems(server)
+        if problems:
+            # server_problems names keys only, so no value reaches the message.
+            raise OdcsParseError(f"{where}: {problems[0]}")
+        servers.append(server)
+    return servers
 
 
 def _parse_tier(doc: dict[str, Any]) -> int:
@@ -313,12 +425,20 @@ def _parse_property(prop: dict[str, Any]) -> dict[str, Any]:
         raise OdcsParseError(
             f"property {name} has logicalType {logical!r}, which cannot be stored"
         )
+    classification = prop.get("classification", "")
+    if classification not in ("", *CLASSIFICATIONS):
+        raise OdcsParseError(
+            f"property {name} has a classification outside {', '.join(CLASSIFICATIONS)}"
+        )
     return {
         "name": name,
         "type": _STORED_TYPE[logical],
         "description": prop.get("description", ""),
         "nullable": not prop.get("required", False),
         "primary_key": prop.get("primaryKey", False),
+        "classification": classification,
+        "unique": prop.get("unique", False),
+        "physical_type": prop.get("physicalType", ""),
     }
 
 
@@ -333,10 +453,10 @@ def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
     for schema in schemas:
         _reject_unknown(schema, _SCHEMA_KEYS, "schema")
         for prop in schema.get("properties") or []:
-            field = _parse_property(prop)
-            fields.append(field)
+            stored = _parse_property(prop)
+            fields.append(stored)
             positioned.extend(
-                _parse_rule(rule, field["name"]) for rule in prop.get("quality") or []
+                _parse_rule(rule, stored["name"]) for rule in prop.get("quality") or []
             )
         positioned.extend(
             _parse_rule(rule, None) for rule in schema.get("quality") or []
@@ -363,6 +483,10 @@ def _parse(doc: dict[str, Any]) -> ParsedContract:
         status=_parse_status(doc),
         models=_parse_models(doc),
         servicelevels=_parse_servicelevels(doc),
+        description=_parse_description(doc),
+        team_members=_parse_members(doc),
+        support=_parse_rows(doc.get("support"), _SUPPORT_KEYS, SUPPORT_KEYS, "support"),
+        servers=_parse_servers(doc),
     )
 
 

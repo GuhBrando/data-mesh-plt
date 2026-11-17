@@ -229,10 +229,10 @@ async def test_unsupported_odcs_key_is_reported_and_nothing_is_written(
     use_case, github, repo
 ):
     github.list_all_yaml_contents.return_value = [
-        ("c/o.yaml", _odcs_yaml(servers=[{"server": "prod", "type": "postgres"}]))
+        ("c/o.yaml", _odcs_yaml(tags=["x"]))
     ]
     result = await use_case.execute()
-    assert "unsupported keys: servers" in result["errors"][0]["error"]
+    assert "unsupported keys: tags" in result["errors"][0]["error"]
     repo.upsert.assert_not_called()
 
 

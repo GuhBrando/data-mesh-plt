@@ -69,6 +69,7 @@ jobs:
         run: |
           mkdir -p odcs-lint
           uv run python -m tests.fixtures.odcs.sample_contract odcs-lint/sample.yaml
+          uv run python -m tests.fixtures.odcs.sample_contract odcs-lint/full.yaml full
 
       - name: Lint the contracts
         run: |

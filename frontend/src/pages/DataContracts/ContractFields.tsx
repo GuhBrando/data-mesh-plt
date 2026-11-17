@@ -1,8 +1,9 @@
 import { useRef } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import type { SchemaField } from '../../types'
+import type { FieldClassification, SchemaField } from '../../types'
 
 const FIELD_TYPES = ['string', 'integer', 'float', 'boolean', 'date', 'timestamp'] as const
+const CLASSIFICATIONS = ['public', 'internal', 'confidential', 'restricted'] as const
 
 interface ContractFieldsProps {
   fields: SchemaField[]
@@ -15,7 +16,15 @@ const emptyField = (): SchemaField => ({
   description: '',
   nullable: true,
   primary_key: false,
+  classification: '',
+  unique: false,
+  physical_type: '',
 })
+
+// A field stored before classification, unique and physical type existed lacks them.
+export function withFieldDefaults(field: SchemaField): SchemaField {
+  return { ...emptyField(), ...field }
+}
 
 export default function ContractFields({ fields, onChange }: ContractFieldsProps) {
   const idsRef = useRef<string[]>([])
@@ -97,6 +106,34 @@ export default function ContractFields({ fields, onChange }: ContractFieldsProps
           >
             <Trash2 size={14} />
           </button>
+          {/* Physical type */}
+          <input
+            className="col-span-5 text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+            placeholder="Physical type"
+            value={field.physical_type}
+            onChange={(e) => update(i, { physical_type: e.target.value })}
+          />
+          {/* Classification */}
+          <select
+            aria-label="Classification"
+            className="col-span-4 text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+            value={field.classification}
+            onChange={(e) => update(i, { classification: e.target.value as FieldClassification })}
+          >
+            <option value="">unclassified</option>
+            {CLASSIFICATIONS.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          {/* Unique toggle */}
+          <label className="col-span-3 flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={field.unique}
+              onChange={(e) => update(i, { unique: e.target.checked })}
+            />
+            Unique
+          </label>
         </div>
       ))}
       <button

@@ -16,7 +16,7 @@ import { z } from 'zod'
 import Button from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import TierWizard from './TierWizard'
-import ContractFields from './ContractFields'
+import ContractFields, { withFieldDefaults } from './ContractFields'
 import QualityRules from './QualityRules'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
@@ -97,7 +97,7 @@ function normalizeDefaults(v?: DataContract): FormValues {
 
 function getInitialFields(v?: DataContract): SchemaField[] {
   if (!v) return []
-  return v.models.fields
+  return v.models.fields.map(withFieldDefaults)
 }
 
 function getInitialQuality(v?: DataContract): QualityRule[] {

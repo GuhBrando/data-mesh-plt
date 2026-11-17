@@ -6,12 +6,17 @@ export interface QualityRule {
   description: string
 }
 
+export type FieldClassification = '' | 'public' | 'internal' | 'confidential' | 'restricted'
+
 export interface SchemaField {
   name: string
   type: 'string' | 'integer' | 'float' | 'boolean' | 'date' | 'timestamp'
   description: string
   nullable: boolean
   primary_key: boolean
+  classification: FieldClassification
+  unique: boolean
+  physical_type: string
 }
 
 export interface DataContract {

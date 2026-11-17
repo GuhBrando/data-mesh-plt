@@ -1,6 +1,7 @@
 import base64
 import logging
 import re
+from typing import NamedTuple
 
 import httpx
 
@@ -13,6 +14,12 @@ PLATFORM_TOPIC = "data-mesh-platform"
 
 class RepoNameUnavailable(RuntimeError):
     """Repo name is taken by a repo the platform must not adopt."""
+
+
+class ContractFile(NamedTuple):
+    path: str
+    content: str
+    sha: str
 
 
 def _slugify(text: str) -> str:
@@ -47,9 +54,15 @@ class GitHubClient:
         if not r.is_success:
             raise RuntimeError(f"GitHub API {r.status_code}: {r.text}")
 
-    async def push(self, path: str, content: str, message: str) -> None:
+    async def push(
+        self,
+        path: str,
+        content: str,
+        message: str,
+        expected_sha: str | None = None,
+    ) -> None:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            sha = await self._get_sha(client, path)
+            sha = expected_sha or await self._get_sha(client, path)
             payload: dict = {
                 "message": message,
                 "content": base64.b64encode(content.encode()).decode(),
@@ -100,6 +113,30 @@ class GitHubClient:
                     content = base64.b64decode(raw.replace("\n", "")).decode()
                     results.append((item["path"], content))
             return results
+
+    async def read_contract_files(self) -> list[ContractFile]:
+        """Like list_all_yaml_contents, but any failed response raises."""
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                f"{_API}/repos/{self._repo}/git/trees/HEAD?recursive=1",
+                headers=self._headers,
+            )
+            self._raise_for_status(r)
+            files: list[ContractFile] = []
+            for item in r.json().get("tree", []):
+                path = item["path"]
+                if (
+                    item["type"] != "blob"
+                    or not path.startswith("contracts/")
+                    or not path.endswith(".yaml")
+                ):
+                    continue
+                blob_r = await client.get(item["url"], headers=self._headers)
+                self._raise_for_status(blob_r)
+                raw = blob_r.json().get("content", "")
+                content = base64.b64decode(raw.replace("\n", "")).decode()
+                files.append(ContractFile(path, content, item["sha"]))
+            return files
 
     async def _get_owner_type(self, client: httpx.AsyncClient) -> str:
         if self._owner_type is not None:

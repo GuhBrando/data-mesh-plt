@@ -1,3 +1,4 @@
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,6 +7,7 @@ import pytest
 
 from backend.infra.github_client import (
     PLATFORM_TOPIC,
+    ContractFile,
     GitHubClient,
     RepoNameUnavailable,
 )
@@ -256,3 +258,73 @@ async def test_archive_repo_raises_on_failure(client):
     ):
         with pytest.raises(RuntimeError):
             await client.archive_repo("acme/dp-x")
+
+
+@pytest.fixture
+def http():
+    mock_http = AsyncMock()
+    with patch(
+        "backend.infra.github_client.httpx.AsyncClient",
+        return_value=_async_client_ctx(mock_http),
+    ):
+        yield mock_http
+
+
+def _tree(*items: tuple[str, str]) -> MagicMock:
+    return _resp(200, {"tree": [
+        {"path": p, "type": "blob", "sha": s, "url": f"https://api.test/blobs/{s}"}
+        for p, s in items
+    ]})
+
+
+def _blob(text: str) -> MagicMock:
+    return _resp(200, {"content": base64.b64encode(text.encode()).decode()})
+
+
+async def test_read_contract_files_returns_path_content_and_sha(client, http):
+    http.get.side_effect = [
+        _tree(("contracts/a/x.yaml", "sha-x"), ("README.md", "sha-r")),
+        _blob("id: 1\n"),
+    ]
+    assert await client.read_contract_files() == [
+        ContractFile("contracts/a/x.yaml", "id: 1\n", "sha-x")
+    ]
+
+
+async def test_read_contract_files_raises_on_tree_failure(client, http):
+    http.get.return_value = _resp(401, {"message": "Bad credentials"})
+    with pytest.raises(RuntimeError, match="401"):
+        await client.read_contract_files()
+
+
+async def test_read_contract_files_raises_on_blob_failure(client, http):
+    http.get.side_effect = [
+        _tree(("contracts/a/x.yaml", "s")), _resp(403, {"message": "rate limit"}),
+    ]
+    with pytest.raises(RuntimeError, match="403"):
+        await client.read_contract_files()
+
+
+async def test_list_all_yaml_contents_still_returns_empty_on_failure(client, http):
+    http.get.return_value = _resp(401)
+    assert await client.list_all_yaml_contents() == []
+
+
+async def test_push_with_expected_sha_sends_it_without_a_lookup(client, http):
+    http.put.return_value = _resp(200, {})
+    await client.push("contracts/a/x.yaml", "body", "msg", expected_sha="abc")
+    http.get.assert_not_awaited()
+    assert http.put.await_args.kwargs["json"]["sha"] == "abc"
+
+
+async def test_push_with_stale_expected_sha_raises(client, http):
+    http.put.return_value = _resp(409, {"message": "does not match"})
+    with pytest.raises(RuntimeError, match="409"):
+        await client.push("contracts/a/x.yaml", "body", "msg", expected_sha="old")
+
+
+async def test_push_without_expected_sha_looks_the_sha_up(client, http):
+    http.get.return_value = _resp(200, {"sha": "current"})
+    http.put.return_value = _resp(200, {})
+    await client.push("contracts/a/x.yaml", "body", "msg")
+    assert http.put.await_args.kwargs["json"]["sha"] == "current"

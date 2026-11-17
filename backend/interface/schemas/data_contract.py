@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from backend.domain.contract_metadata import server_problems
+
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class SchemaField(BaseModel):
@@ -11,6 +15,9 @@ class SchemaField(BaseModel):
     description: str = ""
     nullable: bool = True
     primary_key: bool = False
+    classification: Literal["", "public", "internal", "confidential", "restricted"] = ""
+    unique: bool = False
+    physical_type: str = ""
 
 
 class QualityRule(BaseModel):
@@ -35,6 +42,50 @@ class ServiceLevels(BaseModel):
     latency: str = ""
 
 
+class ContractDescription(BaseModel):
+    purpose: str = ""
+    usage: str = ""
+    limitations: str = ""
+
+
+class TeamMember(BaseModel):
+    username: NonEmptyStr
+    name: str = ""
+    role: str = ""
+
+
+class SupportChannel(BaseModel):
+    channel: NonEmptyStr
+    url: str = ""
+    tool: str = ""
+    scope: str = ""
+
+
+class ContractServer(BaseModel):
+    """Where the data lives. Coordinates only: no credential belongs here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    server: NonEmptyStr
+    type: Literal["databricks", "postgres", "azure", "local"]
+    environment: str = ""
+    host: str = ""
+    catalog: str = ""
+    schema_name: str = ""
+    port: int | None = None
+    database: str = ""
+    location: str = ""
+    format: str = ""
+    path: str = ""
+
+    @model_validator(mode="after")
+    def _follow_the_type_rules(self) -> "ContractServer":
+        problems = server_problems(self.model_dump())
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
 class DataContractCreateModel(BaseModel):
     title: str
     version: str = "1.0.0"
@@ -44,6 +95,10 @@ class DataContractCreateModel(BaseModel):
     status: Literal["draft", "in_review", "active", "deprecated"] = "draft"
     models: ModelsSection = Field(default_factory=ModelsSection)
     servicelevels: ServiceLevels = Field(default_factory=ServiceLevels)
+    description: ContractDescription = Field(default_factory=ContractDescription)
+    team_members: list[TeamMember] = Field(default_factory=list)
+    support: list[SupportChannel] = Field(default_factory=list)
+    servers: list[ContractServer] = Field(default_factory=list)
 
 
 class DataContractUpdateModel(BaseModel):
@@ -55,6 +110,10 @@ class DataContractUpdateModel(BaseModel):
     status: Literal["draft", "in_review", "active", "deprecated"] | None = None
     models: ModelsSection | None = None
     servicelevels: ServiceLevels | None = None
+    description: ContractDescription | None = None
+    team_members: list[TeamMember] | None = None
+    support: list[SupportChannel] | None = None
+    servers: list[ContractServer] | None = None
 
 
 class DataContractResponseModel(BaseModel):

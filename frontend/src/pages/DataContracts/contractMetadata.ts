@@ -76,6 +76,26 @@ function firstError<T>(rows: T[], check: (row: T, position: number) => string | 
   return null
 }
 
+// A synced file can carry any string as a support url; only these schemes become links.
+export function safeUrl(url: string): string | null {
+  return /^(https?:|mailto:)/i.test(url) ? url : null
+}
+
+export function serverLocation(server: ContractServer): string {
+  switch (server.type) {
+    case 'databricks': {
+      const table = `${server.catalog}.${server.schema_name}`
+      return server.host ? `${server.host} / ${table}` : table
+    }
+    case 'postgres':
+      return `${server.host}:${server.port}/${server.database}.${server.schema_name}`
+    case 'azure':
+      return `${server.location} (${server.format})`
+    case 'local':
+      return `${server.path} (${server.format})`
+  }
+}
+
 export function metadataError(
   members: TeamMember[],
   support: SupportChannel[],

@@ -20,3 +20,26 @@ describe('metadataError', () => {
       .toBe('Server 1 (postgres) needs Port, Database, Schema')
   })
 })
+
+
+import { safeUrl, serverLocation } from './contractMetadata'
+
+describe('safeUrl', () => {
+  it.each(['https://example.com', 'http://example.com', 'mailto:a@example.com', 'HTTPS://example.com'])(
+    'keeps %s', (url) => expect(safeUrl(url)).toBe(url),
+  )
+  it.each(['javascript:alert(1)', ' javascript:alert(1)', 'data:text/html,x', ''])(
+    'refuses %j', (url) => expect(safeUrl(url)).toBeNull(),
+  )
+})
+
+describe('serverLocation', () => {
+  it('formats each type', () => {
+    const base = emptyServer()
+    expect(serverLocation({ ...base, host: 'h', catalog: 'c', schema_name: 's' })).toBe('h / c.s')
+    expect(serverLocation({ ...base, catalog: 'c', schema_name: 's' })).toBe('c.s')
+    expect(serverLocation({ ...base, type: 'postgres', host: 'h', port: 5432, database: 'd', schema_name: 's' })).toBe('h:5432/d.s')
+    expect(serverLocation({ ...base, type: 'azure', location: 'az://a/b', format: 'csv' })).toBe('az://a/b (csv)')
+    expect(serverLocation({ ...base, type: 'local', path: './a.csv', format: 'csv' })).toBe('./a.csv (csv)')
+  })
+})

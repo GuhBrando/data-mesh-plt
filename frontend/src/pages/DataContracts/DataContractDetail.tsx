@@ -14,6 +14,7 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
 import DataContractForm from './DataContractForm'
+import { safeUrl, serverLocation } from './contractMetadata'
 import type { DataContractInput, DataContract as DataContractType } from '../../types'
 
 const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
@@ -49,6 +50,9 @@ function SchemaFieldsCard({ fields }: { fields: DataContractType['models']['fiel
               <th className="pb-2 pr-4">Type</th>
               <th className="pb-2 pr-4">Nullable</th>
               <th className="pb-2 pr-4">PK</th>
+              <th className="pb-2 pr-4">Physical</th>
+              <th className="pb-2 pr-4">Classification</th>
+              <th className="pb-2 pr-4">Unique</th>
               <th className="pb-2">Description</th>
             </tr>
           </thead>
@@ -59,6 +63,9 @@ function SchemaFieldsCard({ fields }: { fields: DataContractType['models']['fiel
                 <td className="py-2 pr-4 text-gray-600 dark:text-slate-300">{f.type}</td>
                 <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.nullable ? 'yes' : 'no'}</td>
                 <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.primary_key ? '✓' : '—'}</td>
+                <td className="py-2 pr-4 font-mono text-gray-600 dark:text-slate-300">{f.physical_type || '—'}</td>
+                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.classification || '—'}</td>
+                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.unique ? '✓' : '—'}</td>
                 <td className="py-2 text-gray-500 dark:text-slate-400">{f.description || '—'}</td>
               </tr>
             ))}
@@ -108,6 +115,130 @@ function QualityRulesCard({ rules }: { rules: NonNullable<DataContractType['mode
               <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{r.operator}</td>
               <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{r.threshold}</td>
               <td className="py-2 text-gray-500 dark:text-slate-400">{r.description || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  )
+}
+
+function DescriptionCard({ description }: { description?: DataContractType['description'] }) {
+  const entries = [
+    ['Purpose', description?.purpose],
+    ['Usage', description?.usage],
+    ['Limitations', description?.limitations],
+  ].filter(([, text]) => text)
+  if (entries.length === 0) return null
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Description</h2>
+      <dl className="space-y-2 text-sm">
+        {entries.map(([label, text]) => (
+          <div key={label}>
+            <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
+            <dd className="text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{text}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  )
+}
+
+function TeamCard({ members = [] }: { members?: DataContractType['team_members'] }) {
+  if (members.length === 0) return null
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Team Members</h2>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
+            <th className="pb-2 pr-4">Username</th>
+            <th className="pb-2 pr-4">Name</th>
+            <th className="pb-2">Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.map((m, i) => (
+            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
+              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{m.username}</td>
+              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{m.name || '—'}</td>
+              <td className="py-2 text-gray-500 dark:text-slate-400">{m.role || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  )
+}
+
+function SupportUrl({ url }: { url: string }) {
+  if (!url) return <>—</>
+  const href = safeUrl(url)
+  // Anything but http(s) and mailto stays text: a synced file can carry javascript:.
+  if (!href) return <>{url}</>
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 dark:text-blue-400 hover:underline"
+    >
+      {url}
+    </a>
+  )
+}
+
+function SupportCard({ channels = [] }: { channels?: DataContractType['support'] }) {
+  if (channels.length === 0) return null
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Support</h2>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
+            <th className="pb-2 pr-4">Channel</th>
+            <th className="pb-2 pr-4">URL</th>
+            <th className="pb-2 pr-4">Tool</th>
+            <th className="pb-2">Scope</th>
+          </tr>
+        </thead>
+        <tbody>
+          {channels.map((c, i) => (
+            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
+              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{c.channel}</td>
+              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400"><SupportUrl url={c.url} /></td>
+              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{c.tool || '—'}</td>
+              <td className="py-2 text-gray-500 dark:text-slate-400">{c.scope || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  )
+}
+
+function ServersCard({ servers = [] }: { servers?: DataContractType['servers'] }) {
+  if (servers.length === 0) return null
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Servers</h2>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
+            <th className="pb-2 pr-4">Server</th>
+            <th className="pb-2 pr-4">Type</th>
+            <th className="pb-2 pr-4">Environment</th>
+            <th className="pb-2">Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          {servers.map((s, i) => (
+            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
+              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{s.server}</td>
+              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{s.type}</td>
+              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{s.environment || '—'}</td>
+              <td className="py-2 font-mono text-gray-600 dark:text-slate-300">{serverLocation(s)}</td>
             </tr>
           ))}
         </tbody>
@@ -228,11 +359,19 @@ export default function DataContractDetail() {
         </dl>
       </Card>
 
+      <DescriptionCard description={contract.description} />
+
       <SchemaFieldsCard fields={contract.models.fields} />
 
       <QualityRulesCard rules={contract.models.quality ?? []} />
 
       <ServiceLevelsCard sla={contract.servicelevels} />
+
+      <TeamCard members={contract.team_members} />
+
+      <SupportCard channels={contract.support} />
+
+      <ServersCard servers={contract.servers} />
 
       <Modal open={yamlOpen} onClose={() => setYamlOpen(false)} title="ODCS YAML" size="lg">
         {yamlLoading ? (

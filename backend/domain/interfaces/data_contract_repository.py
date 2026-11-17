@@ -21,6 +21,10 @@ class IDataContractRepository(ABC):
         status: str,
         models: dict[str, Any],
         servicelevels: dict[str, Any],
+        description: dict[str, Any],
+        team_members: list[dict[str, Any]],
+        support: list[dict[str, Any]],
+        servers: list[dict[str, Any]],
     ) -> DataContract: ...
 
     @abstractmethod
@@ -41,6 +45,10 @@ class IDataContractRepository(ABC):
         status: str,
         models: dict[str, Any],
         servicelevels: dict[str, Any],
+        description: dict[str, Any],
+        team_members: list[dict[str, Any]],
+        support: list[dict[str, Any]],
+        servers: list[dict[str, Any]],
     ) -> DataContract | None: ...
 
     @abstractmethod
@@ -61,6 +69,10 @@ class IDataContractRepository(ABC):
         status: str,
         models: dict[str, Any],
         servicelevels: dict[str, Any],
+        description: dict[str, Any],
+        team_members: list[dict[str, Any]],
+        support: list[dict[str, Any]],
+        servers: list[dict[str, Any]],
     ) -> bool:
         """Insert or update a contract by id.
 

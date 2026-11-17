@@ -1,9 +1,11 @@
 import logging
 import uuid
-from typing import List
+from collections.abc import Sequence
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
 from backend.domain.entities.data_contract import DataContract
@@ -89,6 +91,10 @@ async def _require_contract_read_access(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
+def _rows(rows: Sequence[BaseModel]) -> list[dict[str, Any]]:
+    return [row.model_dump() for row in rows]
+
+
 def _to_response(contract: DataContract) -> DataContractResponseModel:
     return DataContractResponseModel(
         id=contract.id,
@@ -100,6 +106,10 @@ def _to_response(contract: DataContract) -> DataContractResponseModel:
         status=contract.status,
         models=contract.models,
         servicelevels=contract.servicelevels,
+        description=contract.description,
+        team_members=contract.team_members,
+        support=contract.support,
+        servers=contract.servers,
         domain_id=contract.domain_id,
         created_at=contract.created_at,
         updated_at=contract.updated_at,
@@ -142,6 +152,10 @@ async def create_data_contract(
             status=body.status,
             models=body.models.model_dump(),
             servicelevels=body.servicelevels.model_dump(),
+            description=body.description.model_dump(),
+            team_members=_rows(body.team_members),
+            support=_rows(body.support),
+            servers=_rows(body.servers),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -222,6 +236,23 @@ async def update_data_contract(
                 body.servicelevels.model_dump()
                 if body.servicelevels is not None
                 else existing.servicelevels
+            ),
+            # None keeps the stored section; an empty list clears it.
+            description=(
+                body.description.model_dump()
+                if body.description is not None
+                else existing.description
+            ),
+            team_members=(
+                _rows(body.team_members)
+                if body.team_members is not None
+                else existing.team_members
+            ),
+            support=(
+                _rows(body.support) if body.support is not None else existing.support
+            ),
+            servers=(
+                _rows(body.servers) if body.servers is not None else existing.servers
             ),
         )
     except ValueError as e:

@@ -126,6 +126,11 @@ class DataContractResponseModel(BaseModel):
     status: str
     models: dict[str, Any]
     servicelevels: dict[str, Any]
+    # Loose shapes, like models: an old stored row must not turn a read into a 500.
+    description: dict[str, Any]
+    team_members: list[dict[str, Any]]
+    support: list[dict[str, Any]]
+    servers: list[dict[str, Any]]
     domain_id: uuid.UUID
     created_at: datetime
     updated_at: datetime

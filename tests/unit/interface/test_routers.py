@@ -61,6 +61,10 @@ def _contract(**kw) -> DataContract:
         domain_id=DOMAIN_ID,
         created_at=NOW,
         updated_at=NOW,
+        description=kw.get("description"),
+        team_members=kw.get("team_members"),
+        support=kw.get("support"),
+        servers=kw.get("servers"),
     )
 
 
@@ -489,3 +493,64 @@ def test_get_data_contract_yaml_allowed_for_stakeholder_consumer(consumer_client
     resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
     assert resp.status_code == 200
     assert "Orders" in resp.text
+
+
+STORED = dict(
+    description={"purpose": "p", "usage": "u", "limitations": ""},
+    team_members=[{"username": "alice", "name": "", "role": "owner"}],
+    support=[{"channel": "#c", "url": "", "tool": "slack", "scope": ""}],
+    servers=[{"server": "dev", "type": "local", "environment": "", "host": "", "catalog": "",
+              "schema_name": "", "port": None, "database": "", "location": "", "format": "csv",
+              "path": "./a.csv"}],
+)
+
+
+def _put(admin_client, body):
+    mock_get, mock_update = AsyncMock(), AsyncMock()
+    mock_get.execute.return_value = _contract(**STORED)
+    mock_update.execute.return_value = _contract(**STORED)
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
+    app.dependency_overrides[get_update_data_contract_use_case] = lambda: mock_update
+    resp = admin_client.put(f"/api/v1/data-contracts/{CONTRACT_ID}", json=body)
+    return resp, mock_update.execute.call_args
+
+
+def test_update_keeps_metadata_when_body_omits_it(admin_client):
+    resp, call = _put(admin_client, {"status": "active"})
+    assert resp.status_code == 200
+    assert {k: call.kwargs[k] for k in STORED} == STORED
+    assert {k: resp.json()[k] for k in STORED} == STORED
+
+
+def test_update_empty_list_clears_only_that_section(admin_client):
+    _, call = _put(admin_client, {"servers": []})
+    assert call.kwargs["servers"] == [] and call.kwargs["team_members"] == STORED["team_members"]
+
+
+def test_update_replaces_description_whole(admin_client):
+    _, call = _put(admin_client, {"description": {"purpose": "new"}})
+    assert call.kwargs["description"] == {"purpose": "new", "usage": "", "limitations": ""}
+
+
+def _post(admin_client, extra):
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _contract()
+    app.dependency_overrides[get_create_data_contract_use_case] = lambda: mock_uc
+    body = {"title": "S", "owner": "o", "domain_id": str(DOMAIN_ID), "tier": 3, **extra}
+    return admin_client.post("/api/v1/data-contracts", json=body), mock_uc
+
+
+def test_create_passes_metadata_and_dumps_rows(admin_client):
+    resp, mock_uc = _post(admin_client, {"team_members": [{"username": "alice"}]})
+    assert resp.status_code == 201
+    kwargs = mock_uc.execute.call_args.kwargs
+    assert kwargs["team_members"] == [{"username": "alice", "name": "", "role": ""}]
+    assert kwargs["description"] == {"purpose": "", "usage": "", "limitations": ""}
+    assert kwargs["servers"] == []
+
+
+def test_create_rejects_a_password_on_a_server(admin_client):
+    resp, mock_uc = _post(admin_client, {"servers": [{"server": "a", "type": "local", "path": "./a",
+                                                      "format": "csv", "password": "not-a-real-secret"}]})
+    assert resp.status_code == 422
+    mock_uc.execute.assert_not_called()

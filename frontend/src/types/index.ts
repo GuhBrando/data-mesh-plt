@@ -19,6 +19,24 @@ export interface SchemaField {
   physical_type: string
 }
 
+export interface ContractDescription { purpose: string; usage: string; limitations: string }
+export interface TeamMember { username: string; name: string; role: string }
+export interface SupportChannel { channel: string; url: string; tool: string; scope: string }
+export type ServerType = 'databricks' | 'postgres' | 'azure' | 'local'
+export interface ContractServer {
+  server: string
+  type: ServerType
+  environment: string
+  host: string
+  catalog: string
+  schema_name: string   // written as `schema` in ODCS; the API uses schema_name
+  port: number | null
+  database: string
+  location: string
+  format: string
+  path: string
+}
+
 export interface DataContract {
   id: string
   title: string
@@ -35,6 +53,10 @@ export interface DataContract {
     retention: string
     latency: string
   }
+  description: ContractDescription
+  team_members: TeamMember[]
+  support: SupportChannel[]
+  servers: ContractServer[]
   created_at: string
   updated_at: string
 }
@@ -53,6 +75,10 @@ export interface DataContractInput {
     retention: string
     latency: string
   }
+  description: ContractDescription
+  team_members: TeamMember[]
+  support: SupportChannel[]
+  servers: ContractServer[]
 }
 
 export interface DataProduct {

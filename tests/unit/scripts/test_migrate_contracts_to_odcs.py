@@ -97,13 +97,10 @@ def test_empty_service_levels_are_omitted_and_not_a_lost_value():
     assert "slaProperties" not in yaml.safe_load(result.converted)
 
 
-def test_parsing_restores_all_four_empty_service_levels():
-    # Sync stores this dict, and the contract form needs all four keys.
+def test_parsing_empty_service_levels_gives_an_empty_list():
     parsed = from_odcs(yaml.safe_load(_convert(*REAL_FILES[2]).converted))
     assert parsed.tier == 4
-    assert parsed.servicelevels == {
-        "freshness": "", "availability": "", "retention": "", "latency": "",
-    }
+    assert parsed.servicelevels == {"properties": []}
 
 
 @pytest.mark.parametrize(

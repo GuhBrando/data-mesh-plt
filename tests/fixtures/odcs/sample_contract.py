@@ -36,9 +36,7 @@ def make_contract(**overrides) -> DataContract:
         "id": SAMPLE_ID, "title": "Orders", "version": "1.0.0", "owner": "alice",
         "domain": "commerce", "tier": 2, "status": "draft",
         "models": {"fields": [], "quality": []},
-        "servicelevels": dict.fromkeys(
-            ["freshness", "availability", "retention", "latency"], ""
-        ),
+        "servicelevels": {"properties": []},
         "created_at": NOW, "updated_at": NOW,
     }
     return DataContract(**{**values, **overrides})
@@ -61,8 +59,11 @@ def sample_contract() -> DataContract:
                 make_rule("validity", "currency", "=", "BRL", "Only BRL orders"),
             ],
         },
-        servicelevels={"freshness": "24h", "availability": "99.9%",
-                       "retention": "one year", "latency": ""},
+        servicelevels={"properties": [
+            {"property": "freshness", "value": 24, "unit": "h"},
+            {"property": "availability", "value": 99.9, "unit": "%"},
+            {"property": "retention", "value": "one year", "unit": None},
+        ]},
     )
 
 

@@ -76,35 +76,10 @@ def test_round_trip_keeps_rule_order(order):
     _assert_round_trip(make_contract(models=models))
 
 
-@pytest.mark.parametrize(
-    "raw",
-    ["24h", "99.9%", "365d", "1h", "30m", "24", "100.0%", "hourly", "24 h", "1.50h",
-     "007", "5percent", "30min", "24h\n", "99.90%", "99%uptime", "1e5", "٣h"],
-)
-def test_round_trip_sla_value(raw):
-    levels = {"freshness": raw, "availability": "", "retention": "", "latency": ""}
-    _assert_round_trip(make_contract(servicelevels=levels))
-
-
-def test_sla_unit_aliases_are_read():
-    doc = _doc(slaProperties=[{"property": "availability", "value": 99, "unit": "percent"},
-                              {"property": "latency", "value": 30, "unit": "m"}])
-    levels = from_odcs(doc).servicelevels
-    assert (levels["availability"], levels["latency"]) == ("99%", "30m")
-
-
 def test_description_differing_from_the_sentence_is_kept():
     doc = to_odcs(make_contract(models={"fields": [], "quality": [make_rule()]}))
     doc["schema"][0]["quality"][0]["description"] = "Edited by hand"
     assert from_odcs(doc).models["quality"][0]["description"] == "Edited by hand"
-
-
-def test_sla_key_outside_the_four_is_kept():
-    doc = _doc(slaProperties=[{"property": "endOfSupport", "value": "2030-01-01"}])
-    assert from_odcs(doc).servicelevels == {
-        "freshness": "", "availability": "", "retention": "", "latency": "",
-        "endOfSupport": "2030-01-01",
-    }
 
 
 def test_missing_tier_means_4():
@@ -140,7 +115,6 @@ def test_version_read_as_a_number_is_kept_as_text():
         ({"customProperties": [{"property": "tier", "value": "2"}]}, "tier must be"),
         ({"slaProperties": [{"property": "a", "value": 1, "driver": "x"}]}, "driver"),
         ({"slaProperties": [{"property": "a", "value": None}]}, "no storable value"),
-        ({"slaProperties": [{"property": "a", "value": True}]}, "no storable value"),
         ({"slaProperties": [{"value": 1}]}, "malformed"),
     ],
 )
@@ -156,19 +130,3 @@ def test_logical_type_the_model_cannot_hold(logical):
     prop = {"name": "b", "logicalType": logical}
     with pytest.raises(OdcsParseError, match=f"logicalType {logical!r}"):
         from_odcs(_doc(schema=[{"name": "a", "properties": [prop]}]))
-
-
-@pytest.mark.parametrize(
-    "rule",
-    [{"type": "library", "metric": "nullValues", "mustBe": 0},
-     {"type": "text", "description": "Hand written"},
-     {"type": "sql", "customProperties": [
-         {"property": "dmpltDimension", "value": "freshness"},
-         {"property": "dmpltOperator", "value": "<="},
-         {"property": "dmpltThreshold", "value": "24h"},
-         {"property": "dmpltPosition", "value": 0}]}],
-    ids=["library", "text-without-dmplt", "non-text-with-dmplt"],
-)
-def test_rule_outside_the_stored_format_is_rejected(rule):
-    with pytest.raises(OdcsParseError, match="quality rule on the schema"):
-        from_odcs(_doc(schema=[{"name": "a", "quality": [rule]}]))

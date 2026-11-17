@@ -18,6 +18,13 @@ from backend.domain.contract_metadata import (
     server_problems,
 )
 from backend.domain.entities.data_contract import DataContract
+from backend.domain.quality_rules import QUALITY_OPERATORS, find_quality_rule_problems
+from backend.use_cases.data_contract.odcs_quality import (
+    rule_from_odcs,
+    rule_to_odcs,
+    sla_from_odcs,
+    sla_to_odcs,
+)
 
 ODCS_API_VERSION = "v3.2.0"
 ODCS_KIND = "DataContract"
@@ -163,7 +170,10 @@ def _to_schema(contract: DataContract) -> list[dict[str, Any]]:
     table_rules = []
     for position, rule in enumerate(rules):
         owner = by_name.get(rule.get("column") or "")
-        emitted = _to_rule(rule, position, owner is not None)
+        if "type" in rule:
+            emitted = rule_to_odcs(rule)
+        else:
+            emitted = _to_rule(rule, position, owner is not None)
         if owner is None:
             table_rules.append(emitted)
         else:
@@ -204,11 +214,11 @@ def to_odcs(contract: DataContract) -> dict[str, Any]:
     schema = _to_schema(contract)
     if schema:
         doc["schema"] = schema
-    sla = [
-        _to_sla_entry(key, str(raw))
-        for key, raw in (contract.servicelevels or {}).items()
-        if raw
-    ]
+    levels = contract.servicelevels or {}
+    if "properties" in levels:
+        sla = sla_to_odcs(levels)
+    else:
+        sla = [_to_sla_entry(key, str(raw)) for key, raw in levels.items() if raw]
     if sla:
         doc["slaProperties"] = sla
     doc["customProperties"] = [{"property": "tier", "value": contract.tier}]
@@ -257,7 +267,18 @@ _PROPERTY_KEYS = frozenset(
         "physicalType",
     }
 )
-_RULE_KEYS = frozenset({"type", "dimension", "description", "customProperties"})
+_RULE_KEYS = frozenset(
+    {
+        "type",
+        "dimension",
+        "description",
+        "customProperties",
+        "metric",
+        "unit",
+        "arguments",
+        *QUALITY_OPERATORS,
+    }
+)
 _RULE_CUSTOM_KEYS = frozenset(
     {
         "dmpltDimension",
@@ -274,7 +295,6 @@ _RULE_REQUIRED_CUSTOM_KEYS = (
     "dmpltPosition",
 )
 _SLA_ENTRY_KEYS = frozenset({"property", "value", "unit"})
-_SLA_KEYS = ("freshness", "availability", "retention", "latency")
 
 _DB_STATUS = {odcs: stored for stored, odcs in _ODCS_STATUS.items()}
 _STORED_TYPE = {
@@ -375,15 +395,33 @@ def _parse_status(doc: dict[str, Any]) -> str:
 
 
 def _parse_servicelevels(doc: dict[str, Any]) -> dict[str, Any]:
-    levels: dict[str, Any] = dict.fromkeys(_SLA_KEYS, "")
-    for entry in doc.get("slaProperties") or []:
+    entries = doc.get("slaProperties") or []
+    for entry in entries:
         key = entry["property"]
         _reject_unknown(entry, _SLA_ENTRY_KEYS, f"slaProperties entry {key}")
-        value = entry.get("value")
-        if value is None or isinstance(value, bool):
-            raise OdcsParseError(f"slaProperties entry {key} has no storable value")
-        levels[key] = _sla_text(value, entry.get("unit"))
-    return levels
+    try:
+        return sla_from_odcs(entries)
+    except ValueError as exc:
+        raise OdcsParseError(str(exc)) from exc
+
+
+def _is_plan1_rule(item: Any) -> bool:
+    """A text rule written before library rules, carrying dmplt* properties."""
+    custom = item.get("customProperties") if isinstance(item, Mapping) else None
+    return isinstance(custom, list) and any(
+        isinstance(entry, Mapping)
+        and str(entry.get("property", "")).startswith("dmplt")
+        for entry in custom
+    )
+
+
+def _parse_library_or_text_rule(item: Any, column: str) -> dict[str, Any]:
+    where = f"quality rule on {column}" if column else "quality rule on the schema"
+    _reject_unknown(item, _RULE_KEYS, where)
+    try:
+        return rule_from_odcs(item, column)
+    except ValueError as exc:
+        raise OdcsParseError(f"{where}: {exc}") from exc
 
 
 def _parse_rule(rule: dict[str, Any], prop_name: str | None) -> tuple[Any, dict]:
@@ -450,19 +488,27 @@ def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
         )
     fields: list[dict[str, Any]] = []
     positioned: list[tuple[Any, dict]] = []
+    rules: list[dict[str, Any]] = []
+
+    def collect(items: Any, prop_name: str | None) -> None:
+        for item in items or []:
+            if _is_plan1_rule(item):
+                positioned.append(_parse_rule(item, prop_name))
+            else:
+                rules.append(_parse_library_or_text_rule(item, prop_name or ""))
+
     for schema in schemas:
         _reject_unknown(schema, _SCHEMA_KEYS, "schema")
         for prop in schema.get("properties") or []:
             stored = _parse_property(prop)
             fields.append(stored)
-            positioned.extend(
-                _parse_rule(rule, stored["name"]) for rule in prop.get("quality") or []
-            )
-        positioned.extend(
-            _parse_rule(rule, None) for rule in schema.get("quality") or []
-        )
+            collect(prop.get("quality"), stored["name"])
+        collect(schema.get("quality"), None)
     positioned.sort(key=lambda pair: pair[0])
-    return {"fields": fields, "quality": [rule for _, rule in positioned]}
+    problems = find_quality_rule_problems(rules, fields)
+    if problems:
+        raise OdcsParseError("; ".join(problems))
+    return {"fields": fields, "quality": [rule for _, rule in positioned] + rules}
 
 
 def _parse(doc: dict[str, Any]) -> ParsedContract:

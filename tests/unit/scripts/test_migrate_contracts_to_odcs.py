@@ -3,6 +3,7 @@ import subprocess
 import uuid
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -207,3 +208,100 @@ def test_find_duplicate_ids_reports_the_shared_id():
             "contracts/commerce/updated.yaml",
         ]
     }
+
+
+@pytest.fixture
+def repo():
+    client = AsyncMock(spec=GitHubClient)
+    client.read_contract_files.return_value = [
+        _file(path, text, f"sha-{i}") for i, (path, text) in enumerate(REAL_FILES)
+    ]
+    return client
+
+
+async def test_dry_run_pushes_nothing_and_prints_the_result(repo, capsys):
+    assert await migration.migrate(repo, apply=False, lint=_lint_ok) == 0
+    repo.push.assert_not_awaited()
+    out = capsys.readouterr().out
+    assert "apiVersion: v3.2.0" in out
+    assert "Summary: 3 to convert, 0 already ODCS, 0 refused" in out
+    assert "nothing written" in out.lower()
+
+
+async def test_apply_pushes_each_file_to_its_own_path_with_its_sha(repo):
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 0
+    pushed = [
+        (c.args[0], c.kwargs["expected_sha"]) for c in repo.push.await_args_list
+    ]
+    assert pushed == [
+        ("contracts/commerce/sales.yaml", "sha-0"),
+        ("contracts/commerce/updated.yaml", "sha-1"),
+        ("contracts/riscos/test.yaml", "sha-2"),
+    ]
+    assert repo.push.await_args_list[0].args[2] == (
+        "Migrate contract to ODCS v3.2.0: Sales"
+    )
+
+
+async def test_read_failure_exits_nonzero_and_writes_nothing(repo, capsys):
+    repo.read_contract_files.side_effect = RuntimeError("GitHub API 401: Bad credentials")
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 1
+    repo.push.assert_not_awaited()
+    assert "401" in capsys.readouterr().err
+
+
+async def test_empty_read_exits_nonzero(repo, capsys):
+    repo.read_contract_files.return_value = []
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 1
+    assert "no contract files" in capsys.readouterr().err.lower()
+
+
+async def test_rerun_on_converted_files_pushes_nothing(repo, capsys):
+    repo.read_contract_files.return_value = [
+        _file(path, _convert(path, text).converted) for path, text in REAL_FILES
+    ]
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 0
+    repo.push.assert_not_awaited()
+    assert "Summary: 0 to convert, 3 already ODCS, 0 refused" in capsys.readouterr().out
+
+
+async def test_a_refused_file_blocks_every_write(repo):
+    repo.read_contract_files.return_value = [
+        _file(*REAL_FILES[0]), _file("contracts/x/bad.yaml", "- not a contract\n"),
+    ]
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 1
+    repo.push.assert_not_awaited()
+
+
+async def test_apply_continues_after_a_failed_push(repo, capsys):
+    repo.push.side_effect = [None, RuntimeError("GitHub API 409: stale"), None]
+    assert await migration.migrate(repo, apply=True, lint=_lint_ok) == 1
+    assert repo.push.await_count == 3
+    assert "409" in capsys.readouterr().err
+
+
+async def test_duplicate_ids_warn_but_do_not_block(repo, capsys):
+    assert await migration.migrate(repo, apply=False, lint=_lint_ok) == 0
+    assert (
+        "WARNING duplicate id 87e003b4-88c3-43b3-9819-d06d592dbb58: "
+        "contracts/commerce/sales.yaml, contracts/commerce/updated.yaml"
+    ) in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("argv", "apply"), [([], False), (["--apply"], True)])
+def test_main_is_a_dry_run_unless_told_otherwise(monkeypatch, argv, apply):
+    fake = AsyncMock(return_value=0)
+    monkeypatch.setattr(migration, "migrate", fake)
+    monkeypatch.setattr(migration, "GITHUB_TOKEN", "t")
+    monkeypatch.setattr(migration.sys, "argv", ["migrate", *argv])
+    with pytest.raises(SystemExit) as exit_info:
+        migration.main()
+    assert exit_info.value.code == 0
+    assert fake.await_args.kwargs["apply"] is apply
+
+
+def test_main_requires_a_token(monkeypatch):
+    monkeypatch.setattr(migration, "GITHUB_TOKEN", "")
+    monkeypatch.setattr(migration.sys, "argv", ["migrate"])
+    with pytest.raises(SystemExit, match="GITHUB_TOKEN"):
+        migration.main()

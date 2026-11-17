@@ -16,10 +16,13 @@ Environment (or a .env file in the project root):
 Needs `uvx` on PATH for the lint.
 """
 
+import argparse
+import asyncio
 import dataclasses
 import json
 import os
 import subprocess  # nosec B404
+import sys
 import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -27,10 +30,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 import yaml
 
 from backend.domain.entities.data_contract import DataContract
-from backend.infra.github_client import ContractFile
+from backend.infra.config import GITHUB_REPO, GITHUB_TOKEN
+from backend.infra.github_client import ContractFile, GitHubClient
 from backend.use_cases.data_contract.legacy_dcs import from_legacy_dcs
 from backend.use_cases.data_contract.odcs import ParsedContract, from_odcs
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
@@ -190,3 +195,85 @@ def find_duplicate_ids(results: Iterable[FileResult]) -> dict[str, list[str]]:
         if result.action != "refused" and result.contract_id:
             paths_by_id.setdefault(result.contract_id, []).append(result.path)
     return {cid: paths for cid, paths in paths_by_id.items() if len(paths) > 1}
+
+
+def _report(results: list[FileResult]) -> None:
+    for result in results:
+        detail = f" ({result.reason})" if result.reason else ""
+        print(f"{result.action:<12} {result.path}{detail}")
+    for result in results:
+        if result.action == "convert":
+            print()
+            print(f"--- {result.path}")
+            print(result.converted, end="")
+    print()
+    for contract_id, paths in find_duplicate_ids(results).items():
+        print(f"WARNING duplicate id {contract_id}: {', '.join(paths)}")
+    counts = {
+        action: sum(1 for result in results if result.action == action)
+        for action in ("convert", "already-odcs", "refused")
+    }
+    print(
+        f"Summary: {counts['convert']} to convert, "
+        f"{counts['already-odcs']} already ODCS, {counts['refused']} refused"
+    )
+
+
+async def migrate(
+    client: GitHubClient, *, apply: bool, lint: LintFn = lint_yaml
+) -> int:
+    try:
+        files = await client.read_contract_files()
+    except (RuntimeError, httpx.HTTPError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if not files:
+        print(
+            f"Error: no contract files found in {GITHUB_REPO}; nothing was migrated",
+            file=sys.stderr,
+        )
+        return 1
+
+    results = [convert_file(file, lint) for file in files]
+    _report(results)
+    if any(result.action == "refused" for result in results):
+        print("Nothing written: fix the refused files first.")
+        return 1
+    if not apply:
+        print("Dry run: nothing written. Re-run with --apply to write.")
+        return 0
+
+    failed = False
+    for result in results:
+        if result.action != "convert":
+            continue
+        try:
+            await client.push(
+                result.path,
+                result.converted,
+                f"Migrate contract to ODCS v3.2.0: {result.title}",
+                expected_sha=result.sha,
+            )
+            print(f"written {result.path}")
+        except (RuntimeError, httpx.HTTPError) as exc:
+            print(f"failed {result.path}: {exc}", file=sys.stderr)
+            failed = True
+    return 1 if failed else 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write the converted files; without it nothing is written",
+    )
+    args = parser.parse_args()
+    if not GITHUB_TOKEN:
+        sys.exit("Error: GITHUB_TOKEN is required")
+    client = GitHubClient(token=GITHUB_TOKEN, repo=GITHUB_REPO)
+    sys.exit(asyncio.run(migrate(client, apply=args.apply)))
+
+
+if __name__ == "__main__":
+    main()

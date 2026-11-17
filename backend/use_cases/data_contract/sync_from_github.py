@@ -7,6 +7,7 @@ import yaml
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.domain_repository import IDomainRepository
 from backend.infra.github_client import GitHubClient
+from backend.use_cases.data_contract.contract_document import parse_contract_document
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +38,9 @@ class SyncFromGitHubUseCase:
 
         for path, content in yamls:
             try:
-                data = yaml.safe_load(content)
-                contract_id = uuid.UUID(str(data["id"]))
-                info = data.get("info", {})
-                models_section = dict(data.get("models", {}))
-                quality = data.get("quality", [])
-                if quality:
-                    models_section["quality"] = quality
-                servicelevels = data.get("servicelevels", {}) or {}
-                tier = int(data.get("x-tier", 4))
-
-                yaml_domain = info.get("domain", "")
+                parsed = parse_contract_document(yaml.safe_load(content))
+                contract_id = parsed.id
+                yaml_domain = parsed.domain_name
                 if not yaml_domain:
                     errors.append(
                         {"path": path, "error": "YAML has no domain name; skipped"}
@@ -73,14 +66,14 @@ class SyncFromGitHubUseCase:
 
                 was_created = await self.repository.upsert(
                     contract_id=contract_id,
-                    title=info.get("title", ""),
-                    version=info.get("version", "1.0.0"),
-                    owner=info.get("owner", ""),
+                    title=parsed.title,
+                    version=parsed.version,
+                    owner=parsed.owner,
                     domain_id=domain_id,
-                    tier=tier,
-                    status=info.get("status", "draft"),
-                    models=models_section,
-                    servicelevels=servicelevels,
+                    tier=parsed.tier,
+                    status=parsed.status,
+                    models=parsed.models,
+                    servicelevels=parsed.servicelevels,
                 )
                 if was_created:
                     created += 1

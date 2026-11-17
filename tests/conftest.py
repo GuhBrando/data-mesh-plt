@@ -14,6 +14,11 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-jwt-secret-key-not-for-production-use-only"
 )
 
+# Keep the suite away from the real contracts repository. Router tests that do not
+# override get_github_client would otherwise push to and delete from GITHUB_REPO
+# with the token in .env.
+os.environ["GITHUB_TOKEN"] = ""
+
 
 class _QueryGuard:
     def __init__(self, mock: AsyncMock) -> None:

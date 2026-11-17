@@ -32,6 +32,49 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format --check .
 
+  odcs-lint:
+    name: ODCS contract lint
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Generate contracts with the real serializer
+        run: |
+          mkdir -p odcs-lint
+          uv run python -m tests.fixtures.odcs.sample_contract odcs-lint/sample.yaml
+
+      - name: Lint the contracts
+        run: |
+          status=0
+          for file in odcs-lint/*.yaml; do
+            report="${file%.yaml}.lint.json"
+            uvx --from datacontract-cli==1.2.9 datacontract lint "$file" \
+              --output "$report" --output-format json || true
+            result="$(jq -r '.result // "missing"' "$report" 2>/dev/null || echo missing)"
+            echo "$file: datacontract lint result is '$result'"
+            if [ "$result" != "passed" ]; then
+              echo "::error file=$file::datacontract lint result is '$result', expected 'passed'"
+              status=1
+            fi
+          done
+          exit "$status"
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest

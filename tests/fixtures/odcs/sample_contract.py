@@ -1,13 +1,16 @@
 """Contracts for the ODCS tests. CI lints what `sample_contract` emits."""
 
+import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from backend.domain.entities.data_contract import DataContract
 from backend.use_cases.data_contract.odcs import to_odcs
+from backend.use_cases.data_contract.yaml_builder import assemble_yaml
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 SAMPLE_ID = uuid.UUID("3f2a1c9e-8b7d-4e6f-a5c4-1d2e3f4a5b6c")
@@ -62,3 +65,9 @@ def sample_contract() -> DataContract:
 def emit(contract: DataContract) -> dict[str, Any]:
     """`to_odcs` output after a trip through YAML, like a file in the repository."""
     return yaml.safe_load(yaml.dump(to_odcs(contract), sort_keys=False))
+
+
+if __name__ == "__main__":
+    Path(sys.argv[1]).write_text(
+        assemble_yaml(sample_contract()), encoding="utf-8", newline="\n"
+    )

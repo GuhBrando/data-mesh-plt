@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from backend.use_cases.data_contract.odcs import to_odcs
+from backend.use_cases.data_contract.yaml_builder import assemble_yaml
 from tests.fixtures.odcs.sample_contract import (
     emit,
     make_contract,
@@ -226,3 +227,7 @@ def test_sla_value_that_cannot_be_rebuilt_stays_a_string(raw):
 
 def test_empty_sla_values_are_omitted():
     assert "slaProperties" not in to_odcs(make_contract())
+
+
+def test_assemble_yaml_emits_the_expected_text():
+    assert assemble_yaml(sample_contract()) == EXPECTED_YAML

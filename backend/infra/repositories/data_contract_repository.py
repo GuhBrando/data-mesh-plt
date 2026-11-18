@@ -5,9 +5,13 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import uuid
+    from contextlib import AbstractAsyncContextManager
+    from datetime import datetime
 
 import asyncpg
 
+from backend.domain.contract_evolution import ContractVersionConflictError
+from backend.domain.entities.contract_version import ContractVersion
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 
@@ -47,6 +51,94 @@ def _row_to_entity(row) -> DataContract:
 class PostgresDataContractRepository(IDataContractRepository):
     def __init__(self, db):
         self.db = db
+
+    def transaction(self) -> AbstractAsyncContextManager[Any]:
+        return self.db.transaction()
+
+    async def get_by_id_for_update(self, contract_id: uuid.UUID) -> DataContract | None:
+        # OF dc: lock the contract row, not the joined domain.
+        row = await self.db.fetchrow(
+            f"{_SELECT} WHERE dc.id = $1 FOR UPDATE OF dc;",
+            contract_id,
+        )
+        return _row_to_entity(row) if row else None
+
+    async def add_version(
+        self,
+        contract_id: uuid.UUID,
+        version: str,
+        yaml_content: str,
+        created_by: uuid.UUID | None,
+    ) -> None:
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO catalog.contract_versions
+                    (contract_id, version, yaml_content, created_by)
+                VALUES ($1, $2, $3, $4);
+                """,
+                contract_id,
+                version,
+                yaml_content,
+                created_by,
+            )
+        except asyncpg.UniqueViolationError:
+            raise ContractVersionConflictError(
+                f"Version {version} already exists for this contract"
+            ) from None
+
+    async def add_baseline_version(
+        self,
+        contract_id: uuid.UUID,
+        version: str,
+        yaml_content: str,
+        created_at: datetime,
+    ) -> None:
+        # DO NOTHING needs no UPDATE privilege, which the history table lacks.
+        await self.db.execute(
+            """
+            INSERT INTO catalog.contract_versions
+                (contract_id, version, yaml_content, created_at)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (contract_id, version) DO NOTHING;
+            """,
+            contract_id,
+            version,
+            yaml_content,
+            created_at,
+        )
+
+    async def list_versions(self, contract_id: uuid.UUID) -> list[ContractVersion]:
+        rows = await self.db.fetch(
+            """
+            SELECT contract_id, version, created_by, created_at
+            FROM catalog.contract_versions
+            WHERE contract_id = $1
+            ORDER BY created_at DESC, version DESC;
+            """,
+            contract_id,
+        )
+        return [
+            ContractVersion(
+                contract_id=r["contract_id"],
+                version=r["version"],
+                created_by=r["created_by"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    async def get_version_yaml(
+        self, contract_id: uuid.UUID, version: str
+    ) -> str | None:
+        return await self.db.fetchval(
+            """
+            SELECT yaml_content FROM catalog.contract_versions
+            WHERE contract_id = $1 AND version = $2;
+            """,
+            contract_id,
+            version,
+        )
 
     async def create(
         self,

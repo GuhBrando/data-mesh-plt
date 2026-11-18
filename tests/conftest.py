@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -40,3 +40,11 @@ def n1_guard() -> Callable[[AsyncMock], _QueryGuard]:
         return _QueryGuard(mock)
 
     return _make
+
+
+@pytest.fixture
+def contract_repo() -> AsyncMock:
+    """Repository double whose transaction() works in `async with`."""
+    repo = AsyncMock()
+    repo.transaction = MagicMock()
+    return repo

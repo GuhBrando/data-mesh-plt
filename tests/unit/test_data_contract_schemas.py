@@ -3,7 +3,13 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from backend.interface.schemas.data_contract import DataContractCreateModel
+from backend.interface.schemas.data_contract import (
+    DataContractCreateModel,
+    LegacyServiceLevels,
+    ModelsSection,
+    ServiceLevels,
+)
+from tests.quality_rule_builders import library_rule
 
 DOMAIN_ID = uuid.uuid4()
 
@@ -39,8 +45,7 @@ def test_invalid_status_rejected():
 
 def test_schema_field_defaults():
     m = DataContractCreateModel(title="x", owner="o", domain_id=DOMAIN_ID, tier=3)
-    assert m.servicelevels.freshness == ""
-    assert m.servicelevels.availability == ""
+    assert m.servicelevels.properties == []
 
 
 from typing import get_args
@@ -88,3 +93,46 @@ def test_invalid_rows_are_rejected(build):
 def test_server_applies_the_type_rules():
     with pytest.raises(ValidationError, match="host"):
         ContractServer(server="a", type="azure", location="az://a/b", format="csv", host="h.example.com")
+
+
+def test_new_rule_and_service_levels_are_accepted():
+    m = DataContractCreateModel(
+        title="x", owner="o", domain_id=DOMAIN_ID, tier=2,
+        models={
+            "fields": [{"name": "email", "type": "string"}],
+            "quality": [
+                library_rule(unit="percent", operator="mustBeLessOrEqualTo", value=1)
+            ],
+        },
+        servicelevels={"properties": [{"property": "freshness", "value": 24, "unit": "h"}]},
+    )
+    assert m.models.model_dump()["quality"][0]["metric"] == "nullValues"
+    assert m.servicelevels.model_dump() == {
+        "properties": [{"property": "freshness", "value": 24, "unit": "h"}]
+    }
+
+
+def test_unrunnable_rule_is_rejected_with_its_reason():
+    with pytest.raises(ValidationError, match="percent"):
+        ModelsSection(
+            fields=[{"name": "id", "type": "integer"}],
+            quality=[library_rule(metric="duplicateValues", column="id", unit="percent")],
+        )
+
+
+def test_service_levels_forbid_unknown_keys():
+    with pytest.raises(ValidationError):
+        ServiceLevels.model_validate({"properties": [], "freshness": "24h"})
+
+
+def test_blank_service_level_value_is_rejected():
+    with pytest.raises(ValidationError):
+        ServiceLevels.model_validate({"properties": [{"property": "freshness", "value": " "}]})
+
+
+def test_old_shapes_are_still_accepted_until_contraction():  # deleted in Task 9
+    m = DataContractCreateModel(
+        title="x", owner="o", domain_id=DOMAIN_ID, tier=2,
+        servicelevels={"freshness": "24h", "availability": "", "retention": "", "latency": ""},
+    )
+    assert isinstance(m.servicelevels, LegacyServiceLevels)

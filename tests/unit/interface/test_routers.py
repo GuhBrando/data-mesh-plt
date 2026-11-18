@@ -37,6 +37,7 @@ from backend.interface.dependencies import (
 )
 from backend.interface.security import get_current_user
 from backend.main import app
+from tests.quality_rule_builders import library_rule
 
 NOW = datetime.now(tz=timezone.utc)
 CONTRACT_ID = uuid.uuid4()
@@ -553,4 +554,40 @@ def test_create_rejects_a_password_on_a_server(admin_client):
     resp, mock_uc = _post(admin_client, {"servers": [{"server": "a", "type": "local", "path": "./a",
                                                       "format": "csv", "password": "not-a-real-secret"}]})
     assert resp.status_code == 422
+    mock_uc.execute.assert_not_called()
+
+
+def _post_contract(admin_client, models, servicelevels):
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _contract(title="Sales")
+    app.dependency_overrides[get_create_data_contract_use_case] = lambda: mock_uc
+    resp = admin_client.post("/api/v1/data-contracts", json={
+        "title": "Sales", "owner": "bob", "domain_id": str(DOMAIN_ID), "tier": 2,
+        "models": models, "servicelevels": servicelevels,
+    })
+    return resp, mock_uc
+
+
+def test_create_with_library_rule_and_structured_sla(admin_client):
+    sla = {"properties": [{"property": "freshness", "value": 24, "unit": "h"}]}
+    resp, mock_uc = _post_contract(
+        admin_client,
+        {"fields": [{"name": "email", "type": "string"}],
+         "quality": [library_rule(operator="mustBeLessOrEqualTo", value=1, unit="percent")]},
+        sla,
+    )
+    assert resp.status_code == 201
+    assert mock_uc.execute.call_args.kwargs["servicelevels"] == sla
+    assert mock_uc.execute.call_args.kwargs["models"]["quality"][0]["type"] == "library"
+
+
+def test_create_rejects_two_rules_on_same_metric_and_column(admin_client):
+    resp, mock_uc = _post_contract(
+        admin_client,
+        {"fields": [{"name": "email", "type": "string"}],
+         "quality": [library_rule(), library_rule(operator="mustBeLessThan", value=5)]},
+        {"properties": []},
+    )
+    assert resp.status_code == 422
+    assert "cannot run two" in resp.text
     mock_uc.execute.assert_not_called()

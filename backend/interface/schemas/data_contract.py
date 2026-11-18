@@ -2,9 +2,17 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from backend.domain.contract_metadata import server_problems
+from backend.domain.quality_rules import find_quality_rule_problems
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -20,7 +28,64 @@ class SchemaField(BaseModel):
     physical_type: str = ""
 
 
+def _reject_bool(value: Any) -> Any:
+    # Pydantic's lax mode would store True as the number 1.
+    if isinstance(value, bool):
+        raise ValueError("must be a number, not a boolean")
+    return value
+
+
 class QualityRule(BaseModel):
+    """An ODCS quality rule: a library metric the tool can run, or text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["library", "text"]
+    dimension: (
+        Literal[
+            "accuracy",
+            "completeness",
+            "conformity",
+            "consistency",
+            "coverage",
+            "timeliness",
+            "uniqueness",
+        ]
+        | None
+    ) = None
+    column: str = ""
+    metric: (
+        Literal[
+            "nullValues",
+            "missingValues",
+            "invalidValues",
+            "duplicateValues",
+            "rowCount",
+        ]
+        | None
+    ) = None
+    operator: (
+        Literal[
+            "mustBe",
+            "mustNotBe",
+            "mustBeGreaterThan",
+            "mustBeGreaterOrEqualTo",
+            "mustBeLessThan",
+            "mustBeLessOrEqualTo",
+        ]
+        | None
+    ) = None
+    value: int | float | None = None
+    unit: Literal["rows", "percent"] | None = None
+    valid_values: list[str] = []
+    description: str = ""
+
+    _no_bool_value = field_validator("value", mode="before")(_reject_bool)
+
+
+class LegacyQualityRule(BaseModel):
+    """The pre-ODCS rule shape. Accepted until the data migration ships."""
+
     dimension: Literal[
         "completeness", "freshness", "uniqueness", "validity", "integrity"
     ]
@@ -32,10 +97,45 @@ class QualityRule(BaseModel):
 
 class ModelsSection(BaseModel):
     fields: list[SchemaField] = []
-    quality: list[QualityRule] = []
+    quality: list[QualityRule | LegacyQualityRule] = []
+
+    @model_validator(mode="after")
+    def _rules_can_run(self) -> "ModelsSection":
+        rules = [r.model_dump() for r in self.quality if isinstance(r, QualityRule)]
+        fields = [f.model_dump() for f in self.fields]
+        problems = find_quality_rule_problems(rules, fields)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class ServiceLevelProperty(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    property: str = Field(min_length=1)
+    value: int | float | str
+    unit: str | None = None
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _storable(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("a text value cannot be blank")
+        return _reject_bool(value)
 
 
 class ServiceLevels(BaseModel):
+    # forbid: a stale client sending the old four keys gets 422, not an empty SLA.
+    model_config = ConfigDict(extra="forbid")
+
+    properties: list[ServiceLevelProperty] = []
+
+
+class LegacyServiceLevels(BaseModel):
+    """The pre-ODCS service levels. Accepted until the data migration ships."""
+
+    model_config = ConfigDict(extra="forbid")
+
     freshness: str = ""
     availability: str = ""
     retention: str = ""
@@ -94,7 +194,9 @@ class DataContractCreateModel(BaseModel):
     tier: int = Field(..., ge=1, le=4)
     status: Literal["draft", "in_review", "active", "deprecated"] = "draft"
     models: ModelsSection = Field(default_factory=ModelsSection)
-    servicelevels: ServiceLevels = Field(default_factory=ServiceLevels)
+    servicelevels: ServiceLevels | LegacyServiceLevels = Field(
+        default_factory=ServiceLevels
+    )
     description: ContractDescription = Field(default_factory=ContractDescription)
     team_members: list[TeamMember] = Field(default_factory=list)
     support: list[SupportChannel] = Field(default_factory=list)
@@ -109,7 +211,7 @@ class DataContractUpdateModel(BaseModel):
     tier: int | None = Field(default=None, ge=1, le=4)
     status: Literal["draft", "in_review", "active", "deprecated"] | None = None
     models: ModelsSection | None = None
-    servicelevels: ServiceLevels | None = None
+    servicelevels: ServiceLevels | LegacyServiceLevels | None = None
     description: ContractDescription | None = None
     team_members: list[TeamMember] | None = None
     support: list[SupportChannel] | None = None

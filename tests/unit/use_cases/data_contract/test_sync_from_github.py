@@ -249,3 +249,20 @@ async def test_non_mapping_file_is_reported_and_the_next_file_still_syncs(
     assert result["errors"] == [
         {"path": "c/empty.yaml", "error": "contract file is not a YAML mapping"}
     ]
+
+
+async def test_long_error_is_cut_to_a_bounded_size(use_case, github):
+    content = yaml.dump({"apiVersion": "v2" + "x" * 1000, "kind": "DataContract"})
+    github.list_all_yaml_contents.return_value = [("x.yaml", content)]
+    result = await use_case.execute()
+    error = result["errors"][0]["error"]
+    assert len(error) <= 501
+    assert error.endswith("…")
+
+
+async def test_yaml_alias_bomb_is_reported_and_skipped(use_case, github, repo):
+    bomb = "\n".join(['a: &a ["x", "x"]', "b: &b [*a, *a]", "c: [*b, *b]"])
+    github.list_all_yaml_contents.return_value = [("x.yaml", bomb)]
+    result = await use_case.execute()
+    assert "aliases" in result["errors"][0]["error"]
+    repo.upsert.assert_not_called()

@@ -603,3 +603,14 @@ def test_create_rejects_old_service_level_shape(admin_client):
     )
     assert resp.status_code == 422
     mock_uc.execute.assert_not_called()
+
+
+def test_sync_read_failure_returns_502(admin_client):
+    github = AsyncMock()
+    github.list_all_yaml_contents.side_effect = RuntimeError("GitHub API 301: Moved")
+    app.dependency_overrides[get_github_client] = lambda: github
+    app.dependency_overrides[get_data_contract_repository] = lambda: AsyncMock()
+    app.dependency_overrides[get_domain_repository] = lambda: AsyncMock()
+    resp = admin_client.post("/api/v1/data-contracts/sync")
+    assert resp.status_code == 502
+    assert "301" in resp.json()["detail"]

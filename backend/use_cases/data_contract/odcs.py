@@ -4,7 +4,6 @@ import re
 import unicodedata
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from typing import Any
 
 from backend.domain.contract_metadata import (
@@ -17,6 +16,7 @@ from backend.domain.contract_metadata import (
     empty_server,
     server_problems,
 )
+from backend.domain.contract_values import CONTRACT_STATUSES, FIELD_TYPES
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.quality_rules import QUALITY_OPERATORS, find_quality_rule_problems
 from backend.use_cases.data_contract.odcs_quality import (
@@ -25,39 +25,29 @@ from backend.use_cases.data_contract.odcs_quality import (
     sla_from_odcs,
     sla_to_odcs,
 )
+from backend.use_cases.data_contract.parsed_contract import (
+    ContractParseError,
+    ParsedContract,
+)
+
+__all__ = [
+    "ODCS_API_VERSION",
+    "OdcsParseError",
+    "ParsedContract",
+    "from_odcs",
+    "to_odcs",
+]
 
 ODCS_API_VERSION = "v3.2.0"
 ODCS_KIND = "DataContract"
 
 
-class OdcsParseError(ValueError):
+class OdcsParseError(ContractParseError):
     pass
-
-
-@dataclass(frozen=True)
-class ParsedContract:
-    id: uuid.UUID
-    title: str
-    version: str
-    owner: str
-    domain_name: str
-    tier: int
-    status: str
-    models: dict[str, Any]
-    servicelevels: dict[str, Any]
-    description: dict[str, str] = field(default_factory=empty_description)
-    team_members: list[dict[str, Any]] = field(default_factory=list)
-    support: list[dict[str, Any]] = field(default_factory=list)
-    servers: list[dict[str, Any]] = field(default_factory=list)
 
 
 _ODCS_STATUS = {"in_review": "proposed"}
 _ODCS_LOGICAL_TYPE = {"float": "number"}
-
-
-def _rule_sentence(dimension: Any, column: str, operator: Any, threshold: Any) -> str:
-    target = f"column {column}" if column else "the table"
-    return f"{str(dimension).capitalize()} of {target} must be {operator} {threshold}."
 
 
 def _schema_name(title: str) -> str:
@@ -164,7 +154,7 @@ def to_odcs(contract: DataContract) -> dict[str, Any]:
     return doc
 
 
-_DB_STATUSES = frozenset({"draft", "in_review", "active", "deprecated"})
+_DB_STATUSES = frozenset(CONTRACT_STATUSES)
 _DOCUMENT_KEYS = frozenset(
     {
         "apiVersion",
@@ -229,29 +219,47 @@ _RULE_CUSTOM_KEYS = frozenset(
         "dmpltPosition",
     }
 )
+_CUSTOM_ENTRY_KEYS = frozenset({"property", "value"})
 _SLA_ENTRY_KEYS = frozenset({"property", "value", "unit"})
 
 _DB_STATUS = {odcs: stored for stored, odcs in _ODCS_STATUS.items()}
-_STORED_TYPE = {
-    "string": "string",
-    "integer": "integer",
-    "number": "float",
-    "boolean": "boolean",
-    "date": "date",
-    "timestamp": "timestamp",
-}
+_STORED_TYPE = {_ODCS_LOGICAL_TYPE.get(t, t): t for t in FIELD_TYPES}
+_MAX_LISTED_KEYS = 10
+
+
+def _printable(value: Any) -> str:
+    """A file value for an error message: control characters escaped."""
+    return str(value).encode("unicode_escape").decode("ascii")
 
 
 def _reject_unknown(keys: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(keys, Mapping):
         raise OdcsParseError(f"{where} must be an object")
-    unknown = sorted(str(key) for key in keys if key not in allowed)
+    unknown = sorted(_printable(key) for key in keys if key not in allowed)
     if unknown:
-        raise OdcsParseError(f"{where} has unsupported keys: {', '.join(unknown)}")
+        listed = ", ".join(unknown[:_MAX_LISTED_KEYS])
+        if len(unknown) > _MAX_LISTED_KEYS:
+            listed += f" and {len(unknown) - _MAX_LISTED_KEYS} more"
+        raise OdcsParseError(f"{where} has unsupported keys: {listed}")
 
 
 def _custom_values(entries: Any) -> dict[str, Any]:
-    return {entry["property"]: entry["value"] for entry in entries or []}
+    values: dict[str, Any] = {}
+    for entry in entries or []:
+        name = entry["property"]
+        where = f"customProperties entry {_printable(name)}"
+        _reject_unknown(entry, _CUSTOM_ENTRY_KEYS, where)
+        if name in values:
+            raise OdcsParseError(f"{where} appears more than once")
+        values[name] = entry["value"]
+    return values
+
+
+def _require(value: Any, kind: type, where: str) -> Any:
+    # type() rather than isinstance: True must not pass as an int.
+    if type(value) is not kind:
+        raise OdcsParseError(f"{where} must be of type {kind.__name__}, got {value!r}")
+    return value
 
 
 def _parse_id(doc: dict[str, Any]) -> uuid.UUID:
@@ -331,9 +339,13 @@ def _parse_status(doc: dict[str, Any]) -> str:
 
 def _parse_servicelevels(doc: dict[str, Any]) -> dict[str, Any]:
     entries = doc.get("slaProperties") or []
+    seen: set[str] = set()
     for entry in entries:
         key = entry["property"]
         _reject_unknown(entry, _SLA_ENTRY_KEYS, f"slaProperties entry {key}")
+        if key in seen:
+            raise OdcsParseError(f"slaProperties entry {key} appears more than once")
+        seen.add(key)
     try:
         return sla_from_odcs(entries)
     except ValueError as exc:
@@ -365,9 +377,6 @@ def _legacy_description(item: Mapping[str, Any], prop_name: str | None) -> str:
     dimension, operator = text("dmpltDimension"), text("dmpltOperator")
     threshold = text("dmpltThreshold")
     description = str(item.get("description") or "").strip(" ")
-    # Plan 1 wrote this sentence for a rule stored with an empty description.
-    if description == _rule_sentence(dimension, column, operator, threshold):
-        description = ""
     suffix = (
         f"[legacy rule: dimension={dimension} column={column}"
         f" operator={operator} threshold={threshold}]"
@@ -395,7 +404,10 @@ def _parse_quality_item(item: Any, prop_name: str | None) -> dict[str, Any]:
 
 def _parse_property(prop: dict[str, Any]) -> dict[str, Any]:
     name = prop.get("name")
-    _reject_unknown(prop, _PROPERTY_KEYS, f"property {name}")
+    where = f"property {_printable(name)}"
+    _reject_unknown(prop, _PROPERTY_KEYS, where)
+    if not isinstance(name, str) or not name.strip():
+        raise OdcsParseError(f"{where} needs a non-empty name")
     logical = prop.get("logicalType")
     if logical not in _STORED_TYPE:
         raise OdcsParseError(
@@ -409,13 +421,30 @@ def _parse_property(prop: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": name,
         "type": _STORED_TYPE[logical],
-        "description": prop.get("description", ""),
-        "nullable": not prop.get("required", False),
-        "primary_key": prop.get("primaryKey", False),
+        "description": _require(
+            prop.get("description", ""), str, f"{where} description"
+        ),
+        "nullable": not _require(
+            prop.get("required", False), bool, f"{where} required"
+        ),
+        "primary_key": _require(
+            prop.get("primaryKey", False), bool, f"{where} primaryKey"
+        ),
         "classification": classification,
-        "unique": prop.get("unique", False),
-        "physical_type": prop.get("physicalType", ""),
+        "unique": _require(prop.get("unique", False), bool, f"{where} unique"),
+        "physical_type": _require(
+            prop.get("physicalType", ""), str, f"{where} physicalType"
+        ),
     }
+
+
+def _check_schema_object(schema: dict[str, Any]) -> None:
+    _reject_unknown(schema, _SCHEMA_KEYS, "schema")
+    # The platform writes only these; another value is an edit it would drop.
+    # The schema name is the slug of the title and is regenerated on every write.
+    for key, written in (("logicalType", "object"), ("physicalType", "table")):
+        if schema.get(key, written) != written:
+            raise OdcsParseError(f"schema {key} must be {written!r}")
 
 
 def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
@@ -431,7 +460,7 @@ def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
         rules.extend(_parse_quality_item(item, prop_name) for item in items or [])
 
     for schema in schemas:
-        _reject_unknown(schema, _SCHEMA_KEYS, "schema")
+        _check_schema_object(schema)
         for prop in schema.get("properties") or []:
             stored = _parse_property(prop)
             fields.append(stored)
@@ -453,8 +482,9 @@ def _parse(doc: dict[str, Any]) -> ParsedContract:
     _reject_unknown(doc, _DOCUMENT_KEYS, "contract")
     return ParsedContract(
         id=_parse_id(doc),
-        title=doc.get("name", ""),
-        version=str(doc.get("version", "1.0.0")),
+        title=_require(doc.get("name", ""), str, "name"),
+        # Not str(): an unquoted 1.10 loads as the float 1.1, and null as None.
+        version=_require(doc.get("version", "1.0.0"), str, "version"),
         owner=_parse_owner(doc),
         domain_name=doc.get("domain", ""),
         tier=_parse_tier(doc),

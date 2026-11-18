@@ -4,6 +4,15 @@ on:
   pull_request:
     branches: ["main", "develop"]
 
+# Every job only reads the repository.
+permissions:
+  contents: read
+
+env:
+  # Freezes datacontract-cli's transitive dependencies to what existed on this
+  # date, so a later upload cannot change what CI runs.
+  UV_EXCLUDE_NEWER: "2026-11-01T00:00:00Z"
+
 jobs:
   lint:
     name: Lint (ruff)
@@ -51,6 +60,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # The job runs a downloaded CLI; it gets no token to push with.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5

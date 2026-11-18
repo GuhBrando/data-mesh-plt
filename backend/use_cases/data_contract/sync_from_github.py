@@ -2,14 +2,23 @@ import logging
 import uuid
 from typing import Any
 
-import yaml
-
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.domain_repository import IDomainRepository
 from backend.infra.github_client import GitHubClient
-from backend.use_cases.data_contract.contract_document import parse_contract_document
+from backend.use_cases.data_contract.contract_document import (
+    load_contract_yaml,
+    parse_contract_document,
+)
 
 logger = logging.getLogger(__name__)
+
+# Errors quote values from the file; keep the response and the log bounded.
+_MAX_ERROR_CHARS = 500
+
+
+def _error_text(exc: Exception) -> str:
+    text = str(exc)
+    return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS] + "…"
 
 
 class SyncFromGitHubUseCase:
@@ -38,8 +47,7 @@ class SyncFromGitHubUseCase:
 
         for path, content in yamls:
             try:
-                parsed = parse_contract_document(yaml.safe_load(content))
-                contract_id = parsed.id
+                parsed = parse_contract_document(load_contract_yaml(content))
                 yaml_domain = parsed.domain_name
                 if not yaml_domain:
                     errors.append(
@@ -47,7 +55,7 @@ class SyncFromGitHubUseCase:
                     )
                     continue
 
-                existing = await self.repository.get_by_id(contract_id)
+                existing = await self.repository.get_by_id(parsed.id)
                 if existing is not None and existing.domain != yaml_domain:
                     errors.append(
                         {
@@ -55,7 +63,7 @@ class SyncFromGitHubUseCase:
                             "error": (
                                 f"domain mismatch: YAML declares"
                                 f" domain '{yaml_domain}'"
-                                f" but contract {contract_id}"
+                                f" but contract {parsed.id}"
                                 f" belongs to '{existing.domain}'"
                             ),
                         }
@@ -65,7 +73,7 @@ class SyncFromGitHubUseCase:
                 domain_id = await self._resolve_domain_id(yaml_domain)
 
                 was_created = await self.repository.upsert(
-                    contract_id=contract_id,
+                    contract_id=parsed.id,
                     title=parsed.title,
                     version=parsed.version,
                     owner=parsed.owner,
@@ -84,7 +92,9 @@ class SyncFromGitHubUseCase:
                 else:
                     updated += 1
             except Exception as exc:
-                logger.warning("Failed to sync %s: %s", path, exc)
-                errors.append({"path": path, "error": str(exc)})
+                message = _error_text(exc)
+                # %r escapes control characters, so a file cannot forge log lines.
+                logger.warning("Failed to sync %r: %r", path, message)
+                errors.append({"path": path, "error": message})
 
         return {"created": created, "updated": updated, "errors": errors}

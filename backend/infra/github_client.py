@@ -1,7 +1,8 @@
+import asyncio
 import base64
 import logging
 import re
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 _API = "https://api.github.com"
 
 PLATFORM_TOPIC = "data-mesh-platform"
+_BLOB_CONCURRENCY = 8
 
 
 class RepoNameUnavailable(RuntimeError):
@@ -37,6 +39,10 @@ class GitHubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
+    @property
+    def repo(self) -> str:
+        return self._repo
+
     def contract_path(self, domain: str, title: str) -> str:
         return f"contracts/{_slugify(domain)}/{_slugify(title)}.yaml"
 
@@ -62,7 +68,13 @@ class GitHubClient:
         expected_sha: str | None = None,
     ) -> None:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            sha = expected_sha or await self._get_sha(client, path)
+            # `is not None`: an empty expected_sha must not fall back to the
+            # lookup, which would turn the compare-and-swap into last-writer-wins.
+            sha = (
+                expected_sha
+                if expected_sha is not None
+                else await self._get_sha(client, path)
+            )
             payload: dict = {
                 "message": message,
                 "content": base64.b64encode(content.encode()).decode(),
@@ -89,54 +101,61 @@ class GitHubClient:
             )
             self._raise_for_status(r)
 
-    async def list_all_yaml_contents(self) -> list[tuple[str, str]]:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(
-                f"{_API}/repos/{self._repo}/git/trees/HEAD?recursive=1",
-                headers=self._headers,
-            )
-            if r.status_code != 200:
-                return []
-            tree = r.json().get("tree", [])
-            blobs = [
-                i
-                for i in tree
-                if i["path"].startswith("contracts/")
-                and i["path"].endswith(".yaml")
-                and i["type"] == "blob"
-            ]
-            results: list[tuple[str, str]] = []
-            for item in blobs:
-                blob_r = await client.get(item["url"], headers=self._headers)
-                if blob_r.status_code == 200:
-                    raw = blob_r.json().get("content", "")
-                    content = base64.b64decode(raw.replace("\n", "")).decode()
-                    results.append((item["path"], content))
-            return results
+    async def _fetch_blob(
+        self,
+        client: httpx.AsyncClient,
+        item: dict[str, Any],
+        limit: asyncio.Semaphore,
+    ) -> ContractFile:
+        path, sha = item["path"], item.get("sha")
+        if not sha:
+            raise RuntimeError(f"GitHub listed {path} without a sha")
+        async with limit:
+            r = await client.get(item["url"], headers=self._headers)
+        self._raise_for_status(r)
+        try:
+            raw = r.json().get("content", "")
+            content = base64.b64decode(raw.replace("\n", "")).decode("utf-8")
+        except ValueError as exc:  # bad JSON, bad base64, not UTF-8
+            raise RuntimeError(f"{path} is not a readable UTF-8 file: {exc}") from None
+        return ContractFile(path, content, sha)
 
     async def read_contract_files(self) -> list[ContractFile]:
-        """Like list_all_yaml_contents, but any failed response raises."""
+        """Every contract file with its sha. A failed or partial read raises."""
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(
                 f"{_API}/repos/{self._repo}/git/trees/HEAD?recursive=1",
                 headers=self._headers,
             )
             self._raise_for_status(r)
-            files: list[ContractFile] = []
-            for item in r.json().get("tree", []):
-                path = item["path"]
-                if (
-                    item["type"] != "blob"
-                    or not path.startswith("contracts/")
-                    or not path.endswith(".yaml")
-                ):
-                    continue
-                blob_r = await client.get(item["url"], headers=self._headers)
-                self._raise_for_status(blob_r)
-                raw = blob_r.json().get("content", "")
-                content = base64.b64decode(raw.replace("\n", "")).decode()
-                files.append(ContractFile(path, content, item["sha"]))
-            return files
+            body = r.json()
+            if body.get("truncated"):
+                raise RuntimeError(
+                    "GitHub truncated the repository tree; a partial listing"
+                    " would be taken for the whole repository"
+                )
+            items = [
+                item
+                for item in body.get("tree", [])
+                if item.get("type") == "blob"
+                and item["path"].startswith("contracts/")
+                and item["path"].endswith(".yaml")
+            ]
+            # Concurrent, bounded to stay clear of GitHub's secondary rate limits.
+            limit = asyncio.Semaphore(_BLOB_CONCURRENCY)
+            return list(
+                await asyncio.gather(
+                    *(self._fetch_blob(client, item, limit) for item in items)
+                )
+            )
+
+    async def list_all_yaml_contents(self) -> list[tuple[str, str]]:
+        """(path, content) of every contract file.
+
+        Raises when the read fails, so sync reports a dead token or a renamed
+        repository instead of syncing nothing.
+        """
+        return [(f.path, f.content) for f in await self.read_contract_files()]
 
     async def _get_owner_type(self, client: httpx.AsyncClient) -> str:
         if self._owner_type is not None:

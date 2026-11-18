@@ -64,11 +64,12 @@ def ON_SCHEMA(d):
 @pytest.mark.parametrize(("place", "extra", "description", "column", "expected"), [
     (ON_CUSTOMER, [], "Kept as written", "customer_id",
      "Kept as written " + LEGACY.format("customer_id")),
-    (ON_CUSTOMER, [], "Completeness of column customer_id must be >= 99.", "customer_id",
-     LEGACY.format("customer_id")),
+    # Plan 1 no longer generates a sentence for an empty description, so the
+    # file carries none and the text matches what the migration writes.
+    (ON_CUSTOMER, [], "", "customer_id", LEGACY.format("customer_id")),
     (ON_SCHEMA, [{"property": "dmpltColumn", "value": "ghost"}], "Kept as written", "",
      "Kept as written " + LEGACY.format("ghost")),
-], ids=["own-description", "generated-sentence", "unknown-column"])
+], ids=["own-description", "no-description", "unknown-column"])
 def test_plan1_text_rule_is_read_as_a_text_rule(place, extra, description, column, expected):
     doc = to_odcs(orders_contract())
     place(doc)["quality"] = [{"type": "text", "dimension": "completeness",

@@ -141,3 +141,28 @@ def test_old_rule_shape_is_rejected():
     with pytest.raises(ValidationError):
         ModelsSection(quality=[{"dimension": "completeness", "column": "", "operator": ">=",
                                 "threshold": "99%"}])
+
+
+def test_schema_literals_match_the_domain_values():
+    from typing import get_args
+
+    from backend.domain.contract_values import CONTRACT_STATUSES, FIELD_TYPES
+    from backend.domain.quality_rules import (
+        QUALITY_DIMENSIONS,
+        QUALITY_METRICS,
+        QUALITY_OPERATORS,
+        QUALITY_UNITS,
+    )
+    from backend.interface.schemas.data_contract import QualityRule, SchemaField
+
+    def literal(model, name):
+        args = get_args(model.model_fields[name].annotation)
+        # `Literal[...] | None` nests the Literal one level down.
+        return tuple(a for arg in args for a in (get_args(arg) or (arg,)) if a is not type(None))
+
+    assert literal(DataContractCreateModel, "status") == CONTRACT_STATUSES
+    assert literal(SchemaField, "type") == FIELD_TYPES
+    assert literal(QualityRule, "dimension") == QUALITY_DIMENSIONS
+    assert literal(QualityRule, "metric") == QUALITY_METRICS
+    assert literal(QualityRule, "operator") == QUALITY_OPERATORS
+    assert literal(QualityRule, "unit") == QUALITY_UNITS

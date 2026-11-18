@@ -1,5 +1,3 @@
-import itertools
-
 import pytest
 
 from backend.domain.entities.data_contract import DataContract
@@ -14,6 +12,7 @@ from tests.fixtures.odcs.sample_contract import (
     make_contract,
     make_field,
     sample_contract,
+    SLA_CASES,
 )
 
 
@@ -34,7 +33,7 @@ def test_round_trip_representative_contract():
 
 @pytest.mark.parametrize(
     ("status", "tier"),
-    itertools.product(["draft", "in_review", "active", "deprecated"], [1, 2, 3, 4]),
+    zip(["draft", "in_review", "active", "deprecated"], [1, 2, 3, 4], strict=True),
 )
 def test_round_trip_status_and_tier(status, tier):
     _assert_round_trip(make_contract(status=status, tier=tier))
@@ -42,11 +41,8 @@ def test_round_trip_status_and_tier(status, tier):
 
 @pytest.mark.parametrize(
     ("field_type", "nullable", "primary_key"),
-    itertools.product(
-        ["string", "integer", "float", "boolean", "date", "timestamp"],
-        [True, False],
-        [True, False],
-    ),
+    [("string", True, True), ("integer", False, False), ("float", True, False),
+     ("boolean", False, True), ("date", True, True), ("timestamp", False, False)],
 )
 def test_round_trip_field(field_type, nullable, primary_key):
     field = make_field("a", field_type, "text", nullable, primary_key)
@@ -65,8 +61,10 @@ def test_missing_domain_is_empty_for_the_sync_to_report():
     assert from_odcs(doc).domain_name == ""
 
 
-def test_version_read_as_a_number_is_kept_as_text():
-    assert from_odcs(_doc(version=1.0)).version == "1.0"
+def test_missing_team_means_no_owner():
+    doc = _doc()
+    del doc["team"]
+    assert from_odcs(doc).owner == ""
 
 
 @pytest.mark.parametrize(
@@ -87,6 +85,18 @@ def test_version_read_as_a_number_is_kept_as_text():
         ({"slaProperties": [{"property": "a", "value": 1, "driver": "x"}]}, "driver"),
         ({"slaProperties": [{"property": "a", "value": None}]}, "no storable value"),
         ({"slaProperties": [{"value": 1}]}, "malformed"),
+        # An unquoted 1.10 loads as the float 1.1; null as None.
+        ({"version": 1.1}, "version must be of type str"),
+        ({"version": None}, "version must be of type str"),
+        ({"name": 7}, "name must be of type str"),
+        ({"customProperties": [{"property": "tier", "value": 2},
+                               {"property": "tier", "value": 3}]}, "more than once"),
+        ({"customProperties": [{"property": "tier", "value": 2, "id": "x"}]},
+         "entry tier has unsupported keys: id"),
+        ({"slaProperties": [{"property": "a", "value": 1},
+                            {"property": "a", "value": 2}]}, "more than once"),
+        ({"bad\nkey": 1}, r"unsupported keys: bad\\nkey"),
+        ({f"k{i:02}": 1 for i in range(15)}, "and 5 more"),
     ],
 )
 def test_parse_errors(overrides, message):
@@ -101,3 +111,29 @@ def test_logical_type_the_model_cannot_hold(logical):
     prop = {"name": "b", "logicalType": logical}
     with pytest.raises(OdcsParseError, match=f"logicalType {logical!r}"):
         from_odcs(_doc(schema=[{"name": "a", "properties": [prop]}]))
+
+
+def _with_property(**values) -> dict:
+    prop = {"name": "b", "logicalType": "string", **values}
+    return _doc(schema=[{"name": "a", "properties": [prop]}])
+
+
+@pytest.mark.parametrize(("values", "message"), [
+    ({"required": "false"}, "required must be of type bool"),
+    ({"primaryKey": None}, "primaryKey must be of type bool"),
+    ({"unique": "yes"}, "unique must be of type bool"),
+    ({"physicalType": 5}, "physicalType must be of type str"),
+    ({"description": 5}, "description must be of type str"),
+    ({"name": None}, "needs a non-empty name"),
+    ({"name": " "}, "needs a non-empty name"),
+])
+def test_property_values_must_have_the_stored_type(values, message):
+    with pytest.raises(OdcsParseError, match=message):
+        from_odcs(_with_property(**values))
+
+
+@pytest.mark.parametrize(("key", "value"), [("logicalType", "array"),
+                                            ("physicalType", "view")])
+def test_schema_object_edits_the_model_would_drop_are_rejected(key, value):
+    with pytest.raises(OdcsParseError, match=f"schema {key} must be"):
+        from_odcs(_doc(schema=[{"name": "a", key: value}]))

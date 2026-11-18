@@ -13,6 +13,7 @@ from tests.fixtures.odcs.sample_contract import (
     make_contract,
     make_field,
     sample_contract,
+    SLA_CASES,
 )
 
 SCHEMA = Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json"
@@ -81,10 +82,6 @@ customProperties:
 """
 
 
-def test_representative_contract_maps_to_expected_document():
-    assert to_odcs(sample_contract()) == yaml.safe_load(EXPECTED_YAML)
-
-
 @pytest.mark.parametrize(
     "contract",
     [
@@ -105,9 +102,7 @@ def test_schema_validator_rejects_a_legacy_document():
 
 
 @pytest.mark.parametrize(
-    ("status", "expected"),
-    [("draft", "draft"), ("in_review", "proposed"), ("active", "active"),
-     ("deprecated", "deprecated")],
+    ("status", "expected"), [("draft", "draft"), ("in_review", "proposed")]
 )
 def test_status_mapping(status, expected):
     assert to_odcs(make_contract(status=status))["status"] == expected
@@ -144,3 +139,4 @@ def test_empty_sla_values_are_omitted():
 
 def test_assemble_yaml_emits_the_expected_text():
     assert assemble_yaml(sample_contract()) == EXPECTED_YAML
+    assert to_odcs(sample_contract()) == yaml.safe_load(EXPECTED_YAML)

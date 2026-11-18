@@ -164,7 +164,7 @@ def to_odcs(contract: DataContract) -> dict[str, Any]:
     return doc
 
 
-_DB_STATUSES = frozenset({"draft", "in_review", "active", "deprecated"})
+_DB_STATUSES = frozenset({"draft", "in_review", "active", "deprecated", "retired"})
 _DOCUMENT_KEYS = frozenset(
     {
         "apiVersion",

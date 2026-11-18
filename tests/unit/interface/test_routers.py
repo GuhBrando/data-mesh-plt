@@ -42,6 +42,7 @@ from backend.domain.contract_evolution import (
     RetiredContractError,
 )
 from backend.main import app
+from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
 from tests.quality_rule_builders import library_rule
 
 NOW = datetime.now(tz=timezone.utc)
@@ -678,3 +679,14 @@ def test_create_passes_the_user_to_the_snapshot(admin_client):
     resp, mock_uc = _post_contract(admin_client, {"fields": []}, {"properties": []})
     assert resp.status_code == 201
     assert mock_uc.execute.call_args.kwargs["created_by"] == USER_ID
+
+
+def test_sync_passes_the_admin_id(admin_client, monkeypatch):
+    execute = AsyncMock(return_value={"created": 0, "updated": 0, "errors": []})
+    monkeypatch.setattr(SyncFromGitHubUseCase, "execute", execute)
+    app.dependency_overrides[get_github_client] = lambda: AsyncMock()
+    app.dependency_overrides[get_data_contract_repository] = lambda: AsyncMock()
+    app.dependency_overrides[get_domain_repository] = lambda: AsyncMock()
+    resp = admin_client.post("/api/v1/data-contracts/sync")
+    assert resp.status_code == 200
+    assert execute.call_args.kwargs["created_by"] == USER_ID

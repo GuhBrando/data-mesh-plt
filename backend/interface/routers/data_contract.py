@@ -320,7 +320,7 @@ async def sync_data_contracts_from_github(
     github: GitHubClient | None = Depends(get_github_client),
     repo=Depends(get_data_contract_repository),
     domain_repo=Depends(get_domain_repository),
-    _: User = Depends(_admin_only),
+    current_user: User = Depends(_admin_only),
 ):
     if github is None:
         raise HTTPException(
@@ -330,7 +330,7 @@ async def sync_data_contracts_from_github(
     use_case = SyncFromGitHubUseCase(
         repository=repo, github=github, domain_repo=domain_repo
     )
-    return await use_case.execute()
+    return await use_case.execute(created_by=current_user.id)
 
 
 @router.post(

@@ -4,10 +4,21 @@ from typing import Any
 
 import yaml
 
+from backend.domain.contract_evolution import (
+    RETIRED_STATUS,
+    RetiredContractError,
+    is_unchanged,
+)
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.domain_repository import IDomainRepository
 from backend.infra.github_client import GitHubClient
 from backend.use_cases.data_contract.contract_document import parse_contract_document
+from backend.use_cases.data_contract.odcs import to_odcs
+from backend.use_cases.data_contract.versioning import (
+    enforce_evolution,
+    record_version,
+    validate_new_version,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,59 +43,71 @@ class SyncFromGitHubUseCase:
         )
         return created.id
 
-    async def execute(self) -> dict[str, Any]:
+    async def _sync_file(
+        self, content: str, created_by: uuid.UUID | None
+    ) -> bool | None:
+        """Sync one file. True when created, False when updated, None when skipped.
+
+        Raises to report the file; the transaction rolls this file back only.
+        """
+        data = yaml.safe_load(content)
+        parsed = parse_contract_document(data)
+        if not parsed.domain_name:
+            raise ValueError("YAML has no domain name; skipped")
+
+        async with self.repository.transaction():
+            current = await self.repository.get_by_id_for_update(parsed.id)
+            if current is not None and current.domain != parsed.domain_name:
+                raise ValueError(
+                    f"domain mismatch: YAML declares domain '{parsed.domain_name}'"
+                    f" but contract {parsed.id} belongs to '{current.domain}'"
+                )
+            if current is not None and current.status == RETIRED_STATUS:
+                # A retired contract's file stays in the repository; every sync
+                # re-reads it, so an identical file is silently skipped.
+                if is_unchanged(to_odcs(current), data):
+                    return None
+                raise RetiredContractError(
+                    f"Contract {parsed.id} is retired; its file changed and was ignored"
+                )
+            validate_new_version(parsed.version, current)
+            # Inside the transaction, so a rejected file leaves no new domain.
+            domain_id = await self._resolve_domain_id(parsed.domain_name)
+            was_created = await self.repository.upsert(
+                contract_id=parsed.id,
+                title=parsed.title,
+                version=parsed.version,
+                owner=parsed.owner,
+                domain_id=domain_id,
+                tier=parsed.tier,
+                status=parsed.status,
+                models=parsed.models,
+                servicelevels=parsed.servicelevels,
+                description=parsed.description,
+                team_members=parsed.team_members,
+                support=parsed.support,
+                servers=parsed.servers,
+            )
+            stored = await self.repository.get_by_id(parsed.id)
+            if current is not None:
+                enforce_evolution(current, stored)
+            await record_version(self.repository, current, stored, created_by)
+            return was_created
+
+    async def execute(self, created_by: uuid.UUID | None = None) -> dict[str, Any]:
         yamls = await self.github.list_all_yaml_contents()
         created, updated, errors = 0, 0, []
 
         for path, content in yamls:
             try:
-                parsed = parse_contract_document(yaml.safe_load(content))
-                contract_id = parsed.id
-                yaml_domain = parsed.domain_name
-                if not yaml_domain:
-                    errors.append(
-                        {"path": path, "error": "YAML has no domain name; skipped"}
-                    )
-                    continue
-
-                existing = await self.repository.get_by_id(contract_id)
-                if existing is not None and existing.domain != yaml_domain:
-                    errors.append(
-                        {
-                            "path": path,
-                            "error": (
-                                f"domain mismatch: YAML declares"
-                                f" domain '{yaml_domain}'"
-                                f" but contract {contract_id}"
-                                f" belongs to '{existing.domain}'"
-                            ),
-                        }
-                    )
-                    continue
-
-                domain_id = await self._resolve_domain_id(yaml_domain)
-
-                was_created = await self.repository.upsert(
-                    contract_id=contract_id,
-                    title=parsed.title,
-                    version=parsed.version,
-                    owner=parsed.owner,
-                    domain_id=domain_id,
-                    tier=parsed.tier,
-                    status=parsed.status,
-                    models=parsed.models,
-                    servicelevels=parsed.servicelevels,
-                    description=parsed.description,
-                    team_members=parsed.team_members,
-                    support=parsed.support,
-                    servers=parsed.servers,
-                )
-                if was_created:
-                    created += 1
-                else:
-                    updated += 1
+                was_created = await self._sync_file(content, created_by)
             except Exception as exc:
                 logger.warning("Failed to sync %s: %s", path, exc)
                 errors.append({"path": path, "error": str(exc)})
+                continue
+            if was_created is True:
+                created += 1
+            elif was_created is False:
+                updated += 1
 
         return {"created": created, "updated": updated, "errors": errors}

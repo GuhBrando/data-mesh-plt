@@ -34,7 +34,7 @@ def test_round_trip_representative_contract():
 
 @pytest.mark.parametrize(
     ("status", "tier"),
-    itertools.product(["draft", "in_review", "active", "deprecated"], [1, 2, 3, 4]),
+    itertools.product(["draft", "in_review", "active", "deprecated", "retired"], [1, 2, 3, 4]),
 )
 def test_round_trip_status_and_tier(status, tier):
     _assert_round_trip(make_contract(status=status, tier=tier))
@@ -75,7 +75,7 @@ def test_version_read_as_a_number_is_kept_as_text():
         ({"apiVersion": "v2.2.2"}, "apiVersion 'v2.2.2'"),
         ({"kind": "DataProduct"}, "kind 'DataProduct'"),
         ({"schema": [{"name": "a"}, {"name": "b"}]}, "2 schema objects"),
-        ({"status": "retired"}, "status 'retired'"),
+        ({"status": "bogus"}, "status 'bogus'"),
         ({"id": "not-a-uuid"}, "not a UUID"),
         ({"team": [{"username": "a"}]}, "deprecated array"),
         ({"tags": []}, "unsupported keys: tags"),

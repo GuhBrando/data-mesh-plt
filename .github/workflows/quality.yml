@@ -145,10 +145,13 @@ jobs:
           enable-cache: true
 
       - name: Restore mutmut cache
+        id: mutmut-cache
         uses: actions/cache/restore@v4
         with:
           path: .mutmut-cache
-          key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # One entry per version of the mutated code; an older entry still
+          # gives a partial head start.
+          key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}
           restore-keys: mutmut-
 
       - run: uv sync --extra dev
@@ -160,11 +163,13 @@ jobs:
         run: uv run mutmut run --use-coverage || true
 
       - name: Save mutmut cache
-        if: always()
+        # always(): a run cut by the timeout still keeps its progress. Saved once
+        # per key, so entries do not pile up run after run.
+        if: always() && steps.mutmut-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .mutmut-cache
-          key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}
 
       - name: Check mutation score threshold
         run: |

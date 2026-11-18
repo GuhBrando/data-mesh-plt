@@ -16,6 +16,7 @@ import Spinner from '../../components/ui/Spinner'
 import DataContractForm from './DataContractForm'
 import { safeUrl, serverLocation } from './contractMetadata'
 import { describeCheck } from '../../lib/qualityRules'
+import { formatServiceLevel } from '../../lib/serviceLevels'
 import type { DataContractInput, DataContract as DataContractType } from '../../types'
 
 const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
@@ -77,16 +78,24 @@ function SchemaFieldsCard({ fields }: { fields: DataContractType['models']['fiel
   )
 }
 
-function ServiceLevelsCard({ sla }: { sla: DataContractType['servicelevels'] }) {
+function ServiceLevelsCard({ sla }: { sla?: DataContractType['servicelevels'] }) {
+  // An unmigrated row holds no properties key; it shows as empty instead of crashing.
+  const properties = Array.isArray(sla?.properties) ? sla.properties : []
   return (
     <Card>
       <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Service Levels</h2>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-        <div><dt className="text-gray-400 dark:text-slate-500">Freshness</dt><dd className="text-gray-800 dark:text-slate-200">{sla.freshness || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Availability</dt><dd className="text-gray-800 dark:text-slate-200">{sla.availability || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Retention</dt><dd className="text-gray-800 dark:text-slate-200">{sla.retention || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Latency</dt><dd className="text-gray-800 dark:text-slate-200">{sla.latency || '—'}</dd></div>
-      </dl>
+      {properties.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500 italic">No service levels</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          {properties.map((p) => (
+            <div key={p.property}>
+              <dt className="text-gray-400 dark:text-slate-500">{p.property}</dt>
+              <dd className="text-gray-800 dark:text-slate-200">{formatServiceLevel(p)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </Card>
   )
 }

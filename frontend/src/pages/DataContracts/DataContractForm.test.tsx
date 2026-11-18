@@ -13,7 +13,7 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1
 const contract: DataContract = {
   id: 'c1', title: 'Orders', version: '1.0.0', owner: 'alice', domain: 'commerce', domain_id: 'd1',
   tier: 4, status: 'draft', models: { fields: [], quality: [] },
-  servicelevels: { freshness: '', availability: '', retention: '', latency: '' },
+  servicelevels: { properties: [] },
   description: { purpose: 'p', usage: '', limitations: '' },
   team_members: [{ username: 'alice', name: '', role: 'owner' }],
   support: [{ channel: '#c', url: '', tool: 'slack', scope: '' }],
@@ -71,5 +71,51 @@ describe('DataContractForm quality rules', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     expect(await screen.findByText("Rule 1: column 'gone' is not a schema field")).toBeInTheDocument()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('DataContractForm service levels', () => {
+  const email = {
+    name: 'email', type: 'string' as const, description: '', nullable: true, primary_key: false,
+    classification: '' as const, unique: false, physical_type: '',
+  }
+  const tier2 = {
+    ...contract,
+    tier: 2 as const,
+    models: { fields: [email], quality: [] },
+    servicelevels: { properties: [
+      { property: 'freshness', value: 24, unit: 'h' },
+      { property: 'availability', value: 99.9, unit: '%' },
+      { property: 'frequency', value: 1, unit: 'd' },
+    ] },
+  }
+
+  it('submits structured service levels and keeps hidden ones', async () => {
+    const onSubmit = renderForm(tier2)
+    fireEvent.change(screen.getByLabelText('Freshness *'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0].servicelevels.properties).toEqual([
+      { property: 'freshness', value: 12, unit: 'h' },
+      { property: 'availability', value: 99.9, unit: '%' },
+      { property: 'frequency', value: 1, unit: 'd' },
+    ])
+  })
+
+  it('rejects a number without a unit', async () => {
+    const onSubmit = renderForm(tier2)
+    fireEvent.change(screen.getByLabelText('Freshness unit'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(await screen.findByText('Pick a unit')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('clears the shown levels at tier 4 but keeps hidden ones', async () => {
+    const onSubmit = renderForm({ ...tier2, tier: 4 })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0].servicelevels.properties).toEqual([
+      { property: 'frequency', value: 1, unit: 'd' },
+    ])
   })
 })

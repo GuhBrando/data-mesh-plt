@@ -1,3 +1,13 @@
+export interface ServiceLevelProperty {
+  property: string
+  value: number | string
+  unit: string | null
+}
+// ODCS slaProperties. Numbers carry a unit; text carries none.
+export interface ServiceLevels {
+  properties: ServiceLevelProperty[]
+}
+
 export type QualityDimension =
   | 'accuracy'
   | 'completeness'
@@ -69,12 +79,7 @@ export interface DataContract {
   tier: 1 | 2 | 3 | 4
   status: 'draft' | 'in_review' | 'active' | 'deprecated'
   models: { fields: SchemaField[]; quality?: QualityRule[] }
-  servicelevels: {
-    freshness: string
-    availability: string
-    retention: string
-    latency: string
-  }
+  servicelevels: ServiceLevels
   description: ContractDescription
   team_members: TeamMember[]
   support: SupportChannel[]
@@ -91,12 +96,7 @@ export interface DataContractInput {
   tier: number
   status: string
   models: { fields: SchemaField[]; quality?: QualityRule[] }
-  servicelevels: {
-    freshness: string
-    availability: string
-    retention: string
-    latency: string
-  }
+  servicelevels: ServiceLevels
   description: ContractDescription
   team_members: TeamMember[]
   support: SupportChannel[]

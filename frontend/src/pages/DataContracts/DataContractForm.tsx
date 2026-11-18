@@ -23,6 +23,8 @@ import SupportChannels from './SupportChannels'
 import ContractServers from './ContractServers'
 import { metadataError } from './contractMetadata'
 import { qualityProblem } from '../../lib/qualityRules'
+import { SLA_KEYS, UNITS, readSlaInputs, slaInputProblem, toServiceLevels } from '../../lib/serviceLevels'
+import type { SlaInput, SlaKey } from '../../lib/serviceLevels'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
 import { getDomainAccess } from '../../lib/domains'
@@ -36,24 +38,29 @@ import type {
   TeamMember,
 } from '../../types'
 
-const tierRequiresAllSLAs = (t: number) => t === 1
-const tierRequiresFreshnessAvailability = (t: number) => t === 2
 const tierShowsSLAs = (t: number) => t <= 3
 const tierShowsQuality = (t: number) => t <= 3
 const tierRequiresQuality = (t: number) => t === 1
 const tierRequiresFields = (t: number) => t <= 2
 
-const DURATION_UNITS = new Set(['s', 'm', 'h', 'd', 'w', 'y'])
-function isValidDuration(v: string): boolean {
-  if (!v) return true
-  const unit = v.at(-1) ?? ''
-  if (!DURATION_UNITS.has(unit)) return false
-  return Number.isFinite(Number(v.slice(0, -1)))
+const SLA_LABELS: Record<SlaKey, string> = {
+  freshness: 'Freshness',
+  availability: 'Availability',
+  retention: 'Retention',
+  latency: 'Latency',
 }
-function isValidAvailability(v: string): boolean {
-  if (!v) return true
-  if (!v.endsWith('%')) return false
-  return Number.isFinite(Number(v.slice(0, -1)))
+const SLA_PLACEHOLDERS: Record<SlaKey, string> = {
+  freshness: 'e.g. 24',
+  availability: 'e.g. 99.9',
+  retention: 'e.g. 365',
+  latency: 'e.g. 1',
+}
+const unitKey = (key: SlaKey) => `${key}Unit` as const
+
+function requiredSlaKeys(tier: number): SlaKey[] {
+  if (tier === 1) return [...SLA_KEYS]
+  if (tier === 2) return ['freshness', 'availability']
+  return []
 }
 
 const schema = z
@@ -64,24 +71,26 @@ const schema = z
     domain_id: z.string().min(1, 'Domain is required'),
     tier: z.number().int().min(1).max(4),
     status: z.enum(['draft', 'in_review', 'active', 'deprecated']),
-    freshness: z.string().refine(isValidDuration, { message: 'Use a duration like 24h, 7d, 30m' }),
-    availability: z.string().refine(isValidAvailability, { message: 'Use a percentage like 99.9%' }),
-    retention: z.string().refine(isValidDuration, { message: 'Use a duration like 365d, 1y' }),
-    latency: z.string().refine(isValidDuration, { message: 'Use a duration like 1h, 30m' }),
+    freshness: z.string(),
+    freshnessUnit: z.string(),
+    availability: z.string(),
+    availabilityUnit: z.string(),
+    retention: z.string(),
+    retentionUnit: z.string(),
+    latency: z.string(),
+    latencyUnit: z.string(),
     purpose: z.string(),
     usage: z.string(),
     limitations: z.string(),
   })
   .superRefine((data, ctx) => {
-    if (data.tier === 1) {
-      if (!data.freshness) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['freshness'] })
-      if (!data.availability) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['availability'] })
-      if (!data.retention) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['retention'] })
-      if (!data.latency) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['latency'] })
-    }
-    if (data.tier === 2) {
-      if (!data.freshness) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 2', path: ['freshness'] })
-      if (!data.availability) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 2', path: ['availability'] })
+    const required = requiredSlaKeys(data.tier)
+    for (const key of SLA_KEYS) {
+      const input = { value: data[key], unit: data[unitKey(key)] }
+      const message = !input.value.trim() && required.includes(key)
+        ? `Required for Tier ${data.tier}`
+        : slaInputProblem(input)
+      if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [key] })
     }
   })
 
@@ -95,20 +104,40 @@ interface DataContractFormProps {
   showWizard?: boolean
 }
 
+function slaDefaults(v?: DataContract) {
+  const sla = readSlaInputs(v?.servicelevels)
+  return {
+    freshness: sla.freshness.value, freshnessUnit: sla.freshness.unit,
+    availability: sla.availability.value, availabilityUnit: sla.availability.unit,
+    retention: sla.retention.value, retentionUnit: sla.retention.unit,
+    latency: sla.latency.value, latencyUnit: sla.latency.unit,
+  }
+}
+
+function slaInputsFrom(values: FormValues): Record<SlaKey, SlaInput> {
+  const inputs = {} as Record<SlaKey, SlaInput>
+  for (const key of SLA_KEYS) {
+    // Tier 4 hides service levels: the four shown ones are cleared.
+    inputs[key] = tierShowsSLAs(values.tier)
+      ? { value: values[key], unit: values[unitKey(key)] }
+      : { value: '', unit: '' }
+  }
+  return inputs
+}
+
 function normalizeDefaults(v?: DataContract): FormValues {
   if (!v) {
     return {
       title: '', version: '1.0.0', owner: '', domain_id: '',
       tier: 4, status: 'draft',
-      freshness: '', availability: '', retention: '', latency: '',
+      ...slaDefaults(),
       purpose: '', usage: '', limitations: '',
     }
   }
   return {
     title: v.title, version: v.version, owner: v.owner, domain_id: v.domain_id,
     tier: v.tier, status: v.status,
-    freshness: v.servicelevels.freshness, availability: v.servicelevels.availability,
-    retention: v.servicelevels.retention, latency: v.servicelevels.latency,
+    ...slaDefaults(v),
     purpose: v.description?.purpose ?? '',
     usage: v.description?.usage ?? '',
     limitations: v.description?.limitations ?? '',
@@ -182,46 +211,73 @@ function ServiceLevelsSection({
   tier,
   register,
   errors,
+  currentUnits,
 }: {
   tier: number
   register: UseFormRegister<FormValues>
   errors: FieldErrors<FormValues>
+  currentUnits: Record<SlaKey, string>
 }) {
-  const needsAll = tierRequiresAllSLAs(tier)
-  const needsFreshAvail = needsAll || tierRequiresFreshnessAvailability(tier)
+  const required = requiredSlaKeys(tier)
   return (
     <div className="space-y-3">
       <SectionHeader
         label="Service Levels"
-        required={needsFreshAvail}
-        optional={!needsFreshAvail}
+        required={required.length > 0}
+        optional={required.length === 0}
       />
+      <p className="text-xs text-gray-400 dark:text-slate-500">
+        A number with a unit, or text with no unit.
+      </p>
       <div className="grid grid-cols-2 gap-3">
-        <Input
-          label={`Freshness${needsFreshAvail ? ' *' : ''}`}
-          placeholder="e.g. 24h"
-          error={errors.freshness?.message}
-          {...register('freshness')}
-        />
-        <Input
-          label={`Availability${needsFreshAvail ? ' *' : ''}`}
-          placeholder="e.g. 99.9%"
-          error={errors.availability?.message}
-          {...register('availability')}
-        />
-        <Input
-          label={`Retention${needsAll ? ' *' : ''}`}
-          placeholder="e.g. 365d"
-          error={errors.retention?.message}
-          {...register('retention')}
-        />
-        <Input
-          label={`Latency${needsAll ? ' *' : ''}`}
-          placeholder="e.g. 1h"
-          error={errors.latency?.message}
-          {...register('latency')}
-        />
+        {SLA_KEYS.map((key) => (
+          <SlaInputRow
+            key={key}
+            slaKey={key}
+            required={required.includes(key)}
+            register={register}
+            error={errors[key]?.message}
+            unit={currentUnits[key]}
+          />
+        ))}
       </div>
+    </div>
+  )
+}
+
+function SlaInputRow({
+  slaKey,
+  required,
+  register,
+  error,
+  unit,
+}: {
+  slaKey: SlaKey
+  required: boolean
+  register: UseFormRegister<FormValues>
+  error?: string
+  unit: string
+}) {
+  // A stored unit outside the list (written by another tool) stays selectable.
+  const units = unit && !UNITS[slaKey].includes(unit) ? [...UNITS[slaKey], unit] : UNITS[slaKey]
+  return (
+    <div className="flex items-start gap-2">
+      <Input
+        label={`${SLA_LABELS[slaKey]}${required ? ' *' : ''}`}
+        placeholder={SLA_PLACEHOLDERS[slaKey]}
+        error={error}
+        {...register(slaKey)}
+      />
+      <select
+        aria-label={`${SLA_LABELS[slaKey]} unit`}
+        className="mt-6 text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+        {...register(unitKey(slaKey))}
+      >
+        <option value="">—</option>
+        {units.map((u) => (
+          <option key={u} value={u}>{u}</option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -363,6 +419,9 @@ export default function DataContractForm({
   })
 
   const tier = watch('tier')
+  const currentUnits = Object.fromEntries(
+    SLA_KEYS.map((key) => [key, watch(unitKey(key))]),
+  ) as Record<SlaKey, string>
 
   const handleFormSubmit = (values: FormValues) => {
     if (!validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)) return
@@ -379,14 +438,8 @@ export default function DataContractForm({
         fields,
         quality: tierShowsQuality(values.tier) ? quality : [],
       },
-      servicelevels: tierShowsSLAs(values.tier)
-        ? {
-            freshness: values.freshness,
-            availability: values.availability,
-            retention: values.retention,
-            latency: values.latency,
-          }
-        : { freshness: '', availability: '', retention: '', latency: '' },
+      // Properties the form does not show, such as frequency, are kept.
+      servicelevels: toServiceLevels(slaInputsFrom(values), defaultValues?.servicelevels),
       description: {
         purpose: values.purpose,
         usage: values.usage,
@@ -476,7 +529,12 @@ export default function DataContractForm({
           </div>
 
           {tierShowsSLAs(tier) && (
-            <ServiceLevelsSection tier={tier} register={register} errors={errors} />
+            <ServiceLevelsSection
+              tier={tier}
+              register={register}
+              errors={errors}
+              currentUnits={currentUnits}
+            />
           )}
 
           {tierShowsQuality(tier) && (

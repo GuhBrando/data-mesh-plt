@@ -6,7 +6,7 @@ import type { DataContract } from '../types'
 const base = {
   id: 'c1', title: 'Orders', version: '1.0.0', owner: 'alice', domain: 'commerce', domain_id: 'd1',
   tier: 2, status: 'draft', models: { fields: [], quality: [] },
-  servicelevels: { freshness: '', availability: '', retention: '', latency: '' },
+  servicelevels: { properties: [] },
   description: { purpose: '', usage: '', limitations: '' }, team_members: [], support: [], servers: [],
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
 }
@@ -38,4 +38,25 @@ describe('normalizeContract', () => {
 
   it('wraps an unreadable rule in a text rule', () =>
     expect(withRules(['free text']).models.quality![0].description).toBe('[legacy rule: "free text"]'))
+
+  it('converts old service levels to properties', () => {
+    const contract = normalizeContract({
+      ...base,
+      servicelevels: { freshness: '24h', availability: '99.9%', retention: 'one year', latency: '30m' },
+    } as unknown as DataContract)
+    expect(contract.servicelevels).toEqual({ properties: [
+      { property: 'freshness', value: 24, unit: 'h' },
+      { property: 'availability', value: 99.9, unit: '%' },
+      { property: 'retention', value: 'one year', unit: null },
+      { property: 'latency', value: 30, unit: 'min' },
+    ] })
+  })
+
+  it('drops blank old service levels', () => {
+    const contract = normalizeContract({
+      ...base,
+      servicelevels: { freshness: '', availability: '  ', retention: '', latency: '' },
+    } as unknown as DataContract)
+    expect(contract.servicelevels).toEqual({ properties: [] })
+  })
 })

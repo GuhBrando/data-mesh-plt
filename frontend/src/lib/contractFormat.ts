@@ -1,4 +1,4 @@
-import type { DataContract, QualityDimension, QualityRule } from '../types'
+import type { DataContract, QualityDimension, QualityRule, ServiceLevelProperty, ServiceLevels } from '../types'
 
 // Temporary read shim: a row the data migration has not converted yet still
 // holds pre-ODCS rules. Showing them as text rules keeps every old value visible
@@ -43,7 +43,35 @@ function normalizeRule(raw: unknown): QualityRule {
   return textRule(LEGACY_DIMENSIONS[old.dimension ?? ''] ?? null, description)
 }
 
+const SLA_UNITS: Partial<Record<string, string>> = { percent: '%', m: 'min' }
+
+// '24h' -> 24 h, '99.9 %' -> 99.9 %, '30m' -> 30 min; anything else stays text.
+function splitServiceLevel(text: string): Omit<ServiceLevelProperty, 'property'> | null {
+  const unitStart = text.search(/[a-zA-Z%]/)
+  const numberPart = (unitStart === -1 ? text : text.slice(0, unitStart)).trim()
+  const unitPart = unitStart === -1 ? '' : text.slice(unitStart)
+  if (!/^\d+$|^\d+\.\d+$/.test(numberPart)) return null
+  if (unitPart && !/^[a-zA-Z%]+$/.test(unitPart)) return null
+  return { value: Number(numberPart), unit: unitPart ? (SLA_UNITS[unitPart] ?? unitPart) : null }
+}
+
+function normalizeServiceLevels(raw: unknown): ServiceLevels {
+  if (typeof raw !== 'object' || raw === null) return { properties: [] }
+  if ('properties' in raw) return raw as ServiceLevels
+  const properties: ServiceLevelProperty[] = []
+  for (const [property, stored] of Object.entries(raw as Record<string, unknown>)) {
+    const text = typeof stored === 'string' ? stored.trim() : ''
+    if (!text) continue
+    properties.push({ property, ...(splitServiceLevel(text) ?? { value: text, unit: null }) })
+  }
+  return { properties }
+}
+
 export function normalizeContract(raw: DataContract): DataContract {
   const quality = ((raw.models.quality ?? []) as unknown[]).map(normalizeRule)
-  return { ...raw, models: { ...raw.models, quality } }
+  return {
+    ...raw,
+    models: { ...raw.models, quality },
+    servicelevels: normalizeServiceLevels(raw.servicelevels),
+  }
 }

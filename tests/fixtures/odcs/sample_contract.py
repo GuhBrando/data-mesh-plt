@@ -12,6 +12,7 @@ from backend.domain.contract_metadata import empty_server
 from backend.domain.entities.data_contract import DataContract
 from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
+from tests.quality_rule_builders import library_rule, text_rule
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 SAMPLE_ID = uuid.UUID("3f2a1c9e-8b7d-4e6f-a5c4-1d2e3f4a5b6c")
@@ -23,12 +24,6 @@ def make_field(name="id", type="string", description="", nullable=True, primary_
             "nullable": nullable, "primary_key": primary_key,
             "classification": classification, "unique": unique,
             "physical_type": physical_type}
-
-
-def make_rule(dimension="completeness", column="", operator=">=", threshold="99",
-              description=""):
-    return {"dimension": dimension, "column": column, "operator": operator,
-            "threshold": threshold, "description": description}
 
 
 def make_contract(**overrides) -> DataContract:
@@ -52,11 +47,15 @@ def sample_contract() -> DataContract:
                 make_field("amount", "float", "Order total in BRL"),
                 make_field("created_at", "timestamp", nullable=False),
             ],
+            # In the order from_odcs returns them: property rules, then the table's.
             "quality": [
-                make_rule("freshness", "", "<=", "24h"),
-                make_rule("completeness", "order_id", ">=", "99.5",
-                          "Every order has an id"),
-                make_rule("validity", "currency", "=", "BRL", "Only BRL orders"),
+                library_rule(column="order_id", operator="mustBeLessOrEqualTo",
+                             value=0.5, unit="percent",
+                             description="Every order has an id"),
+                text_rule(dimension="timeliness",
+                          description="Orders arrive within 24 hours."),
+                library_rule(metric="rowCount", column="",
+                             operator="mustBeGreaterThan", value=0),
             ],
         },
         servicelevels={"properties": [

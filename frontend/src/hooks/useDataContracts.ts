@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del, getText } from '../lib/api'
-import { normalizeContract } from '../lib/contractFormat'
 import type { DataContract, DataContractInput } from '../types'
 
 const KEYS = {
@@ -20,8 +19,6 @@ export function useDataContract(id: string) {
   return useQuery<DataContract>({
     queryKey: KEYS.one(id),
     queryFn: () => get<DataContract>(`/data-contracts/${id}`),
-    // Temporary: shows rows the data migration has not converted yet.
-    select: normalizeContract,
     enabled: !!id,
   })
 }

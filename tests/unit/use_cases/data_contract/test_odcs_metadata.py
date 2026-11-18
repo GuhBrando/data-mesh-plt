@@ -26,7 +26,7 @@ SECRET = "not-a-real-secret"
 def _contract(**kw) -> DataContract:
     defaults = dict(id=uuid.uuid4(), title="Orders", version="1.0.0", owner="commerce-data",
                     domain="commerce", tier=2, status="active", models={"fields": []},
-                    servicelevels={"freshness": "", "availability": "", "retention": "", "latency": ""},
+                    servicelevels={"properties": []},
                     created_at=NOW, updated_at=NOW)
     return DataContract(**{**defaults, **kw})
 

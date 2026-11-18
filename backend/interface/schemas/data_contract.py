@@ -83,25 +83,13 @@ class QualityRule(BaseModel):
     _no_bool_value = field_validator("value", mode="before")(_reject_bool)
 
 
-class LegacyQualityRule(BaseModel):
-    """The pre-ODCS rule shape. Accepted until the data migration ships."""
-
-    dimension: Literal[
-        "completeness", "freshness", "uniqueness", "validity", "integrity"
-    ]
-    column: str = ""
-    operator: Literal[">=", "<=", "="]
-    threshold: str
-    description: str = ""
-
-
 class ModelsSection(BaseModel):
     fields: list[SchemaField] = []
-    quality: list[QualityRule | LegacyQualityRule] = []
+    quality: list[QualityRule] = []
 
     @model_validator(mode="after")
     def _rules_can_run(self) -> "ModelsSection":
-        rules = [r.model_dump() for r in self.quality if isinstance(r, QualityRule)]
+        rules = [r.model_dump() for r in self.quality]
         fields = [f.model_dump() for f in self.fields]
         problems = find_quality_rule_problems(rules, fields)
         if problems:
@@ -129,17 +117,6 @@ class ServiceLevels(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     properties: list[ServiceLevelProperty] = []
-
-
-class LegacyServiceLevels(BaseModel):
-    """The pre-ODCS service levels. Accepted until the data migration ships."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    freshness: str = ""
-    availability: str = ""
-    retention: str = ""
-    latency: str = ""
 
 
 class ContractDescription(BaseModel):
@@ -194,9 +171,7 @@ class DataContractCreateModel(BaseModel):
     tier: int = Field(..., ge=1, le=4)
     status: Literal["draft", "in_review", "active", "deprecated"] = "draft"
     models: ModelsSection = Field(default_factory=ModelsSection)
-    servicelevels: ServiceLevels | LegacyServiceLevels = Field(
-        default_factory=ServiceLevels
-    )
+    servicelevels: ServiceLevels = Field(default_factory=ServiceLevels)
     description: ContractDescription = Field(default_factory=ContractDescription)
     team_members: list[TeamMember] = Field(default_factory=list)
     support: list[SupportChannel] = Field(default_factory=list)
@@ -211,7 +186,7 @@ class DataContractUpdateModel(BaseModel):
     tier: int | None = Field(default=None, ge=1, le=4)
     status: Literal["draft", "in_review", "active", "deprecated"] | None = None
     models: ModelsSection | None = None
-    servicelevels: ServiceLevels | LegacyServiceLevels | None = None
+    servicelevels: ServiceLevels | None = None
     description: ContractDescription | None = None
     team_members: list[TeamMember] | None = None
     support: list[SupportChannel] | None = None

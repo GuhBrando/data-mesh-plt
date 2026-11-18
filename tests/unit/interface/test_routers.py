@@ -55,10 +55,10 @@ def _contract(**kw) -> DataContract:
         tier=2,
         status="draft",
         models={"fields": []},
-        servicelevels={
-            "freshness": "24h", "availability": "99%",
-            "retention": "365d", "latency": "1h",
-        },
+        servicelevels={"properties": [
+            {"property": "freshness", "value": 24, "unit": "h"},
+            {"property": "availability", "value": 99, "unit": "%"},
+        ]},
         domain_id=DOMAIN_ID,
         created_at=NOW,
         updated_at=NOW,
@@ -171,8 +171,10 @@ def test_create_data_contract(admin_client):
         "tier": 2,
         "status": "draft",
         "models": {"fields": []},
-        "servicelevels": {"freshness": "24h", "availability": "99%",
-                          "retention": "365d", "latency": "1h"},
+        "servicelevels": {"properties": [
+            {"property": "freshness", "value": 24, "unit": "h"},
+            {"property": "availability", "value": 99, "unit": "%"},
+        ]},
     })
     assert resp.status_code == 201
     assert resp.json()["title"] == "Sales"
@@ -388,16 +390,16 @@ def test_get_user_domains_empty(admin_client):
 
 def test_yaml_with_quality_data(admin_client):
     contract = _contract()
-    contract.models = {"fields": [], "quality": [
-        {"dimension": "completeness", "column": "id", "operator": ">=",
-         "threshold": "0.99", "description": "Must be complete"}
-    ]}
+    contract.models = {
+        "fields": [{"name": "id", "type": "string"}],
+        "quality": [library_rule(column="id", description="Must be complete")],
+    }
     mock_uc = AsyncMock()
     mock_uc.execute.return_value = contract
     app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_uc
     resp = admin_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
     assert resp.status_code == 200
-    assert "quality" in resp.text
+    assert "metric: nullValues" in resp.text
 
 
 # ── sync endpoint ─────────────────────────────────────────────────────────────
@@ -590,4 +592,14 @@ def test_create_rejects_two_rules_on_same_metric_and_column(admin_client):
     )
     assert resp.status_code == 422
     assert "cannot run two" in resp.text
+    mock_uc.execute.assert_not_called()
+
+
+def test_create_rejects_old_service_level_shape(admin_client):
+    resp, mock_uc = _post_contract(
+        admin_client,
+        {"fields": []},
+        {"freshness": "24h", "availability": "99%", "retention": "365d", "latency": "1h"},
+    )
+    assert resp.status_code == 422
     mock_uc.execute.assert_not_called()

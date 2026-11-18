@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from backend.interface.schemas.data_contract import (
     DataContractCreateModel,
-    LegacyServiceLevels,
     ModelsSection,
     ServiceLevels,
 )
@@ -130,9 +129,15 @@ def test_blank_service_level_value_is_rejected():
         ServiceLevels.model_validate({"properties": [{"property": "freshness", "value": " "}]})
 
 
-def test_old_shapes_are_still_accepted_until_contraction():  # deleted in Task 9
-    m = DataContractCreateModel(
-        title="x", owner="o", domain_id=DOMAIN_ID, tier=2,
-        servicelevels={"freshness": "24h", "availability": "", "retention": "", "latency": ""},
-    )
-    assert isinstance(m.servicelevels, LegacyServiceLevels)
+def test_old_service_level_shape_is_rejected():
+    with pytest.raises(ValidationError):
+        DataContractCreateModel(
+            title="x", owner="o", domain_id=DOMAIN_ID, tier=2,
+            servicelevels={"freshness": "24h", "availability": "", "retention": "", "latency": ""},
+        )
+
+
+def test_old_rule_shape_is_rejected():
+    with pytest.raises(ValidationError):
+        ModelsSection(quality=[{"dimension": "completeness", "column": "", "operator": ">=",
+                                "threshold": "99%"}])

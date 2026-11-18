@@ -5,7 +5,7 @@ import jsonschema
 import pytest
 
 from backend.use_cases.data_contract.odcs import OdcsParseError, from_odcs, to_odcs
-from tests.quality_rule_builders import orders_contract
+from tests.quality_rule_builders import orders_contract, text_rule
 
 VALIDATOR = jsonschema.Draft201909Validator(
     json.loads(
@@ -44,9 +44,47 @@ def test_from_odcs_refuses_what_the_platform_cannot_store(mutate, fragment):
     with pytest.raises(OdcsParseError, match=fragment):
         from_odcs(doc)
 
-def test_old_shape_still_emits_until_contraction():  # deleted in Task 9
-    old = orders_contract()
-    old.models = {**old.models, "quality": [{"dimension": "completeness", "column": "customer_id",
-                  "operator": ">=", "threshold": "99%", "description": ""}]}
-    old.servicelevels = {"freshness": "24h", "availability": "", "retention": "", "latency": ""}
-    assert list(VALIDATOR.iter_errors(to_odcs(old))) == []
+
+PLAN1_CUSTOM = [{"property": "dmpltDimension", "value": "completeness"},
+                {"property": "dmpltOperator", "value": ">="},
+                {"property": "dmpltThreshold", "value": "99"},
+                {"property": "dmpltPosition", "value": 0}]
+
+LEGACY = "[legacy rule: dimension=completeness column={} operator=>= threshold=99]"
+
+
+def ON_CUSTOMER(d):  # customer_id
+    return d["schema"][0]["properties"][1]
+
+
+def ON_SCHEMA(d):
+    return d["schema"][0]
+
+
+@pytest.mark.parametrize(("place", "extra", "description", "column", "expected"), [
+    (ON_CUSTOMER, [], "Kept as written", "customer_id",
+     "Kept as written " + LEGACY.format("customer_id")),
+    (ON_CUSTOMER, [], "Completeness of column customer_id must be >= 99.", "customer_id",
+     LEGACY.format("customer_id")),
+    (ON_SCHEMA, [{"property": "dmpltColumn", "value": "ghost"}], "Kept as written", "",
+     "Kept as written " + LEGACY.format("ghost")),
+], ids=["own-description", "generated-sentence", "unknown-column"])
+def test_plan1_text_rule_is_read_as_a_text_rule(place, extra, description, column, expected):
+    doc = to_odcs(orders_contract())
+    place(doc)["quality"] = [{"type": "text", "dimension": "completeness",
+                              "description": description,
+                              "customProperties": [*PLAN1_CUSTOM, *extra]}]
+    rules = [r for r in from_odcs(doc).models["quality"] if "[legacy rule:" in r["description"]]
+    assert rules == [text_rule(dimension="completeness", column=column, description=expected)]
+
+
+@pytest.mark.parametrize("item", [
+    {"type": "text", "description": "x", "customProperties": [{"property": "cost", "value": 1}]},
+    {"type": "library", "metric": "rowCount", "mustBeGreaterThan": 0,
+     "customProperties": PLAN1_CUSTOM},
+])
+def test_other_custom_properties_are_refused(item):
+    doc = to_odcs(orders_contract())
+    doc["schema"][0]["quality"].append(item)
+    with pytest.raises(OdcsParseError, match="customProperties"):
+        from_odcs(doc)

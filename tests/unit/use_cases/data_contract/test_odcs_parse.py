@@ -13,7 +13,6 @@ from tests.fixtures.odcs.sample_contract import (
     emit,
     make_contract,
     make_field,
-    make_rule,
     sample_contract,
 )
 
@@ -52,34 +51,6 @@ def test_round_trip_status_and_tier(status, tier):
 def test_round_trip_field(field_type, nullable, primary_key):
     field = make_field("a", field_type, "text", nullable, primary_key)
     _assert_round_trip(make_contract(models={"fields": [field], "quality": []}))
-
-
-@pytest.mark.parametrize(
-    ("dimension", "column", "operator", "description"),
-    itertools.product(
-        ["completeness", "freshness", "uniqueness", "validity", "integrity"],
-        ["", "a", "ghost"],
-        [">=", "<=", "="],
-        ["", "free text"],
-    ),
-)
-def test_round_trip_rule(dimension, column, operator, description):
-    rule = make_rule(dimension, column, operator, "0.99", description)
-    models = {"fields": [make_field("a")], "quality": [rule]}
-    _assert_round_trip(make_contract(models=models))
-
-
-@pytest.mark.parametrize("order", itertools.permutations(["z", "a", "", "ghost"]))
-def test_round_trip_keeps_rule_order(order):
-    models = {"fields": [make_field("z"), make_field("a")],
-              "quality": [make_rule(column=column) for column in order]}
-    _assert_round_trip(make_contract(models=models))
-
-
-def test_description_differing_from_the_sentence_is_kept():
-    doc = to_odcs(make_contract(models={"fields": [], "quality": [make_rule()]}))
-    doc["schema"][0]["quality"][0]["description"] = "Edited by hand"
-    assert from_odcs(doc).models["quality"][0]["description"] == "Edited by hand"
 
 
 def test_missing_tier_means_4():

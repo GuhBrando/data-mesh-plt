@@ -53,40 +53,11 @@ class ParsedContract:
 
 _ODCS_STATUS = {"in_review": "proposed"}
 _ODCS_LOGICAL_TYPE = {"float": "number"}
-_ODCS_DIMENSION = {
-    "completeness": "completeness",
-    "uniqueness": "uniqueness",
-    "freshness": "timeliness",
-    "validity": "conformity",
-    "integrity": "consistency",
-}
-
-_SLA_VALUE = re.compile(r"(\d+(?:\.\d+)?)\s*([a-zA-Z%]+)?")
-_ODCS_UNIT = {"m": "min"}
-_STORED_UNIT = {"min": "m", "percent": "%"}
 
 
 def _rule_sentence(dimension: Any, column: str, operator: Any, threshold: Any) -> str:
     target = f"column {column}" if column else "the table"
     return f"{str(dimension).capitalize()} of {target} must be {operator} {threshold}."
-
-
-def _sla_text(value: Any, unit: str | None) -> str:
-    return f"{value}{_STORED_UNIT.get(unit, unit) or ''}"
-
-
-def _to_sla_entry(key: str, raw: str) -> dict[str, Any]:
-    match = _SLA_VALUE.fullmatch(raw)
-    if match:
-        number, unit = match.groups()
-        value = float(number) if "." in number else int(number)
-        odcs_unit = _ODCS_UNIT.get(unit, unit)
-        if _sla_text(value, odcs_unit) == raw:
-            entry: dict[str, Any] = {"property": key, "value": value}
-            if odcs_unit:
-                entry["unit"] = odcs_unit
-            return entry
-    return {"property": key, "value": raw}
 
 
 def _schema_name(title: str) -> str:
@@ -133,31 +104,6 @@ def _to_team(contract: DataContract) -> dict[str, Any]:
     return team
 
 
-def _to_rule(rule: dict[str, Any], position: int, known_column: bool) -> dict[str, Any]:
-    dimension = rule.get("dimension")
-    column = rule.get("column") or ""
-    operator = rule.get("operator")
-    threshold = rule.get("threshold")
-
-    custom = [
-        {"property": "dmpltDimension", "value": dimension},
-        {"property": "dmpltOperator", "value": operator},
-        {"property": "dmpltThreshold", "value": threshold},
-    ]
-    if column and not known_column:
-        custom.append({"property": "dmpltColumn", "value": column})
-    custom.append({"property": "dmpltPosition", "value": position})
-
-    out: dict[str, Any] = {"type": "text"}
-    if dimension in _ODCS_DIMENSION:
-        out["dimension"] = _ODCS_DIMENSION[dimension]
-    out["description"] = rule.get("description") or _rule_sentence(
-        dimension, column, operator, threshold
-    )
-    out["customProperties"] = custom
-    return out
-
-
 def _to_schema(contract: DataContract) -> list[dict[str, Any]]:
     models = contract.models or {}
     fields = models.get("fields") or []
@@ -168,12 +114,9 @@ def _to_schema(contract: DataContract) -> list[dict[str, Any]]:
     properties = [_to_property(field) for field in fields]
     by_name = {prop["name"]: prop for prop in properties if prop["name"]}
     table_rules = []
-    for position, rule in enumerate(rules):
+    for rule in rules:
         owner = by_name.get(rule.get("column") or "")
-        if "type" in rule:
-            emitted = rule_to_odcs(rule)
-        else:
-            emitted = _to_rule(rule, position, owner is not None)
+        emitted = rule_to_odcs(rule)
         if owner is None:
             table_rules.append(emitted)
         else:
@@ -214,11 +157,7 @@ def to_odcs(contract: DataContract) -> dict[str, Any]:
     schema = _to_schema(contract)
     if schema:
         doc["schema"] = schema
-    levels = contract.servicelevels or {}
-    if "properties" in levels:
-        sla = sla_to_odcs(levels)
-    else:
-        sla = [_to_sla_entry(key, str(raw)) for key, raw in levels.items() if raw]
+    sla = sla_to_odcs(contract.servicelevels or {})
     if sla:
         doc["slaProperties"] = sla
     doc["customProperties"] = [{"property": "tier", "value": contract.tier}]
@@ -279,6 +218,8 @@ _RULE_KEYS = frozenset(
         *QUALITY_OPERATORS,
     }
 )
+# The custom properties a text rule written by Plan 1 carries. They are read
+# once, into the description, and never written again.
 _RULE_CUSTOM_KEYS = frozenset(
     {
         "dmpltDimension",
@@ -287,12 +228,6 @@ _RULE_CUSTOM_KEYS = frozenset(
         "dmpltColumn",
         "dmpltPosition",
     }
-)
-_RULE_REQUIRED_CUSTOM_KEYS = (
-    "dmpltDimension",
-    "dmpltOperator",
-    "dmpltThreshold",
-    "dmpltPosition",
 )
 _SLA_ENTRY_KEYS = frozenset({"property", "value", "unit"})
 
@@ -406,13 +341,38 @@ def _parse_servicelevels(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_plan1_rule(item: Any) -> bool:
-    """A text rule written before library rules, carrying dmplt* properties."""
-    custom = item.get("customProperties") if isinstance(item, Mapping) else None
-    return isinstance(custom, list) and any(
-        isinstance(entry, Mapping)
-        and str(entry.get("property", "")).startswith("dmplt")
+    """A text rule written before library rules: only dmplt* custom properties."""
+    if not isinstance(item, Mapping) or item.get("type") != "text":
+        return False
+    custom = item.get("customProperties")
+    if not isinstance(custom, list) or not custom:
+        return False
+    return all(
+        isinstance(entry, Mapping) and entry.get("property") in _RULE_CUSTOM_KEYS
         for entry in custom
     )
+
+
+def _legacy_description(item: Mapping[str, Any], prop_name: str | None) -> str:
+    """The text the data migration writes for the same stored rule."""
+    custom = _custom_values(item.get("customProperties"))
+
+    def text(key: str) -> str:
+        value = custom.get(key)
+        return "" if value is None else str(value)
+
+    column = prop_name if prop_name is not None else text("dmpltColumn")
+    dimension, operator = text("dmpltDimension"), text("dmpltOperator")
+    threshold = text("dmpltThreshold")
+    description = str(item.get("description") or "").strip(" ")
+    # Plan 1 wrote this sentence for a rule stored with an empty description.
+    if description == _rule_sentence(dimension, column, operator, threshold):
+        description = ""
+    suffix = (
+        f"[legacy rule: dimension={dimension} column={column}"
+        f" operator={operator} threshold={threshold}]"
+    )
+    return " ".join(part for part in (description, suffix) if part)
 
 
 def _parse_library_or_text_rule(item: Any, column: str) -> dict[str, Any]:
@@ -424,35 +384,13 @@ def _parse_library_or_text_rule(item: Any, column: str) -> dict[str, Any]:
         raise OdcsParseError(f"{where}: {exc}") from exc
 
 
-def _parse_rule(rule: dict[str, Any], prop_name: str | None) -> tuple[Any, dict]:
-    custom = _custom_values(rule.get("customProperties"))
-    column = prop_name if prop_name is not None else custom.get("dmpltColumn", "")
-    where = f"quality rule on {column}" if column else "quality rule on the schema"
-
-    _reject_unknown(rule, _RULE_KEYS, where)
-    _reject_unknown(custom, _RULE_CUSTOM_KEYS, where)
-    if rule.get("type") != "text":
-        raise OdcsParseError(
-            f"{where} has type {rule.get('type')!r}; only text rules can be stored"
-        )
-    missing = [key for key in _RULE_REQUIRED_CUSTOM_KEYS if key not in custom]
-    if missing:
-        raise OdcsParseError(f"{where} is missing {', '.join(missing)}")
-
-    dimension = custom["dmpltDimension"]
-    operator = custom["dmpltOperator"]
-    threshold = custom["dmpltThreshold"]
-    description = rule.get("description", "")
-    if description == _rule_sentence(dimension, column, operator, threshold):
-        description = ""
-    stored = {
-        "dimension": dimension,
-        "column": column,
-        "operator": operator,
-        "threshold": threshold,
-        "description": description,
-    }
-    return custom["dmpltPosition"], stored
+def _parse_quality_item(item: Any, prop_name: str | None) -> dict[str, Any]:
+    if not _is_plan1_rule(item):
+        return _parse_library_or_text_rule(item, prop_name or "")
+    plain = {key: value for key, value in item.items() if key != "customProperties"}
+    rule = _parse_library_or_text_rule(plain, prop_name or "")
+    rule["description"] = _legacy_description(item, prop_name)
+    return rule
 
 
 def _parse_property(prop: dict[str, Any]) -> dict[str, Any]:
@@ -487,15 +425,10 @@ def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
             f"contract has {len(schemas)} schema objects; at most one is supported"
         )
     fields: list[dict[str, Any]] = []
-    positioned: list[tuple[Any, dict]] = []
     rules: list[dict[str, Any]] = []
 
     def collect(items: Any, prop_name: str | None) -> None:
-        for item in items or []:
-            if _is_plan1_rule(item):
-                positioned.append(_parse_rule(item, prop_name))
-            else:
-                rules.append(_parse_library_or_text_rule(item, prop_name or ""))
+        rules.extend(_parse_quality_item(item, prop_name) for item in items or [])
 
     for schema in schemas:
         _reject_unknown(schema, _SCHEMA_KEYS, "schema")
@@ -504,11 +437,10 @@ def _parse_models(doc: dict[str, Any]) -> dict[str, Any]:
             fields.append(stored)
             collect(prop.get("quality"), stored["name"])
         collect(schema.get("quality"), None)
-    positioned.sort(key=lambda pair: pair[0])
     problems = find_quality_rule_problems(rules, fields)
     if problems:
         raise OdcsParseError("; ".join(problems))
-    return {"fields": fields, "quality": [rule for _, rule in positioned] + rules}
+    return {"fields": fields, "quality": rules}
 
 
 def _parse(doc: dict[str, Any]) -> ParsedContract:

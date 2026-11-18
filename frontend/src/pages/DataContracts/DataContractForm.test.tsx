@@ -119,3 +119,14 @@ describe('DataContractForm service levels', () => {
     ])
   })
 })
+
+describe('DataContractForm status', () => {
+  it('offers Retired only when editing', () => {
+    const props = { onSubmit: vi.fn(), onCancel: vi.fn(), isSubmitting: false }
+    const { unmount } = render(<DataContractForm defaultValues={contract} {...props} />)
+    expect(screen.getByRole('option', { name: 'Retired' })).toBeInTheDocument()
+    unmount()
+    render(<DataContractForm {...props} />)
+    expect(screen.queryByRole('option', { name: 'Retired' })).not.toBeInTheDocument()
+  })
+})

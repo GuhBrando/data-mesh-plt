@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Edit2, Trash2, Calendar, Clock, FileCode } from 'lucide-react'
 import {
+  useContractVersionYaml,
+  useContractVersions,
   useDataContract,
   useUpdateDataContract,
   useDeleteDataContract,
@@ -257,12 +259,119 @@ function ServersCard({ servers = [] }: { servers?: DataContractType['servers'] }
   )
 }
 
+function VersionHistoryCard({
+  contractId,
+  currentVersion,
+  onView,
+}: {
+  contractId: string
+  currentVersion: string
+  onView: (version: string) => void
+}) {
+  const { data: versions = [], isLoading, isError } = useContractVersions(contractId)
+  let body
+  if (isLoading) {
+    body = <div className="flex justify-center py-4"><Spinner /></div>
+  } else if (isError) {
+    body = <p className="text-sm text-red-500">Could not load version history.</p>
+  } else if (versions.length === 0) {
+    body = (
+      <p className="text-sm text-gray-400 dark:text-slate-500 italic">
+        No history yet. It starts at the next version change.
+      </p>
+    )
+  } else {
+    body = (
+      <ul className="divide-y divide-gray-100 dark:divide-slate-800 text-sm">
+        {versions.map((v) => (
+          <li key={v.version} data-testid="version-row" className="flex items-center gap-3 py-2">
+            <span className="font-mono text-gray-800 dark:text-slate-200">{v.version}</span>
+            {v.version === currentVersion && <Badge variant="green">current</Badge>}
+            <span className="flex-1 text-gray-500 dark:text-slate-400">{formatDateTime(v.created_at)}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={`View YAML for version ${v.version}`}
+              onClick={() => onView(v.version)}
+            >
+              <FileCode size={14} />
+              YAML
+            </Button>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Version History</h2>
+      {body}
+    </Card>
+  )
+}
+
+function VersionYamlModal({
+  contractId,
+  version,
+  onClose,
+}: {
+  contractId: string
+  version: string | null
+  onClose: () => void
+}) {
+  const { data, isFetching } = useContractVersionYaml(contractId, version)
+  return (
+    <Modal open={version !== null} onClose={onClose} title={`Version ${version}`} size="lg">
+      {isFetching ? (
+        <div className="flex justify-center py-8"><Spinner /></div>
+      ) : (
+        <pre className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 text-xs font-mono text-gray-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap">
+          {data}
+        </pre>
+      )}
+    </Modal>
+  )
+}
+
+function DetailActions({
+  retired,
+  onYaml,
+  onEdit,
+  onDelete,
+}: {
+  retired: boolean
+  onYaml: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <>
+      <Button variant="secondary" size="sm" onClick={onYaml}>
+        <FileCode size={14} />
+        View YAML
+      </Button>
+      {/* Retired is terminal: the API refuses every edit. */}
+      {!retired && (
+        <Button variant="secondary" size="sm" onClick={onEdit}>
+          <Edit2 size={14} />
+          Edit
+        </Button>
+      )}
+      <Button variant="danger" size="sm" onClick={onDelete}>
+        <Trash2 size={14} />
+        Delete
+      </Button>
+    </>
+  )
+}
+
 export default function DataContractDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [yamlOpen, setYamlOpen] = useState(false)
+  const [openVersion, setOpenVersion] = useState<string | null>(null)
 
   const { data: contract, isLoading, error } = useDataContract(id ?? '')
   const updateMutation = useUpdateDataContract()
@@ -310,20 +419,12 @@ export default function DataContractDetail() {
         subtitle={`v${contract.version} · ${contract.domain}`}
         backTo="/data-contracts"
         actions={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setYamlOpen(true)}>
-              <FileCode size={14} />
-              View YAML
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
-              <Edit2 size={14} />
-              Edit
-            </Button>
-            <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(true)}>
-              <Trash2 size={14} />
-              Delete
-            </Button>
-          </>
+          <DetailActions
+            retired={contract.status === 'retired'}
+            onYaml={() => setYamlOpen(true)}
+            onEdit={() => setEditOpen(true)}
+            onDelete={() => setDeleteConfirm(true)}
+          />
         }
       />
 
@@ -382,6 +483,18 @@ export default function DataContractDetail() {
       <SupportCard channels={contract.support} />
 
       <ServersCard servers={contract.servers} />
+
+      <VersionHistoryCard
+        contractId={contract.id}
+        currentVersion={contract.version}
+        onView={setOpenVersion}
+      />
+
+      <VersionYamlModal
+        contractId={contract.id}
+        version={openVersion}
+        onClose={() => setOpenVersion(null)}
+      />
 
       <Modal open={yamlOpen} onClose={() => setYamlOpen(false)} title="ODCS YAML" size="lg">
         {yamlLoading ? (

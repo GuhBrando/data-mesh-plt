@@ -69,6 +69,13 @@ export interface ContractServer {
   path: string
 }
 
+// One immutable history row; its ODCS YAML is fetched on demand.
+export interface ContractVersion {
+  version: string
+  created_by: string | null
+  created_at: string
+}
+
 export interface DataContract {
   id: string
   title: string
@@ -77,7 +84,7 @@ export interface DataContract {
   domain: string        // read-only joined name from API — do not send to server
   domain_id: string
   tier: 1 | 2 | 3 | 4
-  status: 'draft' | 'in_review' | 'active' | 'deprecated'
+  status: 'draft' | 'in_review' | 'active' | 'deprecated' | 'retired'
   models: { fields: SchemaField[]; quality?: QualityRule[] }
   servicelevels: ServiceLevels
   description: ContractDescription

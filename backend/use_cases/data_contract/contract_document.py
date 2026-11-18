@@ -33,7 +33,7 @@ def load_contract_yaml(content: str) -> Any:
     return yaml.load(content, Loader=_NoAliasLoader)  # nosec B506 - SafeLoader subclass
 
 
-def _is_legacy(doc: dict[str, Any]) -> bool:
+def is_legacy_document(doc: dict[str, Any]) -> bool:
     # The old sync read any mapping through `info`, marker or not.
     return "dataContractSpecification" in doc or (
         "info" in doc and "apiVersion" not in doc
@@ -43,6 +43,6 @@ def _is_legacy(doc: dict[str, Any]) -> bool:
 def parse_contract_document(doc: dict[str, Any]) -> ParsedContract:
     if not isinstance(doc, dict):
         raise ContractParseError("contract file is not a YAML mapping")
-    if _is_legacy(doc):
+    if is_legacy_document(doc):
         return from_legacy_dcs(doc)
     return from_odcs(doc)

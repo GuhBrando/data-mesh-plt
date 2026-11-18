@@ -2,6 +2,7 @@ import logging
 import uuid
 from typing import List
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
@@ -293,7 +294,14 @@ async def sync_data_contracts_from_github(
     use_case = SyncFromGitHubUseCase(
         repository=repo, github=github, domain_repo=domain_repo
     )
-    return await use_case.execute()
+    try:
+        return await use_case.execute()
+    except (RuntimeError, httpx.HTTPError) as exc:
+        # A dead token or a renamed repository must not look like an empty sync.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not read the contracts repository: {exc}",
+        ) from exc
 
 
 @router.post(

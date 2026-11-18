@@ -489,3 +489,14 @@ def test_get_data_contract_yaml_allowed_for_stakeholder_consumer(consumer_client
     resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
     assert resp.status_code == 200
     assert "Orders" in resp.text
+
+
+def test_sync_read_failure_returns_502(admin_client):
+    github = AsyncMock()
+    github.list_all_yaml_contents.side_effect = RuntimeError("GitHub API 301: Moved")
+    app.dependency_overrides[get_github_client] = lambda: github
+    app.dependency_overrides[get_data_contract_repository] = lambda: AsyncMock()
+    app.dependency_overrides[get_domain_repository] = lambda: AsyncMock()
+    resp = admin_client.post("/api/v1/data-contracts/sync")
+    assert resp.status_code == 502
+    assert "301" in resp.json()["detail"]

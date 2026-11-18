@@ -1,0 +1,9 @@
+"""Values a stored data contract can hold. Pure, no I/O.
+
+The ODCS mapper reads these; the API schemas spell them out as Literals, and a
+test keeps the two in step, so adding a value cannot reach only one of them.
+"""
+
+# retired is terminal: reachable by an update only, never at creation.
+CONTRACT_STATUSES = ("draft", "in_review", "active", "deprecated", "retired")
+FIELD_TYPES = ("string", "integer", "float", "boolean", "date", "timestamp")

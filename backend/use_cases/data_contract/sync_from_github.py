@@ -2,8 +2,6 @@ import logging
 import uuid
 from typing import Any
 
-import yaml
-
 from backend.domain.contract_evolution import (
     RETIRED_STATUS,
     RetiredContractError,
@@ -12,7 +10,10 @@ from backend.domain.contract_evolution import (
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.domain_repository import IDomainRepository
 from backend.infra.github_client import GitHubClient
-from backend.use_cases.data_contract.contract_document import parse_contract_document
+from backend.use_cases.data_contract.contract_document import (
+    load_contract_yaml,
+    parse_contract_document,
+)
 from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.versioning import (
     enforce_evolution,
@@ -21,6 +22,14 @@ from backend.use_cases.data_contract.versioning import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Errors quote values from the file; keep the response and the log bounded.
+_MAX_ERROR_CHARS = 500
+
+
+def _error_text(exc: Exception) -> str:
+    text = str(exc)
+    return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS] + "…"
 
 
 class SyncFromGitHubUseCase:
@@ -50,7 +59,7 @@ class SyncFromGitHubUseCase:
 
         Raises to report the file; the transaction rolls this file back only.
         """
-        data = yaml.safe_load(content)
+        data = load_contract_yaml(content)
         parsed = parse_contract_document(data)
         if not parsed.domain_name:
             raise ValueError("YAML has no domain name; skipped")
@@ -102,8 +111,10 @@ class SyncFromGitHubUseCase:
             try:
                 was_created = await self._sync_file(content, created_by)
             except Exception as exc:
-                logger.warning("Failed to sync %s: %s", path, exc)
-                errors.append({"path": path, "error": str(exc)})
+                message = _error_text(exc)
+                # %r escapes control characters, so a file cannot forge log lines.
+                logger.warning("Failed to sync %r: %r", path, message)
+                errors.append({"path": path, "error": message})
                 continue
             if was_created is True:
                 created += 1

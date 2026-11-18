@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -12,6 +12,14 @@ NOW = datetime.now(tz=timezone.utc)
 
 
 DOMAIN_ID = uuid.uuid4()
+
+
+def _repo() -> AsyncMock:
+    """A repository whose transaction works in `async with`, holding a draft."""
+    repo = AsyncMock()
+    repo.transaction = MagicMock()
+    repo.get_by_id_for_update.return_value = make_contract()
+    return repo
 
 
 def make_contract(**kwargs) -> DataContract:
@@ -34,7 +42,7 @@ def make_contract(**kwargs) -> DataContract:
 
 @pytest.mark.asyncio
 async def test_create_calls_repository():
-    repo = AsyncMock()
+    repo = _repo()
     repo.create.return_value = make_contract(title="Orders")
     use_case = CreateDataContractUseCase(repo)
 
@@ -51,7 +59,7 @@ async def test_create_calls_repository():
 
 @pytest.mark.asyncio
 async def test_create_raises_on_empty_title():
-    repo = AsyncMock()
+    repo = _repo()
     use_case = CreateDataContractUseCase(repo)
 
     with pytest.raises(ValueError, match="title"):
@@ -65,7 +73,7 @@ async def test_create_raises_on_empty_title():
 
 @pytest.mark.asyncio
 async def test_update_calls_repository():
-    repo = AsyncMock()
+    repo = _repo()
     cid = uuid.uuid4()
     repo.update.return_value = make_contract(title="Updated")
     use_case = UpdateDataContractUseCase(repo)
@@ -84,7 +92,7 @@ async def test_update_calls_repository():
 
 @pytest.mark.asyncio
 async def test_update_raises_on_empty_title():
-    repo = AsyncMock()
+    repo = _repo()
     use_case = UpdateDataContractUseCase(repo)
     with pytest.raises(ValueError, match="title"):
         await use_case.execute(
@@ -98,7 +106,7 @@ async def test_update_raises_on_empty_title():
 
 @pytest.mark.asyncio
 async def test_create_passes_title_to_repo():
-    repo = AsyncMock()
+    repo = _repo()
     repo.create.return_value = make_contract(title="Inventory")
     await CreateDataContractUseCase(repo).execute(
         title="Inventory", version="1.0.0", owner="alice", domain_id=DOMAIN_ID,
@@ -111,7 +119,7 @@ async def test_create_passes_title_to_repo():
 
 @pytest.mark.asyncio
 async def test_update_passes_title_to_repo():
-    repo = AsyncMock()
+    repo = _repo()
     repo.update.return_value = make_contract(title="NewName")
     await UpdateDataContractUseCase(repo).execute(
         contract_id=uuid.uuid4(),
@@ -136,7 +144,7 @@ METADATA = dict(
     (UpdateDataContractUseCase, "update", {"contract_id": uuid.uuid4()}),
 ])
 async def test_use_case_passes_metadata_to_repo(use_case_cls, method, extra):
-    repo = AsyncMock()
+    repo = _repo()
     getattr(repo, method).return_value = make_contract()
     await use_case_cls(repo).execute(**extra, title="T", version="1.0.0", owner="o", domain_id=DOMAIN_ID,
                                      tier=3, status="draft", models={"fields": []}, servicelevels={}, **METADATA)

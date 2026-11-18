@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from backend.domain.contract_evolution import ContractEvolutionError
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.entities.user import User
@@ -156,6 +157,7 @@ async def create_data_contract(
             team_members=_rows(body.team_members),
             support=_rows(body.support),
             servers=_rows(body.servers),
+            created_by=current_user.id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -254,7 +256,11 @@ async def update_data_contract(
             servers=(
                 _rows(body.servers) if body.servers is not None else existing.servers
             ),
+            created_by=current_user.id,
         )
+    except ContractEvolutionError as e:
+        # A rejected change never reaches GitHub: the push below is skipped.
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not contract:

@@ -4,7 +4,7 @@ Covers data_contract and users router endpoints plus main.py custom_openapi.
 """
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +36,11 @@ from backend.interface.dependencies import (
     get_user_repository,
 )
 from backend.interface.security import get_current_user
+from backend.domain.contract_evolution import (
+    ContractEvolutionError,
+    ContractVersionConflictError,
+    RetiredContractError,
+)
 from backend.main import app
 from tests.quality_rule_builders import library_rule
 
@@ -603,3 +608,73 @@ def test_create_rejects_old_service_level_shape(admin_client):
     )
     assert resp.status_code == 422
     mock_uc.execute.assert_not_called()
+
+
+VIOLATION = (
+    "Contract changes require a MAJOR version bump (current 1.0.0, requested 1.0.1):"
+    " property 'amount' removed"
+)
+
+
+def _put_contract(admin_client, body, *, side_effect=None):
+    mock_get, mock_update, github = AsyncMock(), AsyncMock(), AsyncMock()
+    github.contract_path = MagicMock(return_value="contracts/commerce/orders.yaml")
+    mock_get.execute.return_value = _contract()
+    mock_update.execute.return_value = _contract()
+    if side_effect is not None:
+        mock_update.execute.side_effect = side_effect
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
+    app.dependency_overrides[get_update_data_contract_use_case] = lambda: mock_update
+    app.dependency_overrides[get_github_client] = lambda: github
+    resp = admin_client.put(f"/api/v1/data-contracts/{CONTRACT_ID}", json=body)
+    return resp, mock_update, github
+
+
+@pytest.mark.parametrize("error", [
+    ContractEvolutionError(VIOLATION),
+    ContractVersionConflictError("Version 1.1.0 already exists for this contract"),
+    RetiredContractError("retired"),
+], ids=["policy", "conflict", "retired"])
+def test_update_policy_rejection_returns_409_and_skips_github(admin_client, error):
+    resp, _, github = _put_contract(admin_client, {"version": "1.0.1"}, side_effect=error)
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == str(error)
+    github.push.assert_not_called()
+
+
+def test_update_invalid_version_returns_400(admin_client):
+    error = ValueError("Version '1.1' must match MAJOR.MINOR.PATCH")
+    resp, _, _ = _put_contract(admin_client, {"version": "1.1"}, side_effect=error)
+    assert resp.status_code == 400
+
+
+def test_status_only_put_merges_the_stored_fields(admin_client):
+    resp, mock_update, _ = _put_contract(admin_client, {"status": "active"})
+    assert resp.status_code == 200
+    kwargs = mock_update.execute.call_args.kwargs
+    assert kwargs["status"] == "active"
+    assert kwargs["version"] == "1.0.0"
+    assert kwargs["models"] == _contract().models
+    assert kwargs["created_by"] == USER_ID
+
+
+def test_update_accepts_retired_status(admin_client):
+    resp, _, _ = _put_contract(admin_client, {"status": "retired"})
+    assert resp.status_code == 200
+
+
+def test_create_rejects_retired_status(admin_client):
+    mock_uc = AsyncMock()
+    app.dependency_overrides[get_create_data_contract_use_case] = lambda: mock_uc
+    resp = admin_client.post("/api/v1/data-contracts", json={
+        "title": "Sales", "owner": "bob", "domain_id": str(DOMAIN_ID), "tier": 2,
+        "status": "retired",
+    })
+    assert resp.status_code == 422
+    mock_uc.execute.assert_not_called()
+
+
+def test_create_passes_the_user_to_the_snapshot(admin_client):
+    resp, mock_uc = _post_contract(admin_client, {"fields": []}, {"properties": []})
+    assert resp.status_code == 201
+    assert mock_uc.execute.call_args.kwargs["created_by"] == USER_ID

@@ -3,6 +3,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DataContractDetail from './DataContractDetail'
 import { emptyServer } from './contractMetadata'
+import { emptyRule, withType } from '../../lib/qualityRules'
 import {
   useDataContract, useDataContractYaml, useDeleteDataContract, useUpdateDataContract,
 } from '../../hooks/useDataContracts'
@@ -72,5 +73,14 @@ describe('DataContractDetail metadata', () => {
     expect(screen.getByText('restricted')).toBeInTheDocument()
     expect(screen.getByText('VARCHAR(255)')).toBeInTheDocument()
     expect(screen.getByText('legacy')).toBeInTheDocument()
+  })
+
+  it('lists library and text rules', () => {
+    renderDetail({ models: { fields: [], quality: [
+      { ...emptyRule(), column: 'email', operator: 'mustBeLessOrEqualTo', value: 1, unit: 'percent' },
+      { ...withType(emptyRule(), 'text'), description: 'Totals reconcile with the ledger.' },
+    ] } })
+    expect(screen.getByText('nullValues ≤ 1 percent')).toBeInTheDocument()
+    expect(screen.getByText('Totals reconcile with the ledger.')).toBeInTheDocument()
   })
 })

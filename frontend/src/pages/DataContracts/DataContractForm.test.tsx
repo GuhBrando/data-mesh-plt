@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import DataContractForm from './DataContractForm'
 import { emptyServer } from './contractMetadata'
+import { emptyRule } from '../../lib/qualityRules'
 import type { DataContract } from '../../types'
 
 vi.mock('../../hooks/useDomains', () => ({
@@ -52,6 +53,23 @@ describe('DataContractForm metadata', () => {
     const onSubmit = renderForm({ ...contract, servers: [{ ...emptyServer(), server: 'prod' }] })
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     expect(await screen.findByText('Server 1 (databricks) needs Catalog, Schema')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('DataContractForm quality rules', () => {
+  it('blocks saving a rule whose column was removed', async () => {
+    const email = {
+      name: 'email', type: 'string' as const, description: '', nullable: true, primary_key: false,
+      classification: '' as const, unique: false, physical_type: '',
+    }
+    const onSubmit = renderForm({
+      ...contract,
+      tier: 3,
+      models: { fields: [email], quality: [{ ...emptyRule(), column: 'gone' }] },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(await screen.findByText("Rule 1: column 'gone' is not a schema field")).toBeInTheDocument()
     expect(onSubmit).not.toHaveBeenCalled()
   })
 })

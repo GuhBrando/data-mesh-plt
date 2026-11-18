@@ -22,6 +22,7 @@ import TeamMembers from './TeamMembers'
 import SupportChannels from './SupportChannels'
 import ContractServers from './ContractServers'
 import { metadataError } from './contractMetadata'
+import { qualityProblem } from '../../lib/qualityRules'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
 import { getDomainAccess } from '../../lib/domains'
@@ -124,6 +125,14 @@ function getInitialQuality(v?: DataContract): QualityRule[] {
   return v.models.quality ?? []
 }
 
+function qualityErrorFor(tier: number, fields: SchemaField[], quality: QualityRule[]): string | null {
+  if (tierRequiresQuality(tier) && quality.length === 0) {
+    return 'At least one quality rule is required for Tier 1'
+  }
+  if (!tierShowsQuality(tier)) return null
+  return qualityProblem(quality, fields.map((f) => f.name))
+}
+
 function validateFormArrays(
   tier: number,
   fields: SchemaField[],
@@ -138,13 +147,9 @@ function validateFormArrays(
   } else {
     setFieldsError(null)
   }
-  if (tierRequiresQuality(tier) && quality.length === 0) {
-    setQualityError('At least one quality rule is required for Tier 1')
-    valid = false
-  } else {
-    setQualityError(null)
-  }
-  return valid
+  const qualityError = qualityErrorFor(tier, fields, quality)
+  setQualityError(qualityError)
+  return valid && qualityError === null
 }
 
 function SectionHeader({
@@ -224,11 +229,13 @@ function ServiceLevelsSection({
 function QualitySection({
   tier,
   quality,
+  fieldNames,
   onChange,
   error,
 }: {
   tier: number
   quality: QualityRule[]
+  fieldNames: string[]
   onChange: (rules: QualityRule[]) => void
   error: string | null
 }) {
@@ -240,9 +247,10 @@ function QualitySection({
         optional={!tierRequiresQuality(tier)}
       />
       <p className="text-xs text-gray-400 dark:text-slate-500">
-        dimension · column (opt.) · operator · threshold · description
+        A library rule is a check datacontract-cli runs on the data. A text rule documents a
+        check no tool runs.
       </p>
-      <QualityRules rules={quality} onChange={onChange} />
+      <QualityRules rules={quality} fieldNames={fieldNames} onChange={onChange} />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   )
@@ -475,6 +483,7 @@ export default function DataContractForm({
             <QualitySection
               tier={tier}
               quality={quality}
+              fieldNames={fields.map((f) => f.name)}
               onChange={setQuality}
               error={qualityError}
             />

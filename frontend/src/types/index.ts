@@ -1,8 +1,30 @@
+export type QualityDimension =
+  | 'accuracy'
+  | 'completeness'
+  | 'conformity'
+  | 'consistency'
+  | 'coverage'
+  | 'timeliness'
+  | 'uniqueness'
+export type QualityMetric = 'nullValues' | 'missingValues' | 'invalidValues' | 'duplicateValues' | 'rowCount'
+export type QualityOperator =
+  | 'mustBe'
+  | 'mustNotBe'
+  | 'mustBeGreaterThan'
+  | 'mustBeGreaterOrEqualTo'
+  | 'mustBeLessThan'
+  | 'mustBeLessOrEqualTo'
+
+// An ODCS quality rule: a library metric datacontract-cli can run, or free text.
 export interface QualityRule {
-  dimension: 'completeness' | 'freshness' | 'uniqueness' | 'validity' | 'integrity'
+  type: 'library' | 'text'
+  dimension: QualityDimension | null
   column: string
-  operator: '>=' | '<=' | '='
-  threshold: string
+  metric: QualityMetric | null
+  operator: QualityOperator | null
+  value: number | null
+  unit: 'rows' | 'percent' | null
+  valid_values: string[]
   description: string
 }
 

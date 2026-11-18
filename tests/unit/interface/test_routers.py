@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
+from backend.domain.entities.contract_version import ContractVersion
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.entities.user import User
 from backend.domain.value_objects.email import Email
@@ -26,7 +27,9 @@ from backend.interface.dependencies import (
     get_domain_repository,
     get_get_data_contract_use_case,
     get_get_user_use_case,
+    get_get_contract_version_yaml_use_case,
     get_github_client,
+    get_list_contract_versions_use_case,
     get_list_data_contracts_use_case,
     get_list_users_use_case,
     get_remove_stakeholder_use_case,
@@ -690,3 +693,73 @@ def test_sync_passes_the_admin_id(admin_client, monkeypatch):
     resp = admin_client.post("/api/v1/data-contracts/sync")
     assert resp.status_code == 200
     assert execute.call_args.kwargs["created_by"] == USER_ID
+
+
+LIST_PATH = f"/api/v1/data-contracts/{CONTRACT_ID}/versions"
+YAML_PATH = f"/api/v1/data-contracts/{CONTRACT_ID}/versions/1.0.0/yaml"
+VERSION_YAML = "apiVersion: v3.2.0\nversion: 1.0.0\n"
+
+
+def _versions():
+    return [ContractVersion(CONTRACT_ID, "1.1.0", USER_ID, NOW),
+            ContractVersion(CONTRACT_ID, "1.0.0", None, NOW)]
+
+
+def _version_reads(listed=None, yaml_text=VERSION_YAML, stakeholder=True):
+    list_uc, yaml_uc, sr = AsyncMock(), AsyncMock(), AsyncMock()
+    list_uc.execute.return_value = _versions() if listed is None else listed
+    yaml_uc.execute.return_value = yaml_text
+    sr.is_stakeholder = AsyncMock(return_value=stakeholder)
+    app.dependency_overrides[get_list_contract_versions_use_case] = lambda: list_uc
+    app.dependency_overrides[get_get_contract_version_yaml_use_case] = lambda: yaml_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: sr
+    return list_uc, yaml_uc
+
+
+def test_list_versions(admin_client):
+    _version_reads()
+    resp = admin_client.get(LIST_PATH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [v["version"] for v in body] == ["1.1.0", "1.0.0"]
+    assert body[1]["created_by"] is None
+    assert "yaml_content" not in body[0]
+
+
+def test_list_versions_empty_for_contract_without_history(admin_client):
+    _version_reads(listed=[])
+    resp = admin_client.get(LIST_PATH)
+    assert (resp.status_code, resp.json()) == (200, [])
+
+
+def test_list_versions_unknown_contract_is_404(admin_client):
+    list_uc, _ = _version_reads()
+    list_uc.execute.return_value = None
+    assert admin_client.get(LIST_PATH).status_code == 404
+
+
+def test_get_version_yaml(admin_client):
+    _version_reads()
+    resp = admin_client.get(YAML_PATH)
+    assert resp.status_code == 200
+    assert resp.text == VERSION_YAML
+    assert resp.headers["content-type"].startswith("text/plain")
+
+
+def test_get_version_yaml_unknown_version_is_404(admin_client):
+    _version_reads(yaml_text=None)
+    assert admin_client.get(YAML_PATH).status_code == 404
+
+
+@pytest.mark.parametrize("path", [LIST_PATH, YAML_PATH], ids=["list", "yaml"])
+def test_version_reads_forbidden_for_non_stakeholder_consumer(consumer_client, path):
+    list_uc, yaml_uc = _version_reads(stakeholder=False)
+    assert consumer_client.get(path).status_code == 403
+    list_uc.execute.assert_not_called()
+    yaml_uc.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("path", [LIST_PATH, YAML_PATH], ids=["list", "yaml"])
+def test_version_reads_allowed_for_stakeholder_consumer(consumer_client, path):
+    _version_reads(stakeholder=True)
+    assert consumer_client.get(path).status_code == 200

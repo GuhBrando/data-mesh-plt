@@ -23,7 +23,11 @@ from backend.use_cases.auth.refresh import RefreshUseCase
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
 from backend.use_cases.data_contract.delete import DeleteDataContractUseCase
 from backend.use_cases.data_contract.get import GetDataContractUseCase
+from backend.use_cases.data_contract.get_version_yaml import (
+    GetContractVersionYamlUseCase,
+)
 from backend.use_cases.data_contract.list import ListDataContractsUseCase
+from backend.use_cases.data_contract.list_versions import ListContractVersionsUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
 from backend.use_cases.data_product.create import CreateDataProductUseCase
 from backend.use_cases.data_product.delete import DeleteDataProductUseCase
@@ -126,6 +130,18 @@ def get_list_data_contracts_use_case(
     repo=Depends(get_data_contract_repository),
 ) -> ListDataContractsUseCase:
     return ListDataContractsUseCase(repo)
+
+
+def get_list_contract_versions_use_case(
+    repo=Depends(get_data_contract_repository),
+) -> ListContractVersionsUseCase:
+    return ListContractVersionsUseCase(repo)
+
+
+def get_get_contract_version_yaml_use_case(
+    repo=Depends(get_data_contract_repository),
+) -> GetContractVersionYamlUseCase:
+    return GetContractVersionYamlUseCase(repo)
 
 
 def get_update_data_contract_use_case(

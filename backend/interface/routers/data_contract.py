@@ -20,8 +20,10 @@ from backend.interface.dependencies import (
     get_data_contract_repository,
     get_delete_data_contract_use_case,
     get_domain_repository,
+    get_get_contract_version_yaml_use_case,
     get_get_data_contract_use_case,
     get_github_client,
+    get_list_contract_versions_use_case,
     get_list_data_contracts_use_case,
     get_remove_stakeholder_use_case,
     get_stakeholder_repository,
@@ -29,6 +31,7 @@ from backend.interface.dependencies import (
 )
 from backend.interface.permissions import is_domain_member, require_roles
 from backend.interface.schemas.data_contract import (
+    ContractVersionResponseModel,
     DataContractCreateModel,
     DataContractResponseModel,
     DataContractUpdateModel,
@@ -41,7 +44,11 @@ from backend.interface.security import get_current_user
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
 from backend.use_cases.data_contract.delete import DeleteDataContractUseCase
 from backend.use_cases.data_contract.get import GetDataContractUseCase
+from backend.use_cases.data_contract.get_version_yaml import (
+    GetContractVersionYamlUseCase,
+)
 from backend.use_cases.data_contract.list import ListDataContractsUseCase
+from backend.use_cases.data_contract.list_versions import ListContractVersionsUseCase
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
@@ -186,6 +193,51 @@ async def get_data_contract_yaml(
     if not contract:
         raise HTTPException(status_code=404, detail="Data contract not found")
     return PlainTextResponse(assemble_yaml(contract), media_type="text/plain")
+
+
+@router.get(
+    "/data-contracts/{contract_id}/versions",
+    response_model=list[ContractVersionResponseModel],
+)
+async def list_data_contract_versions(
+    contract_id: uuid.UUID,
+    use_case: ListContractVersionsUseCase = Depends(
+        get_list_contract_versions_use_case
+    ),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    versions = await use_case.execute(contract_id)
+    if versions is None:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    return [
+        ContractVersionResponseModel(
+            version=v.version, created_by=v.created_by, created_at=v.created_at
+        )
+        for v in versions
+    ]
+
+
+@router.get(
+    "/data-contracts/{contract_id}/versions/{version}/yaml",
+    response_class=PlainTextResponse,
+)
+async def get_data_contract_version_yaml(
+    contract_id: uuid.UUID,
+    version: str,
+    use_case: GetContractVersionYamlUseCase = Depends(
+        get_get_contract_version_yaml_use_case
+    ),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    content = await use_case.execute(contract_id, version)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Contract version not found")
+    # The stored snapshot, untouched: history must not depend on today's mapper.
+    return PlainTextResponse(content, media_type="text/plain")
 
 
 @router.get("/data-contracts/{contract_id}", response_model=DataContractResponseModel)

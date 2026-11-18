@@ -196,6 +196,12 @@ class DataContractUpdateModel(BaseModel):
     servers: list[ContractServer] | None = None
 
 
+class ContractVersionResponseModel(BaseModel):
+    version: str
+    created_by: uuid.UUID | None
+    created_at: datetime
+
+
 class DataContractResponseModel(BaseModel):
     id: uuid.UUID
     title: str

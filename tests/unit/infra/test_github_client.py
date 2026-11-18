@@ -313,6 +313,7 @@ async def test_list_all_yaml_contents_raises_on_failure(client, http):
 
 
 async def test_list_all_yaml_contents_returns_path_and_content(client, http):
+    assert client.repo == "acme/contracts"
     http.get.side_effect = [_tree(("contracts/a/x.yaml", "s")), _blob("id: 1\n")]
     assert await client.list_all_yaml_contents() == [("contracts/a/x.yaml", "id: 1\n")]
 

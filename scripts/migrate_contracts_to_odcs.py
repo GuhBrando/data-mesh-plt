@@ -130,10 +130,8 @@ def _failed_checks(report: dict[str, Any]) -> str:
 
 
 def _tail(path: Path) -> str:
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
-    except OSError:
-        return ""
+    # The file always exists: lint_yaml opens it before running the CLI.
+    lines = path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
     return " | ".join(lines[-3:])
 
 

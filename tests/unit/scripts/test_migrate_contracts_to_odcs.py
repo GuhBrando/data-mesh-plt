@@ -326,3 +326,12 @@ def test_main_requires_a_token(monkeypatch):
     monkeypatch.setattr(migration.sys, "argv", ["migrate"])
     with pytest.raises(SystemExit, match="GITHUB_TOKEN"):
         migration.main()
+
+
+def test_lint_report_that_is_not_an_object_is_refused(monkeypatch):
+    def run(cmd, **kwargs):
+        Path(cmd[cmd.index("--output") + 1]).write_text("[]", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0)
+    monkeypatch.setattr(migration.subprocess, "run", run)
+    monkeypatch.setattr(migration.shutil, "which", lambda name: "/bin/uvx")
+    assert migration.lint_yaml("x") == "datacontract lint left an unexpected report"

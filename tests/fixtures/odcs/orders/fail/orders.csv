@@ -1,0 +1,5 @@
+order_id,customer_id,status,amount
+1,c1,open,10.5
+1,,paid,20.0
+3,,BOGUS,30.0
+3,,WRONG,40.0

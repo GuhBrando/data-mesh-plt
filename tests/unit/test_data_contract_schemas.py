@@ -88,3 +88,29 @@ def test_invalid_rows_are_rejected(build):
 def test_server_applies_the_type_rules():
     with pytest.raises(ValidationError, match="host"):
         ContractServer(server="a", type="azure", location="az://a/b", format="csv", host="h.example.com")
+
+
+def test_schema_literals_match_the_domain_values():
+    from typing import get_args
+
+    from backend.domain.contract_values import (
+        CONTRACT_STATUSES,
+        FIELD_TYPES,
+        RULE_DIMENSIONS,
+        RULE_OPERATORS,
+        SLA_KEYS,
+    )
+    from backend.interface.schemas.data_contract import (
+        QualityRule,
+        SchemaField,
+        ServiceLevels,
+    )
+
+    def literal(model, name):
+        return get_args(model.model_fields[name].annotation)
+
+    assert literal(DataContractCreateModel, "status") == CONTRACT_STATUSES
+    assert literal(SchemaField, "type") == FIELD_TYPES
+    assert literal(QualityRule, "dimension") == RULE_DIMENSIONS
+    assert literal(QualityRule, "operator") == RULE_OPERATORS
+    assert tuple(ServiceLevels.model_fields) == SLA_KEYS

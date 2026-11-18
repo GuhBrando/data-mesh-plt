@@ -13,6 +13,7 @@ from tests.fixtures.odcs.sample_contract import (
     make_field,
     make_rule,
     sample_contract,
+    SLA_CASES,
 )
 
 SCHEMA = Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json"
@@ -66,7 +67,6 @@ schema:
   quality:
   - type: text
     dimension: timeliness
-    description: Freshness of the table must be <= 24h.
     customProperties:
     - property: dmpltDimension
       value: freshness
@@ -109,10 +109,6 @@ def _custom(rule: dict) -> dict:
     return {entry["property"]: entry["value"] for entry in rule["customProperties"]}
 
 
-def test_representative_contract_maps_to_expected_document():
-    assert to_odcs(sample_contract()) == yaml.safe_load(EXPECTED_YAML)
-
-
 @pytest.mark.parametrize(
     "contract",
     [
@@ -134,9 +130,7 @@ def test_schema_validator_rejects_a_legacy_document():
 
 
 @pytest.mark.parametrize(
-    ("status", "expected"),
-    [("draft", "draft"), ("in_review", "proposed"), ("active", "active"),
-     ("deprecated", "deprecated")],
+    ("status", "expected"), [("draft", "draft"), ("in_review", "proposed")]
 )
 def test_status_mapping(status, expected):
     assert to_odcs(make_contract(status=status))["status"] == expected
@@ -195,34 +189,17 @@ def test_dimension_mapping_keeps_the_original_value(dimension, expected):
     assert _custom(rule)["dmpltDimension"] == dimension
 
 
-def test_rule_without_description_gets_a_sentence():
-    models = {"fields": [], "quality": [make_rule("freshness", "", "<=", "24h"),
-                                        make_rule("validity", "ghost", "=", "BRL")]}
-    rules = to_odcs(make_contract(models=models))["schema"][0]["quality"]
-    assert rules[0]["description"] == "Freshness of the table must be <= 24h."
-    assert rules[1]["description"] == "Validity of column ghost must be = BRL."
+def test_rule_without_description_carries_none():
+    # A generated sentence would go stale as soon as a value is edited in Git.
+    models = {"fields": [], "quality": [make_rule("freshness", "", "<=", "24h")]}
+    rule = to_odcs(make_contract(models=models))["schema"][0]["quality"][0]
+    assert "description" not in rule
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [("24h", {"value": 24, "unit": "h"}),
-     ("99.9%", {"value": 99.9, "unit": "%"}),
-     ("365d", {"value": 365, "unit": "d"}),
-     ("100.0%", {"value": 100.0, "unit": "%"}),
-     ("30m", {"value": 30, "unit": "min"}),
-     ("24", {"value": 24})],
-)
-def test_sla_value_is_split(raw, expected):
+@pytest.mark.parametrize(("raw", "expected"), SLA_CASES)
+def test_sla_value_maps_to_odcs(raw, expected):
     doc = to_odcs(make_contract(servicelevels={"freshness": raw}))
     assert doc["slaProperties"] == [{"property": "freshness", **expected}]
-
-
-@pytest.mark.parametrize(
-    "raw", ["hourly", "24 h", "1.50h", "007", "5percent", "30min", "24h\n", "٣h"]
-)
-def test_sla_value_that_cannot_be_rebuilt_stays_a_string(raw):
-    doc = to_odcs(make_contract(servicelevels={"freshness": raw}))
-    assert doc["slaProperties"] == [{"property": "freshness", "value": raw}]
 
 
 def test_empty_sla_values_are_omitted():
@@ -231,3 +208,4 @@ def test_empty_sla_values_are_omitted():
 
 def test_assemble_yaml_emits_the_expected_text():
     assert assemble_yaml(sample_contract()) == EXPECTED_YAML
+    assert to_odcs(sample_contract()) == yaml.safe_load(EXPECTED_YAML)

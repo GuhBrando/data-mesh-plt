@@ -3,9 +3,14 @@ import uuid
 import pytest
 import yaml
 
-from backend.use_cases.data_contract.contract_document import parse_contract_document
+from backend.use_cases.data_contract.contract_document import (
+    MAX_CONTRACT_CHARS,
+    load_contract_yaml,
+    parse_contract_document,
+)
 from backend.use_cases.data_contract.legacy_dcs import from_legacy_dcs
 from backend.use_cases.data_contract.odcs import OdcsParseError, to_odcs
+from backend.use_cases.data_contract.parsed_contract import ContractParseError
 from tests.fixtures.odcs.sample_contract import sample_contract
 
 # contracts/commerce/sales.yaml in GuhBrando/dmplt_data_contract
@@ -66,10 +71,47 @@ def test_no_marker_routes_to_the_odcs_reader():
 
 def test_document_with_neither_format_is_an_odcs_error():
     with pytest.raises(OdcsParseError, match="apiVersion"):
-        parse_contract_document({"id": str(uuid.uuid4()), "info": {}})
+        parse_contract_document({"id": str(uuid.uuid4()), "name": "x"})
+
+
+def test_legacy_file_without_the_marker_is_still_read():
+    # The sync before ODCS read any mapping through `info`.
+    doc = yaml.safe_load(LEGACY_FILE)
+    del doc["dataContractSpecification"]
+    assert parse_contract_document(doc).title == "Sales"
 
 
 @pytest.mark.parametrize("doc", [None, [], "text"])
 def test_non_mapping_document_is_rejected(doc):
-    with pytest.raises(OdcsParseError, match="not a YAML mapping"):
+    with pytest.raises(ContractParseError, match="not a YAML mapping"):
         parse_contract_document(doc)
+
+
+@pytest.mark.parametrize(("models", "quality", "message"), [
+    ({"fields": {"id": {"type": "string"}}}, None, "models.fields must be a list"),
+    ({"fields": ["id"]}, None, "models.fields must be a list"),
+    ("fields", None, "models must be an object"),
+    ({"fields": []}, ["a rule"], "quality must be a list"),
+])
+def test_legacy_models_the_platform_cannot_write_back_are_rejected(models, quality, message):
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["models"] = models
+    if quality is not None:
+        doc["quality"] = quality
+    with pytest.raises(ContractParseError, match=message):
+        from_legacy_dcs(doc)
+
+
+def test_yaml_aliases_are_refused():
+    bomb = "\n".join(['a: &a ["x", "x"]', "b: &b [*a, *a]", "c: [*b, *b]"])
+    with pytest.raises(ContractParseError, match="aliases"):
+        load_contract_yaml(bomb)
+
+
+def test_oversized_file_is_refused_before_parsing():
+    with pytest.raises(ContractParseError, match="larger than"):
+        load_contract_yaml("x" * (MAX_CONTRACT_CHARS + 1))
+
+
+def test_plain_yaml_loads():
+    assert load_contract_yaml(LEGACY_FILE)["info"]["title"] == "Sales"

@@ -71,3 +71,22 @@ if __name__ == "__main__":
     Path(sys.argv[1]).write_text(
         assemble_yaml(sample_contract()), encoding="utf-8", newline="\n"
     )
+
+
+# One list for the emit and the parse tests: the stored text, and what
+# slaProperties carries for it. A value that rebuilding would change stays text.
+SLA_CASES = [
+    ("24h", {"value": 24, "unit": "h"}),
+    ("99.9%", {"value": 99.9, "unit": "%"}),
+    ("30m", {"value": 30, "unit": "min"}),
+    ("24", {"value": 24}),
+    ("hourly", {"value": "hourly"}),
+    ("24 h", {"value": "24 h"}),
+    ("1.50h", {"value": "1.50h"}),
+    ("007", {"value": "007"}),
+    ("5percent", {"value": "5percent"}),
+    ("30min", {"value": "30min"}),
+    ("24h\n", {"value": "24h\n"}),
+    ("\u0663h", {"value": "\u0663h"}),
+    ("1" * 20 + "h", {"value": "1" * 20 + "h"}),
+]

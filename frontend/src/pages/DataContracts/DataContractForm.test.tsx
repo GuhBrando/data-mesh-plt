@@ -43,10 +43,14 @@ describe('DataContractForm metadata', () => {
     })
   })
 
-  it('blocks submit and names the row when a server is incomplete', async () => {
-    const onSubmit = renderForm({ ...contract, servers: [{ ...emptyServer(), server: 'prod' }] })
+  it('blocks submit and names every problem at once, including an incomplete server', async () => {
+    const onSubmit = renderForm({
+      ...contract, tier: 2, servers: [{ ...emptyServer(), server: 'prod' }],
+      servicelevels: { freshness: '24h', availability: '99.9%', retention: '', latency: '' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     expect(await screen.findByText('Server 1 (databricks) needs Catalog, Schema')).toBeInTheDocument()
+    expect(screen.getByText('At least one schema field is required for Tier 2')).toBeInTheDocument()
     expect(onSubmit).not.toHaveBeenCalled()
   })
 })

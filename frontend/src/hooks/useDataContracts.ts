@@ -8,8 +8,9 @@ const KEYS = {
   yaml: (id: string) => ['data-contracts', id, 'yaml'] as const,
   // Under KEYS.one(id), so an update's invalidation refreshes the history too.
   versions: (id: string) => ['data-contracts', id, 'versions'] as const,
+  // Outside KEYS.all on purpose: a snapshot never changes, so no update refetches it.
   versionYaml: (id: string, version: string | null) =>
-    ['data-contracts', id, 'versions', version, 'yaml'] as const,
+    ['contract-version-yaml', id, version] as const,
 }
 
 export function useDataContracts() {
@@ -48,6 +49,7 @@ export function useContractVersionYaml(id: string, version: string | null) {
     queryKey: KEYS.versionYaml(id, version),
     queryFn: () => getText(`/data-contracts/${id}/versions/${encodeURIComponent(version ?? '')}/yaml`),
     enabled: !!id && !!version,
+    staleTime: Infinity,
   })
 }
 

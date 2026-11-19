@@ -17,6 +17,7 @@ import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
 import DataContractForm from './DataContractForm'
 import { safeUrl, serverLocation } from './contractMetadata'
+import { STATUS_COLORS } from './contractStatus'
 import { describeCheck } from '../../lib/qualityRules'
 import { formatServiceLevel } from '../../lib/serviceLevels'
 import type { DataContractInput, DataContract as DataContractType } from '../../types'
@@ -27,9 +28,6 @@ const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
 const TIER_NAMES: Record<number, string> = {
   1: 'Critical / Regulated', 2: 'Business Important',
   3: 'Operational / Internal', 4: 'Experimental / Sandbox',
-}
-const STATUS_COLORS: Record<string, 'gray' | 'yellow' | 'green' | 'red'> = {
-  draft: 'gray', in_review: 'yellow', active: 'green', deprecated: 'red',
 }
 
 function formatDateTime(iso: string) {
@@ -310,6 +308,32 @@ function VersionHistoryCard({
   )
 }
 
+function YamlModal({
+  title,
+  open,
+  content,
+  loading,
+  onClose,
+}: {
+  title: string
+  open: boolean
+  content: string | undefined
+  loading: boolean
+  onClose: () => void
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title={title} size="lg">
+      {loading ? (
+        <div className="flex justify-center py-8"><Spinner /></div>
+      ) : (
+        <pre className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 text-xs font-mono text-gray-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap">
+          {content}
+        </pre>
+      )}
+    </Modal>
+  )
+}
+
 function VersionYamlModal({
   contractId,
   version,
@@ -321,15 +345,13 @@ function VersionYamlModal({
 }) {
   const { data, isFetching } = useContractVersionYaml(contractId, version)
   return (
-    <Modal open={version !== null} onClose={onClose} title={`Version ${version}`} size="lg">
-      {isFetching ? (
-        <div className="flex justify-center py-8"><Spinner /></div>
-      ) : (
-        <pre className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 text-xs font-mono text-gray-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap">
-          {data}
-        </pre>
-      )}
-    </Modal>
+    <YamlModal
+      title={`Version ${version}`}
+      open={version !== null}
+      content={data}
+      loading={isFetching}
+      onClose={onClose}
+    />
   )
 }
 
@@ -496,15 +518,13 @@ export default function DataContractDetail() {
         onClose={() => setOpenVersion(null)}
       />
 
-      <Modal open={yamlOpen} onClose={() => setYamlOpen(false)} title="ODCS YAML" size="lg">
-        {yamlLoading ? (
-          <div className="flex justify-center py-8"><Spinner /></div>
-        ) : (
-          <pre className="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 text-xs font-mono text-gray-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap">
-            {yamlContent}
-          </pre>
-        )}
-      </Modal>
+      <YamlModal
+        title="ODCS YAML"
+        open={yamlOpen}
+        content={yamlContent}
+        loading={yamlLoading}
+        onClose={() => setYamlOpen(false)}
+      />
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Data Contract" size="lg">
         <DataContractForm

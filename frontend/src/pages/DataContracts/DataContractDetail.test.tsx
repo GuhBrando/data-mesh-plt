@@ -48,13 +48,6 @@ function renderDetail(contract: object = {}) {
 }
 
 describe('DataContractDetail metadata', () => {
-  beforeEach(() => {
-    const mutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, isError: false, error: null }
-    vi.mocked(useUpdateDataContract).mockReturnValue(mutation as never)
-    vi.mocked(useDeleteDataContract).mockReturnValue(mutation as never)
-    vi.mocked(useDataContractYaml).mockReturnValue({ data: undefined, isFetching: false } as never)
-  })
-
   it('shows description, team, support and servers', () => {
     renderDetail({
       description: { purpose: 'Orders placed', usage: '', limitations: '' },
@@ -132,7 +125,6 @@ describe('DataContractDetail version history', () => {
   })
 
   it('empty history shows the empty state', () => {
-    mockVersions([])
     renderDetail()
     expect(screen.getByText('No history yet. It starts at the next version change.')).toBeInTheDocument()
   })
@@ -152,10 +144,10 @@ describe('DataContractDetail version history', () => {
     expect(screen.getByText('version: 1.0.0')).toBeInTheDocument()
   })
 
-  it('hides Edit on a retired contract and keeps Delete', () => {
-    mockVersions([])
+  it('hides Edit on a retired contract, keeps Delete and tells it from a draft', () => {
     renderDetail({ status: 'retired' })
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
+    expect(screen.getAllByText('retired').some((el) => el.className.includes('purple'))).toBe(true)
   })
 })

@@ -15,6 +15,25 @@ class ContractParseError(ValueError):
     """A contract file the platform cannot store as it is."""
 
 
+_MAX_LISTED_KEYS = 10
+
+
+def printable(value: Any) -> str:
+    """A file value for an error message: control characters escaped."""
+    return str(value).encode("unicode_escape").decode("ascii")
+
+
+def unknown_keys(keys: Any, allowed: frozenset[str]) -> str | None:
+    """The keys outside `allowed`, escaped and capped for an error message."""
+    unknown = sorted(printable(key) for key in keys if key not in allowed)
+    if not unknown:
+        return None
+    listed = ", ".join(unknown[:_MAX_LISTED_KEYS])
+    if len(unknown) > _MAX_LISTED_KEYS:
+        listed += f" and {len(unknown) - _MAX_LISTED_KEYS} more"
+    return listed
+
+
 @dataclass(frozen=True)
 class ParsedContract:
     id: uuid.UUID

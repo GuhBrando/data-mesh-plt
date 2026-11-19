@@ -13,6 +13,7 @@ from pydantic import (
 
 from backend.domain.contract_metadata import server_problems, support_url_problem
 from backend.domain.quality_rules import find_quality_rule_problems
+from backend.domain.service_levels import service_level_problems
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 # The nested rows forbid unknown keys, like the ODCS reader: a key the platform
@@ -107,12 +108,7 @@ class ServiceLevelProperty(BaseModel):
     value: int | float | str
     unit: str | None = None
 
-    @field_validator("value", mode="before")
-    @classmethod
-    def _storable(cls, value: Any) -> Any:
-        if isinstance(value, str) and not value.strip():
-            raise ValueError("a text value cannot be blank")
-        return _reject_bool(value)
+    _no_bool_value = field_validator("value", mode="before")(_reject_bool)
 
 
 class ServiceLevels(BaseModel):
@@ -120,6 +116,14 @@ class ServiceLevels(BaseModel):
     model_config = _STRICT
 
     properties: list[ServiceLevelProperty] = []
+
+    @model_validator(mode="after")
+    def _storable(self) -> "ServiceLevels":
+        # The rules the file readers apply: what is saved here can sync back.
+        problems = service_level_problems([p.model_dump() for p in self.properties])
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
 
 class ContractDescription(BaseModel):

@@ -612,16 +612,6 @@ def test_create_rejects_two_rules_on_same_metric_and_column(admin_client):
     mock_uc.execute.assert_not_called()
 
 
-def test_create_rejects_old_service_level_shape(admin_client):
-    resp, mock_uc = _post_contract(
-        admin_client,
-        {"fields": []},
-        {"freshness": "24h", "availability": "99%", "retention": "365d", "latency": "1h"},
-    )
-    assert resp.status_code == 422
-    mock_uc.execute.assert_not_called()
-
-
 def test_sync_read_failure_returns_502(admin_client):
     github = AsyncMock()
     github.list_all_yaml_contents.side_effect = RuntimeError("GitHub API 301: Moved")

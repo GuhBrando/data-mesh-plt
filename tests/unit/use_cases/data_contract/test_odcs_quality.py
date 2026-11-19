@@ -1,26 +1,18 @@
 import json
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import date, datetime, timezone
 
-import jsonschema
 import pytest
 
-from backend.domain.quality_rules import (
-    PERCENT_METRICS,
-    QUALITY_METRICS,
-    QUALITY_OPERATORS,
-)
+from backend.domain.quality_rules import QUALITY_METRICS, QUALITY_OPERATORS
 from backend.use_cases.data_contract.odcs_quality import (
     rule_from_odcs,
     rule_to_odcs,
     sla_from_odcs,
     sla_to_odcs,
 )
+from tests.fixtures.odcs.validator import VALIDATOR
 from tests.quality_rule_builders import library_rule, text_rule
 
-
-VALIDATOR = jsonschema.Draft201909Validator(json.loads(
-    (Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json").read_text(encoding="utf-8")))
 
 def _doc(property_rules=(), schema_rules=(), sla=()):  # minimal valid ODCS around the items
     doc = {"apiVersion": "v3.2.0", "kind": "DataContract", "id": "11111111-1111-4111-8111-111111111111",
@@ -46,12 +38,18 @@ def test_text_rule_has_no_metric_keys():
     assert rule_to_odcs(text_rule()) == {"type": "text", "dimension": "consistency",
                                          "description": "Totals reconcile with the ledger."}
 
+# Each metric, operator and unit once: the mapper treats every one alike.
 ROUND_TRIP = [
-    library_rule(metric=m, operator=op, unit=u, column="" if m == "rowCount" else "email",
-                 valid_values=["a"] if m == "invalidValues" else [])
-    for m in QUALITY_METRICS for op in QUALITY_OPERATORS
-    for u in ("rows", None, *(("percent",) if m in PERCENT_METRICS else ()))
-] + [text_rule(), text_rule(column="email", dimension=None)]
+    library_rule(metric="nullValues", operator="mustBe", unit="percent"),
+    library_rule(metric="missingValues", operator="mustNotBe", unit=None),
+    library_rule(metric="invalidValues", operator="mustBeGreaterThan", valid_values=["a"]),
+    library_rule(metric="duplicateValues", operator="mustBeGreaterOrEqualTo"),
+    library_rule(metric="rowCount", column="", operator="mustBeLessThan"),
+    library_rule(operator="mustBeLessOrEqualTo", dimension=None),
+    text_rule(), text_rule(column="email", dimension=None),
+]
+assert {r["metric"] for r in ROUND_TRIP} >= set(QUALITY_METRICS)
+assert {r["operator"] for r in ROUND_TRIP} >= set(QUALITY_OPERATORS)
 
 @pytest.mark.parametrize("rule", ROUND_TRIP)
 def test_rule_round_trip(rule):
@@ -73,6 +71,13 @@ def test_type_defaults_follow_odcs():
     ({"type": "text", "description": "x",
       "customProperties": [{"property": "dmpltOperator", "value": ">="}]}, "customProperties"),
     ({"metric": "nullValues", "mustBe": 0, "severity": "error"}, "severity"),
+    # A YAML scalar would otherwise split into one valid value per character.
+    ({"metric": "invalidValues", "mustBe": 0, "arguments": {"validValues": "open"}}, "must be a list"),
+    ({"metric": "invalidValues", "mustBe": 0, "arguments": "open"}, "must be an object"),
+    ({"metric": "invalidValues", "mustBe": 0, "arguments": {"validValues": [None]}}, "scalar"),
+    ({"metric": "invalidValues", "mustBe": 0, "arguments": {"validValues": [{"a": 1}]}}, "scalar"),
+    ("not a rule", "must be an object"),
+    ({"type": "text", "description": "x", "metric": "nullValues"}, "cannot carry metric"),
 ])
 def test_rule_from_odcs_refuses_what_it_cannot_store(item, fragment):
     with pytest.raises(ValueError, match=fragment):
@@ -97,8 +102,18 @@ def test_sla_from_odcs_normalises_units_and_scalars():
     assert isinstance(parsed["properties"][2]["value"], str)
     json.dumps(parsed)
 
-@pytest.mark.parametrize("item", [{"property": "latency", "value": None},
-                                  {"property": "latency", "value": 4, "element": "t.c"}])
-def test_sla_from_odcs_refuses_what_it_cannot_store(item):
-    with pytest.raises(ValueError):
-        sla_from_odcs([item])
+def test_sla_dates_are_stored_as_iso_text():
+    [prop] = sla_from_odcs([{"property": "generalAvailability", "value": date(2022, 5, 12)}])["properties"]
+    assert prop["value"] == "2022-05-12"
+
+
+@pytest.mark.parametrize(("items", "fragment"), [
+    ([{"property": "latency", "value": None}], "no storable value"),
+    ([{"property": "latency", "value": {"a": 1}}], "no storable value"),
+    ([{"property": "latency", "value": 4, "element": "t.c"}], "element"),
+    (["latency"], "must be an object"),
+    ({"property": "latency", "value": 4}, "must be a list"),
+])
+def test_sla_from_odcs_refuses_what_it_cannot_store(items, fragment):
+    with pytest.raises(ValueError, match=fragment):
+        sla_from_odcs(items)

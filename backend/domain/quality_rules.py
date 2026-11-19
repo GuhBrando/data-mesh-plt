@@ -5,6 +5,8 @@ below are what that tool executes, measured rule by rule: a rule it skips with a
 warning, or one that breaks the whole run, is refused instead of stored.
 """
 
+import math
+import re
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
@@ -38,18 +40,42 @@ QUALITY_UNITS = ("rows", "percent")
 PERCENT_METRICS = ("nullValues", "missingValues", "invalidValues")
 
 _RULE_TYPES = ("library", "text")
-# A valid value that does not cast to the column type fails every check of the run.
-_CASTS: dict[str, Callable[[str], Any]] = {
-    "integer": int,
-    "float": float,
-    "date": date.fromisoformat,
-    "timestamp": datetime.fromisoformat,
+# A valid value that does not cast to the column type fails every check of the
+# run. Python's int(), float() and fromisoformat() accept more than a SQL cast
+# (1_000, " 7 ", nan, 20260101, 2026-W01-1), so the shape is matched first.
+_DATE = r"\d{4}-\d{2}-\d{2}"
+_CASTS: dict[str, tuple[re.Pattern[str], Callable[[str], Any] | None]] = {
+    "integer": (re.compile(r"-?\d{1,18}"), None),
+    "float": (re.compile(r"-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"), None),
+    "date": (re.compile(_DATE), date.fromisoformat),
+    "timestamp": (
+        re.compile(
+            _DATE + r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?"
+            r"(?:Z|[+-]\d{2}:\d{2})?)?"
+        ),
+        datetime.fromisoformat,
+    ),
 }
+
+
+def _casts(value: Any, field_type: str) -> bool:
+    pattern, parse = _CASTS[field_type]
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        return False
+    try:
+        if parse is not None:
+            parse(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _enum_problem(rule: dict[str, Any]) -> str | None:
     if rule.get("type") not in _RULE_TYPES:
         return f"type must be one of {', '.join(_RULE_TYPES)}"
+    for key in ("column", "description"):
+        if not isinstance(rule.get(key, ""), str):
+            return f"{key} must be text"
     allowed = (
         ("dimension", QUALITY_DIMENSIONS),
         ("metric", QUALITY_METRICS),
@@ -63,7 +89,7 @@ def _enum_problem(rule: dict[str, Any]) -> str | None:
 
 
 def _text_problem(rule: dict[str, Any]) -> str | None:
-    if not str(rule.get("description") or "").strip():
+    if not rule.get("description", "").strip():
         return "a text rule needs a description"
     carries_check = any(
         rule.get(key) is not None for key in ("metric", "operator", "value", "unit")
@@ -77,6 +103,9 @@ def _value_problem(rule: dict[str, Any]) -> str | None:
     value = rule.get("value")
     if isinstance(value, bool) or not isinstance(value, int | float):
         return "value must be a number"
+    # JSONB has no NaN or Infinity, and both pass the range checks below.
+    if not math.isfinite(value):
+        return "value must be a finite number"
     if value < 0:
         return "value cannot be negative"
     if rule.get("unit") == "percent" and value > 100:
@@ -112,16 +141,14 @@ def _column_problem(rule: dict[str, Any], field_types: dict[str, Any]) -> str | 
         return None
     if column not in field_types:
         return f"column {column!r} is not a schema field"
-    cast = _CASTS.get(field_types[column])
-    if cast is None:
+    field_type = field_types[column]
+    if field_type not in _CASTS:
         return None
     for value in rule.get("valid_values") or []:
-        try:
-            cast(value)
-        except (TypeError, ValueError):
+        if not _casts(value, field_type):
             return (
                 f"valid value {value!r} does not cast to the"
-                f" {field_types[column]} column {column}"
+                f" {field_type} column {column}"
             )
     return None
 

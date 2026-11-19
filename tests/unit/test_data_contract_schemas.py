@@ -117,14 +117,15 @@ def test_unrunnable_rule_is_rejected_with_its_reason():
         )
 
 
-def test_service_levels_forbid_unknown_keys():
-    with pytest.raises(ValidationError):
-        ServiceLevels.model_validate({"properties": [], "freshness": "24h"})
-
-
-def test_blank_service_level_value_is_rejected():
-    with pytest.raises(ValidationError):
-        ServiceLevels.model_validate({"properties": [{"property": "freshness", "value": " "}]})
+@pytest.mark.parametrize(("properties", "fragment"), [
+    ([{"property": "freshness", "value": " "}], "blank"),
+    ([{"property": "freshness", "value": 1, "unit": "h"}, {"property": "freshness", "value": 2, "unit": "h"}],
+     "more than once"),
+    ([{"property": "latency", "value": float("nan")}], "finite"),
+])
+def test_service_levels_the_readers_would_refuse_are_rejected(properties, fragment):
+    with pytest.raises(ValidationError, match=fragment):
+        ServiceLevels.model_validate({"properties": properties})
 
 
 def test_old_service_level_shape_is_rejected():

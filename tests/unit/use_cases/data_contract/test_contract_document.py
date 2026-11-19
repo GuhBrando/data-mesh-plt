@@ -64,7 +64,7 @@ def test_legacy_quality_is_merged_into_models():
         "quality": [{
             "type": "text", "dimension": "timeliness", "column": "", "metric": None,
             "operator": None, "value": None, "unit": None, "valid_values": [],
-            "description": "[legacy rule: dimension=freshness column= operator= threshold=]",
+            "description": '[legacy rule: {"dimension": "freshness"}]',
         }],
     }
 
@@ -96,6 +96,50 @@ def test_legacy_rule_keeps_its_values_in_the_description():
         " operator=>= threshold=99%]"
     )
     assert "column=ghost" in rules[1]["description"]
+
+
+def test_rule_without_a_threshold_keeps_its_content_like_the_migration():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["quality"] = {"type": "SodaCL", "specification": {"checks": ["row_count > 0"]}}
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule["description"] == (
+        '[legacy rule: {"type": "SodaCL", "specification": {"checks": ["row_count > 0"]}}]'
+    )
+
+
+def test_stored_shape_rule_is_completed_and_checked_like_the_api():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["models"] = {"fields": [{"name": "id", "type": "integer"}]}
+    doc["quality"] = [{"type": "library", "metric": "rowCount", "mustBeGreaterThan": 5}]
+    with pytest.raises(ContractParseError, match="mustBeGreaterThan"):
+        from_legacy_dcs(doc)
+    doc["quality"] = [{"type": "library", "metric": "duplicateValues", "column": "id",
+                       "operator": "mustBe", "value": 0, "unit": "percent"}]
+    with pytest.raises(ContractParseError, match="percent"):
+        from_legacy_dcs(doc)
+    doc["quality"] = [{"type": "text", "description": "Reconciled daily"}]
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule == {"type": "text", "dimension": None, "column": "", "metric": None,
+                    "operator": None, "value": None, "unit": None, "valid_values": [],
+                    "description": "Reconciled daily"}
+
+
+@pytest.mark.parametrize(("levels", "fragment"), [
+    ("24h", "servicelevels must be an object"), (["24h"], "servicelevels must be an object"),
+    ({5: "24h"}, "property name"),
+])
+def test_service_levels_the_api_would_refuse_are_refused(levels, fragment):
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["servicelevels"] = levels
+    with pytest.raises(ContractParseError, match=fragment):
+        from_legacy_dcs(doc)
+
+
+def test_rule_that_is_not_an_object_becomes_text_like_the_migration():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["quality"] = ["rows match the ledger"]
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule["description"] == '[legacy rule: "rows match the ledger"]'
 
 
 def test_marker_routes_to_the_legacy_reader():

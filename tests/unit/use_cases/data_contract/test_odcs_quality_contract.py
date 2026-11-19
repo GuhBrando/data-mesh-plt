@@ -1,19 +1,10 @@
 import json
-from pathlib import Path
 
-import jsonschema
 import pytest
 
 from backend.use_cases.data_contract.odcs import OdcsParseError, from_odcs, to_odcs
+from tests.fixtures.odcs.validator import VALIDATOR
 from tests.quality_rule_builders import orders_contract, text_rule
-
-VALIDATOR = jsonschema.Draft201909Validator(
-    json.loads(
-        (Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json").read_text(
-            encoding="utf-8"
-        )
-    )
-)
 
 
 def test_emitted_contract_is_valid_odcs_without_custom_properties():

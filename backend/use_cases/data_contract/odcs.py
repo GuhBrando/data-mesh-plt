@@ -22,7 +22,8 @@ from backend.domain.contract_values import (
     FIELD_TYPES,
 )
 from backend.domain.entities.data_contract import DataContract
-from backend.domain.quality_rules import QUALITY_OPERATORS, find_quality_rule_problems
+from backend.domain.quality_rules import find_quality_rule_problems
+from backend.domain.service_levels import service_level_problems
 from backend.use_cases.data_contract.odcs_quality import (
     rule_from_odcs,
     rule_to_odcs,
@@ -32,6 +33,8 @@ from backend.use_cases.data_contract.odcs_quality import (
 from backend.use_cases.data_contract.parsed_contract import (
     ContractParseError,
     ParsedContract,
+    printable,
+    unknown_keys,
 )
 
 __all__ = [
@@ -198,18 +201,6 @@ _PROPERTY_KEYS = frozenset(
         "physicalType",
     }
 )
-_RULE_KEYS = frozenset(
-    {
-        "type",
-        "dimension",
-        "description",
-        "customProperties",
-        "metric",
-        "unit",
-        "arguments",
-        *QUALITY_OPERATORS,
-    }
-)
 # The custom properties a text rule written by Plan 1 carries. They are read
 # once, into the description, and never written again.
 _RULE_CUSTOM_KEYS = frozenset(
@@ -222,26 +213,16 @@ _RULE_CUSTOM_KEYS = frozenset(
     }
 )
 _CUSTOM_ENTRY_KEYS = frozenset({"property", "value"})
-_SLA_ENTRY_KEYS = frozenset({"property", "value", "unit"})
 
 _DB_STATUS = {odcs: stored for stored, odcs in _ODCS_STATUS.items()}
 _STORED_TYPE = {_ODCS_LOGICAL_TYPE.get(t, t): t for t in FIELD_TYPES}
-_MAX_LISTED_KEYS = 10
-
-
-def _printable(value: Any) -> str:
-    """A file value for an error message: control characters escaped."""
-    return str(value).encode("unicode_escape").decode("ascii")
 
 
 def _reject_unknown(keys: Any, allowed: frozenset[str], where: str) -> None:
     if not isinstance(keys, Mapping):
         raise OdcsParseError(f"{where} must be an object")
-    unknown = sorted(_printable(key) for key in keys if key not in allowed)
-    if unknown:
-        listed = ", ".join(unknown[:_MAX_LISTED_KEYS])
-        if len(unknown) > _MAX_LISTED_KEYS:
-            listed += f" and {len(unknown) - _MAX_LISTED_KEYS} more"
+    listed = unknown_keys(keys, allowed)
+    if listed:
         raise OdcsParseError(f"{where} has unsupported keys: {listed}")
 
 
@@ -249,7 +230,7 @@ def _custom_values(entries: Any) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for entry in entries or []:
         name = entry["property"]
-        where = f"customProperties entry {_printable(name)}"
+        where = f"customProperties entry {printable(name)}"
         _reject_unknown(entry, _CUSTOM_ENTRY_KEYS, where)
         if name in values:
             raise OdcsParseError(f"{where} appears more than once")
@@ -358,18 +339,14 @@ def _parse_status(doc: dict[str, Any]) -> str:
 
 
 def _parse_servicelevels(doc: dict[str, Any]) -> dict[str, Any]:
-    entries = doc.get("slaProperties") or []
-    seen: set[str] = set()
-    for entry in entries:
-        key = entry["property"]
-        _reject_unknown(entry, _SLA_ENTRY_KEYS, f"slaProperties entry {key}")
-        if key in seen:
-            raise OdcsParseError(f"slaProperties entry {key} appears more than once")
-        seen.add(key)
     try:
-        return sla_from_odcs(entries)
+        levels = sla_from_odcs(doc.get("slaProperties") or [])
     except ValueError as exc:
         raise OdcsParseError(str(exc)) from exc
+    problems = service_level_problems(levels["properties"])
+    if problems:
+        raise OdcsParseError("; ".join(problems))
+    return levels
 
 
 def _is_plan1_rule(item: Any) -> bool:
@@ -406,7 +383,6 @@ def _legacy_description(item: Mapping[str, Any], prop_name: str | None) -> str:
 
 def _parse_library_or_text_rule(item: Any, column: str) -> dict[str, Any]:
     where = f"quality rule on {column}" if column else "quality rule on the schema"
-    _reject_unknown(item, _RULE_KEYS, where)
     try:
         return rule_from_odcs(item, column)
     except ValueError as exc:
@@ -424,7 +400,7 @@ def _parse_quality_item(item: Any, prop_name: str | None) -> dict[str, Any]:
 
 def _parse_property(prop: dict[str, Any]) -> dict[str, Any]:
     name = prop.get("name")
-    where = f"property {_printable(name)}"
+    where = f"property {printable(name)}"
     _reject_unknown(prop, _PROPERTY_KEYS, where)
     if not isinstance(name, str) or not name.strip():
         raise OdcsParseError(f"{where} needs a non-empty name")

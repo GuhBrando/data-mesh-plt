@@ -1,14 +1,12 @@
 import pytest
 
-from backend.domain.quality_rules import (
-    QUALITY_OPERATORS,
-    find_quality_rule_problems,
-)
+from backend.domain.quality_rules import find_quality_rule_problems
 from tests.quality_rule_builders import library_rule, text_rule
 
 
 FIELDS = [{"name": "id", "type": "integer"}, {"name": "email", "type": "string"},
-          {"name": "joined", "type": "date"}]
+          {"name": "joined", "type": "date"}, {"name": "amount", "type": "float"},
+          {"name": "at", "type": "timestamp"}]
 lib, txt = library_rule, text_rule
 
 RUNNABLE = [
@@ -18,10 +16,11 @@ RUNNABLE = [
     lib(metric="invalidValues", valid_values=["a@x.io"], unit="percent"),
     lib(metric="invalidValues", column="id", valid_values=["1", "2"]),
     lib(metric="invalidValues", column="joined", valid_values=["2026-01-01"]),
+    lib(metric="invalidValues", column="amount", valid_values=["1.5", "-2", "3e2", ".5"]),
+    lib(metric="invalidValues", column="at", valid_values=["2026-01-01T10:00:00Z", "2026-01-01 10:00"]),
     lib(metric="duplicateValues", column="id"),
     lib(metric="rowCount", column="", operator="mustBeGreaterOrEqualTo", value=5),
     txt(), txt(column="email"),
-    *[lib(operator=op) for op in QUALITY_OPERATORS],
 ]
 
 @pytest.mark.parametrize("rule", RUNNABLE)
@@ -38,10 +37,16 @@ def test_accepts_rules_the_tool_runs(rule):
     (lib(valid_values=["x"]), "valid_values"),
     (lib(metric="invalidValues", column="id", valid_values=["1", "abc"]), "'abc'"),
     (lib(metric="invalidValues", column="joined", valid_values=["soon"]), "'soon'"),
+    # Python parses these, a SQL cast does not: one would fail the whole run.
+    *((lib(metric="invalidValues", column=c, valid_values=[v]), repr(v)) for c, v in (
+        ("joined", "2026-W01-1"), ("joined", "20260101"), ("amount", "1_000"), ("amount", " 7 "),
+        ("amount", "nan"), ("id", "1.0"), ("at", "2026-01-01T10"), ("joined", "2026-13-45"))),
     (lib(column="ghost"), "'ghost'"),
     (txt(column="ghost"), "'ghost'"),
-    (lib(value=None), "value"), (lib(value="0"), "value"), (lib(value=True), "value"),
+    (lib(metric=None), "metric and an operator"), (lib(value=None), "value"), (lib(value="0"), "value"), (lib(value=True), "value"),
     (lib(value=-1), "negative"),
+    (lib(value=float("nan")), "finite"), (lib(value=float("inf")), "finite"),
+    (txt(description=5), "description must be text"), (lib(column=None), "column must be text"),
     (lib(unit="percent", value=101), "100"),
     (lib(metric="sql"), "metric"), (lib(operator="mustBeBetween"), "operator"),
     (lib(unit="ms"), "unit"), (lib(dimension="freshness"), "dimension"),

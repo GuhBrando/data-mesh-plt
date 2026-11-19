@@ -84,6 +84,8 @@ const schema = z
     limitations: z.string(),
   })
   .superRefine((data, ctx) => {
+    // A hidden section must not block the save with an error nobody can see.
+    if (!tierShowsSLAs(data.tier)) return
     const required = requiredSlaKeys(data.tier)
     for (const key of SLA_KEYS) {
       const input = { value: data[key], unit: data[unitKey(key)] }

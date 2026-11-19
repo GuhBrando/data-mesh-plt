@@ -10,16 +10,16 @@ describe('QualityRules', () => {
     expect(options.map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'email', 'id'])
   })
 
-  it('keeps a typed comma in valid values until blur', () => {
+  it('keeps a typed comma on screen and updates the rule on every keystroke', () => {
     const onChange = vi.fn()
     const rule = { ...emptyRule(), column: 'email', metric: 'invalidValues' as const }
     render(<QualityRules rules={[rule]} fieldNames={['email']} onChange={onChange} />)
     const input = screen.getByLabelText('Valid values') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'open,' } })
     expect(input.value).toBe('open,')
-    expect(onChange).not.toHaveBeenCalled()
-    fireEvent.blur(input)
     expect(onChange.mock.lastCall![0][0].valid_values).toEqual(['open'])
+    fireEvent.change(input, { target: { value: 'open, paid' } })
+    expect(onChange.mock.lastCall![0][0].valid_values).toEqual(['open', 'paid'])
   })
 
   it('shows the stale column of a rule whose field was removed', () => {

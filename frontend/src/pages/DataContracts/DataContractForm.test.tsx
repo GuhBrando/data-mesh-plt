@@ -111,6 +111,15 @@ describe('DataContractForm service levels', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('saves at tier 4 although a hidden level has a number but no unit', async () => {
+    const onSubmit = renderForm({ ...contract, servicelevels: { properties: [
+      { property: 'latency', value: 30, unit: null },
+    ] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0].servicelevels.properties).toEqual([])
+  })
+
   it('clears the shown levels at tier 4 but keeps hidden ones', async () => {
     const onSubmit = renderForm({ ...tier2, tier: 4 })
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))

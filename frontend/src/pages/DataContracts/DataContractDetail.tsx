@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Edit2, Trash2, Calendar, Clock, FileCode } from 'lucide-react'
 import {
@@ -17,7 +18,15 @@ import DataContractForm from './DataContractForm'
 import { safeUrl, serverLocation } from './contractMetadata'
 import { describeCheck } from '../../lib/qualityRules'
 import { formatServiceLevel } from '../../lib/serviceLevels'
-import type { DataContractInput, DataContract as DataContractType } from '../../types'
+import type {
+  ContractServer,
+  DataContractInput,
+  DataContract as DataContractType,
+  QualityRule,
+  SchemaField,
+  SupportChannel,
+  TeamMember,
+} from '../../types'
 
 const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
   1: 'red', 2: 'yellow', 3: 'blue', 4: 'gray',
@@ -34,48 +43,6 @@ function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
-}
-
-function SchemaFieldsCard({ fields }: { fields: DataContractType['models']['fields'] }) {
-  return (
-    <Card>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">
-        Schema Fields ({fields.length})
-      </h2>
-      {fields.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-slate-500 italic">No fields defined.</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
-              <th className="pb-2 pr-4">Field</th>
-              <th className="pb-2 pr-4">Type</th>
-              <th className="pb-2 pr-4">Nullable</th>
-              <th className="pb-2 pr-4">PK</th>
-              <th className="pb-2 pr-4">Physical</th>
-              <th className="pb-2 pr-4">Classification</th>
-              <th className="pb-2 pr-4">Unique</th>
-              <th className="pb-2">Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fields.map((f, i) => (
-              <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
-                <td className="py-2 pr-4 font-mono text-gray-800 dark:text-slate-200">{f.name}</td>
-                <td className="py-2 pr-4 text-gray-600 dark:text-slate-300">{f.type}</td>
-                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.nullable ? 'yes' : 'no'}</td>
-                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.primary_key ? '✓' : '—'}</td>
-                <td className="py-2 pr-4 font-mono text-gray-600 dark:text-slate-300">{f.physical_type || '—'}</td>
-                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.classification || '—'}</td>
-                <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{f.unique ? '✓' : '—'}</td>
-                <td className="py-2 text-gray-500 dark:text-slate-400">{f.description || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
-  )
 }
 
 function ServiceLevelsCard({ sla }: { sla?: DataContractType['servicelevels'] }) {
@@ -96,39 +63,6 @@ function ServiceLevelsCard({ sla }: { sla?: DataContractType['servicelevels'] })
           ))}
         </dl>
       )}
-    </Card>
-  )
-}
-
-function QualityRulesCard({ rules }: { rules: NonNullable<DataContractType['models']['quality']> }) {
-  if (rules.length === 0) return null
-  return (
-    <Card>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">
-        Quality Rules ({rules.length})
-      </h2>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
-            <th className="pb-2 pr-4">Type</th>
-            <th className="pb-2 pr-4">Dimension</th>
-            <th className="pb-2 pr-4">Column</th>
-            <th className="pb-2 pr-4">Check</th>
-            <th className="pb-2">Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rules.map((r, i) => (
-            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{r.type}</td>
-              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{r.dimension ?? '—'}</td>
-              <td className="py-2 pr-4 font-mono text-gray-600 dark:text-slate-300">{r.column || '—'}</td>
-              <td className="py-2 pr-4 font-mono text-gray-800 dark:text-slate-200">{describeCheck(r)}</td>
-              <td className="py-2 text-gray-500 dark:text-slate-400">{r.description || '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </Card>
   )
 }
@@ -155,33 +89,6 @@ function DescriptionCard({ description }: { description?: DataContractType['desc
   )
 }
 
-function TeamCard({ members = [] }: { members?: DataContractType['team_members'] }) {
-  if (members.length === 0) return null
-  return (
-    <Card>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Team Members</h2>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
-            <th className="pb-2 pr-4">Username</th>
-            <th className="pb-2 pr-4">Name</th>
-            <th className="pb-2">Role</th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((m, i) => (
-            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
-              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{m.username}</td>
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{m.name || '—'}</td>
-              <td className="py-2 text-gray-500 dark:text-slate-400">{m.role || '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  )
-}
-
 function SupportUrl({ url }: { url: string }) {
   if (!url) return <>—</>
   const href = safeUrl(url)
@@ -199,63 +106,103 @@ function SupportUrl({ url }: { url: string }) {
   )
 }
 
-function SupportCard({ channels = [] }: { channels?: DataContractType['support'] }) {
-  if (channels.length === 0) return null
+const MUTED = 'text-gray-500 dark:text-slate-400'
+const STRONG = 'text-gray-800 dark:text-slate-200'
+const MONO = 'font-mono text-gray-600 dark:text-slate-300'
+
+const dash = (value?: string | null) => value || '—'
+const mark = (on?: boolean) => (on ? '✓' : '—')
+
+interface Column<T> {
+  header: string
+  cell: (row: T) => ReactNode
+  className?: string
+}
+
+// One table card for every row section; without emptyText an empty section is not shown.
+function RowsCard<T>({
+  title,
+  rows = [],
+  columns,
+  emptyText,
+  counted = false,
+}: {
+  title: string
+  rows?: T[]
+  columns: Column<T>[]
+  emptyText?: string
+  counted?: boolean
+}) {
+  if (rows.length === 0 && !emptyText) return null
   return (
     <Card>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Support</h2>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
-            <th className="pb-2 pr-4">Channel</th>
-            <th className="pb-2 pr-4">URL</th>
-            <th className="pb-2 pr-4">Tool</th>
-            <th className="pb-2">Scope</th>
-          </tr>
-        </thead>
-        <tbody>
-          {channels.map((c, i) => (
-            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
-              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{c.channel}</td>
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400"><SupportUrl url={c.url} /></td>
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{c.tool || '—'}</td>
-              <td className="py-2 text-gray-500 dark:text-slate-400">{c.scope || '—'}</td>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">
+        {counted ? `${title} (${rows.length})` : title}
+      </h2>
+      {rows.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500 italic">{emptyText}</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
+              {columns.map((c) => (
+                <th key={c.header} className="pb-2 pr-4">{c.header}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
+                {columns.map((c) => (
+                  <td key={c.header} className={`py-2 pr-4 ${c.className ?? MUTED}`}>{c.cell(row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </Card>
   )
 }
 
-function ServersCard({ servers = [] }: { servers?: DataContractType['servers'] }) {
-  if (servers.length === 0) return null
-  return (
-    <Card>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Servers</h2>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-gray-400 dark:text-slate-500 border-b border-gray-200 dark:border-slate-700">
-            <th className="pb-2 pr-4">Server</th>
-            <th className="pb-2 pr-4">Type</th>
-            <th className="pb-2 pr-4">Environment</th>
-            <th className="pb-2">Location</th>
-          </tr>
-        </thead>
-        <tbody>
-          {servers.map((s, i) => (
-            <tr key={i} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
-              <td className="py-2 pr-4 text-gray-800 dark:text-slate-200">{s.server}</td>
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{s.type}</td>
-              <td className="py-2 pr-4 text-gray-500 dark:text-slate-400">{s.environment || '—'}</td>
-              <td className="py-2 font-mono text-gray-600 dark:text-slate-300">{serverLocation(s)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  )
-}
+const FIELD_COLUMNS: Column<SchemaField>[] = [
+  { header: 'Field', cell: (f) => f.name, className: `font-mono ${STRONG}` },
+  { header: 'Type', cell: (f) => f.type, className: 'text-gray-600 dark:text-slate-300' },
+  { header: 'Nullable', cell: (f) => (f.nullable ? 'yes' : 'no') },
+  { header: 'PK', cell: (f) => mark(f.primary_key) },
+  { header: 'Physical', cell: (f) => dash(f.physical_type), className: MONO },
+  { header: 'Classification', cell: (f) => dash(f.classification) },
+  { header: 'Unique', cell: (f) => mark(f.unique) },
+  { header: 'Description', cell: (f) => dash(f.description) },
+]
+
+const RULE_COLUMNS: Column<QualityRule>[] = [
+  { header: 'Type', cell: (r) => r.type },
+  { header: 'Dimension', cell: (r) => dash(r.dimension), className: STRONG },
+  { header: 'Column', cell: (r) => dash(r.column), className: MONO },
+  { header: 'Check', cell: describeCheck, className: `font-mono ${STRONG}` },
+  { header: 'Description', cell: (r) => dash(r.description) },
+]
+
+const MEMBER_COLUMNS: Column<TeamMember>[] = [
+  { header: 'Username', cell: (m) => m.username, className: STRONG },
+  { header: 'Name', cell: (m) => dash(m.name) },
+  { header: 'Role', cell: (m) => dash(m.role) },
+]
+
+const SUPPORT_COLUMNS: Column<SupportChannel>[] = [
+  { header: 'Channel', cell: (c) => c.channel, className: STRONG },
+  { header: 'URL', cell: (c) => <SupportUrl url={c.url} /> },
+  { header: 'Tool', cell: (c) => dash(c.tool) },
+  { header: 'Scope', cell: (c) => dash(c.scope) },
+]
+
+const SERVER_COLUMNS: Column<ContractServer>[] = [
+  { header: 'Server', cell: (s) => s.server, className: STRONG },
+  { header: 'Type', cell: (s) => s.type },
+  { header: 'Environment', cell: (s) => dash(s.environment) },
+  { header: 'Location', cell: serverLocation, className: MONO },
+]
 
 export default function DataContractDetail() {
   const { id } = useParams<{ id: string }>()
@@ -371,17 +318,23 @@ export default function DataContractDetail() {
 
       <DescriptionCard description={contract.description} />
 
-      <SchemaFieldsCard fields={contract.models.fields} />
+      <RowsCard
+        title="Schema Fields"
+        counted
+        rows={contract.models.fields}
+        columns={FIELD_COLUMNS}
+        emptyText="No fields defined."
+      />
 
-      <QualityRulesCard rules={contract.models.quality ?? []} />
+      <RowsCard title="Quality Rules" counted rows={contract.models.quality} columns={RULE_COLUMNS} />
 
       <ServiceLevelsCard sla={contract.servicelevels} />
 
-      <TeamCard members={contract.team_members} />
+      <RowsCard title="Team Members" rows={contract.team_members} columns={MEMBER_COLUMNS} />
 
-      <SupportCard channels={contract.support} />
+      <RowsCard title="Support" rows={contract.support} columns={SUPPORT_COLUMNS} />
 
-      <ServersCard servers={contract.servers} />
+      <RowsCard title="Servers" rows={contract.servers} columns={SERVER_COLUMNS} />
 
       <Modal open={yamlOpen} onClose={() => setYamlOpen(false)} title="ODCS YAML" size="lg">
         {yamlLoading ? (

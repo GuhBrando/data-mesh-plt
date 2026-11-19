@@ -424,8 +424,10 @@ export default function DataContractForm({
   ) as Record<SlaKey, string>
 
   const handleFormSubmit = (values: FormValues) => {
-    if (!validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)) return
-    if (!metadata.validate()) return
+    // Both run, so a message the user has since fixed never lingers on screen.
+    const arraysValid = validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)
+    const metadataValid = metadata.validate()
+    if (!arraysValid || !metadataValid) return
 
     onSubmit({
       title: values.title,

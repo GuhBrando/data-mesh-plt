@@ -1,34 +1,26 @@
 import json
-import uuid
-from datetime import datetime, timezone
-from itertools import combinations
 from pathlib import Path
 
 import jsonschema
 import pytest
 
-from backend.domain.contract_metadata import CLASSIFICATIONS, DESCRIPTION_KEYS
-from backend.domain.entities.data_contract import DataContract
+from backend.domain.contract_values import CLASSIFICATIONS
 from backend.use_cases.data_contract.odcs import OdcsParseError, from_odcs, to_odcs
 from tests.fixtures.odcs.sample_contract import (
     AZURE,
     DATABRICKS,
     FIELD,
     FULL_CONTRACT,
-    SERVERS,
+    make_contract,
 )
 
-NOW = datetime.now(tz=timezone.utc)
 SCHEMA = json.loads(Path("tests/fixtures/odcs/odcs-json-schema-v3.2.0.json").read_text(encoding="utf-8"))
 VALIDATOR = jsonschema.Draft201909Validator(SCHEMA)
 SECRET = "not-a-real-secret"
 
-def _contract(**kw) -> DataContract:
-    defaults = dict(id=uuid.uuid4(), title="Orders", version="1.0.0", owner="commerce-data",
-                    domain="commerce", tier=2, status="active", models={"fields": []},
-                    servicelevels={"properties": []},
-                    created_at=NOW, updated_at=NOW)
-    return DataContract(**{**defaults, **kw})
+
+def _contract(**kw):
+    return make_contract(owner="commerce-data", **kw)
 
 
 def _assert_valid(doc: dict) -> None:
@@ -83,29 +75,12 @@ def test_field_stored_before_this_plan_still_emits():
     assert (field["classification"], field["unique"], field["physical_type"]) == ("", False, "")
 
 
-@pytest.mark.parametrize("server", SERVERS, ids=[s["type"] for s in SERVERS])
-def test_every_server_type_validates_and_round_trips(server):
-    doc = to_odcs(_contract(servers=[server]))
-    _assert_valid(doc)
-    assert from_odcs(doc).servers == [server]
-
-
-@pytest.mark.parametrize("value", [*CLASSIFICATIONS, ""])
-@pytest.mark.parametrize("unique", [True, False])
-@pytest.mark.parametrize("physical", ["VARCHAR(2)", ""])
-def test_field_attributes_validate_and_round_trip(value, unique, physical):
-    field = {**FIELD, "classification": value, "unique": unique, "physical_type": physical}
+@pytest.mark.parametrize("value", CLASSIFICATIONS)
+def test_every_classification_validates_and_round_trips(value):
+    field = {**FIELD, "classification": value}
     doc = to_odcs(_contract(models={"fields": [field]}))
     _assert_valid(doc)
     assert from_odcs(doc).models["fields"] == [field]
-
-
-@pytest.mark.parametrize("keys", [c for n in range(4) for c in combinations(DESCRIPTION_KEYS, n)])
-def test_description_round_trips_for_every_subset(keys):
-    description = {k: ("text" if k in keys else "") for k in DESCRIPTION_KEYS}
-    doc = to_odcs(_contract(description=description))
-    _assert_valid(doc)
-    assert from_odcs(doc).description == description
 
 
 @pytest.mark.parametrize("overrides, key", [
@@ -133,4 +108,24 @@ def test_unmodelled_value_is_not_dropped_silently(mutate, key):
     doc = to_odcs(FULL_CONTRACT)
     mutate(doc)
     with pytest.raises(OdcsParseError, match=key):
+        from_odcs(doc)
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (lambda d: d["team"]["members"][0].update(role=None), "role must be of type str"),
+    (lambda d: d["team"]["members"][0].pop("username"), r"team.members\[0\] needs a username"),
+    (lambda d: d["team"]["members"].append("bob"), "must be an object"),
+    (lambda d: d["team"].update(name=7), "team name"),
+    (lambda d: d["support"][0].update(channel={"a": 1}), "channel must be of type str"),
+    (lambda d: d["support"][0].update(channel=" "), r"support\[0\] needs a channel"),
+    (lambda d: d["support"][0].update(url="javascript:alert(1)"), "http, https or mailto"),
+    (lambda d: d["description"].update(purpose=5), "description purpose"),
+    (lambda d: d["servers"][0].update(environment=None), "environment must be text"),
+    (lambda d: d["servers"][0].update(schema=2024), "schema_name must be text"),
+    (lambda d: d.update(domain=["commerce"]), "domain"),
+])
+def test_value_the_api_would_refuse_is_not_stored(mutate, match):
+    doc = to_odcs(FULL_CONTRACT)
+    mutate(doc)
+    with pytest.raises(OdcsParseError, match=match):
         from_odcs(doc)

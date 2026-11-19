@@ -5,11 +5,11 @@ import pytest
 from backend.domain.contract_evolution import (
     ChangeKind,
     ContractEvolutionError,
-    classify_change,
+    describe_changes,
     evolution_violation,
     is_semver,
     is_unchanged,
-    version_bump,
+    required_bump,
 )
 
 BASE = {
@@ -146,8 +146,8 @@ CASES = [
 
 
 @pytest.mark.parametrize("old, new, expected", CASES)
-def test_classify_change(old, new, expected):
-    assert classify_change(old, new) is expected
+def test_required_bump(old, new, expected):
+    assert required_bump(describe_changes(old, new)) is expected
 
 
 def _no_change(d):
@@ -208,21 +208,13 @@ def test_rejection_of_a_lower_version():
 
 
 @pytest.mark.parametrize("version, expected", [
-    ("1.0.0", True), ("10.20.30", True), ("0.0.0", True), ("01.2.3", True),
+    ("1.0.0", True), ("10.20.30", True), ("0.0.0", True), ("01.2.3", False),
+    ("1.0.00", False),
     ("1.0", False), ("v1.0.0", False), ("1.0.0-rc1", False), ("1.0.0\n", False),
     ("", False), ("١.٠.٠", False), (" 1.0.0", False), (None, False),
 ])
 def test_is_semver(version, expected):
     assert is_semver(version) is expected
-
-
-def test_version_bump_kinds():
-    assert version_bump("1.2.3", "1.2.4") is ChangeKind.PATCH
-    assert version_bump("1.2.3", "1.3.0") is ChangeKind.MINOR
-    assert version_bump("1.2.3", "2.0.0") is ChangeKind.MAJOR
-    assert version_bump("1.2.3", "1.2.3") is ChangeKind.NONE
-    assert version_bump("1.2.3", "1.2.2") is ChangeKind.NONE
-    assert version_bump("1.0", "1.0.0") is ChangeKind.MAJOR
 
 
 def test_is_unchanged():

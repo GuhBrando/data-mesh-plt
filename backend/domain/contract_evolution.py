@@ -28,7 +28,8 @@ _SCHEMA_SKIP_KEYS = frozenset({"name", "properties"})
 _PROPERTY_SKIP_KEYS = frozenset(
     {"name", "logicalType", "required", "unique", "primaryKey"}
 )
-_SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)", re.ASCII)
+# SemVer 2.0 core: no leading zeros, so one version has one spelling.
+_SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", re.ASCII)
 
 
 class ChangeKind(IntEnum):
@@ -152,21 +153,23 @@ def describe_changes(old: dict, new: dict) -> list[ContractChange]:
     return changes
 
 
-def classify_change(old: dict, new: dict) -> ChangeKind:
-    return max(
-        (change.kind for change in describe_changes(old, new)), default=ChangeKind.NONE
-    )
+def required_bump(changes: list[ContractChange]) -> ChangeKind:
+    """The smallest version bump that covers every change."""
+    return max((change.kind for change in changes), default=ChangeKind.NONE)
 
 
-def version_bump(old: str, new: str) -> ChangeKind:
-    """What moving from old to new is worth. A non-semver old value counts as MAJOR."""
+def version_bump(old: str, new: str) -> ChangeKind | None:
+    """What moving from old to new is worth; None when new is lower.
+
+    A non-semver value on either side counts as MAJOR.
+    """
     if old == new:
         return ChangeKind.NONE
     if not (is_semver(old) and is_semver(new)):
         return ChangeKind.MAJOR
     before, after = _semver(old), _semver(new)
-    if after <= before:
-        return ChangeKind.NONE
+    if after < before:
+        return None
     if after[0] > before[0]:
         return ChangeKind.MAJOR
     if after[1] > before[1]:
@@ -184,12 +187,12 @@ def evolution_violation(old: dict, new: dict) -> str | None:
     if old.get("status") not in GOVERNED_STATUSES:
         return None
     old_version, new_version = str(old.get("version")), str(new.get("version"))
-    both_semver = is_semver(old_version) and is_semver(new_version)
-    if both_semver and _semver(new_version) < _semver(old_version):
+    bump = version_bump(old_version, new_version)
+    if bump is None:
         return f"Version {new_version} is lower than the current version {old_version}"
     changes = describe_changes(old, new)
-    required = max((change.kind for change in changes), default=ChangeKind.NONE)
-    if version_bump(old_version, new_version) >= required:
+    required = required_bump(changes)
+    if bump >= required:
         return None
     reasons = "; ".join(c.description for c in changes if c.kind == required)
     return (

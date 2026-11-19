@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import EditableRows, { ROW_INPUT_CLASS as INPUT } from './EditableRows'
 import {
   DIMENSIONS,
   METRICS,
@@ -10,9 +10,6 @@ import {
   withType,
 } from '../../lib/qualityRules'
 import type { QualityDimension, QualityMetric, QualityOperator, QualityRule } from '../../types'
-
-const INPUT =
-  'text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200'
 
 interface QualityRulesProps {
   rules: QualityRule[]
@@ -45,20 +42,22 @@ function ColumnSelect({ rule, fieldNames, onChange }: RowProps) {
   )
 }
 
+const parseValues = (text: string): string[] => text.split(',').map((v) => v.trim()).filter(Boolean)
+
 function ValidValuesInput({ rule, onChange }: Omit<RowProps, 'fieldNames'>) {
-  // Uncontrolled: parsing on every keystroke would swallow the comma being typed.
+  // The typed text stays local, so the comma being typed is not swallowed, while
+  // the rule updates on every keystroke: Enter submits what is on screen.
+  const [text, setText] = useState(rule.valid_values.join(', '))
   return (
     <input
       aria-label="Valid values"
-      className={`col-span-12 ${INPUT}`}
+      className={`col-span-11 ${INPUT}`}
       placeholder="Valid values, comma separated"
-      defaultValue={rule.valid_values.join(', ')}
-      onBlur={(e) =>
-        onChange({
-          ...rule,
-          valid_values: e.target.value.split(',').map((v) => v.trim()).filter(Boolean),
-        })
-      }
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value)
+        onChange({ ...rule, valid_values: parseValues(e.target.value) })
+      }}
     />
   )
 }
@@ -97,7 +96,7 @@ function LibraryInputs({ rule, onChange }: Omit<RowProps, 'fieldNames'>) {
       />
       <select
         aria-label="Unit"
-        className={`col-span-3 ${INPUT}`}
+        className={`col-span-2 ${INPUT}`}
         value={rule.unit ?? ''}
         onChange={(e) => onChange({ ...rule, unit: (e.target.value || null) as QualityRule['unit'] })}
       >
@@ -147,50 +146,16 @@ function RuleRow({ rule, fieldNames, onChange }: RowProps) {
 }
 
 export default function QualityRules({ rules, fieldNames, onChange }: QualityRulesProps) {
-  const idsRef = useRef<string[]>([])
-  const getKey = (index: number): string => {
-    while (idsRef.current.length <= index) idsRef.current.push(crypto.randomUUID())
-    return idsRef.current[index]
-  }
-
-  const update = (index: number, rule: QualityRule) => {
-    onChange(rules.map((r, i) => (i === index ? rule : r)))
-  }
-
-  const remove = (index: number) => {
-    idsRef.current.splice(index, 1)
-    onChange(rules.filter((_, i) => i !== index))
-  }
-
   return (
-    <div className="space-y-3">
-      {rules.length === 0 && (
-        <p className="text-sm text-gray-400 dark:text-slate-500 italic">No quality rules yet.</p>
+    <EditableRows
+      rows={rules}
+      onChange={onChange}
+      emptyRow={emptyRule}
+      addLabel="Add rule"
+      emptyText="No quality rules yet."
+      renderRow={(rule, _index, patch) => (
+        <RuleRow rule={rule} fieldNames={fieldNames} onChange={(next) => patch(next)} />
       )}
-      {rules.map((rule, i) => (
-        <div
-          key={getKey(i)}
-          className="grid grid-cols-12 gap-2 items-center rounded border border-gray-200 dark:border-slate-700 p-2 bg-gray-50 dark:bg-slate-900"
-        >
-          <RuleRow rule={rule} fieldNames={fieldNames} onChange={(next) => update(i, next)} />
-          <button
-            type="button"
-            onClick={() => remove(i)}
-            className="col-span-1 flex items-center justify-center text-red-400 hover:text-red-600"
-            title="Remove rule"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...rules, emptyRule()])}
-        className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-      >
-        <Plus size={14} />
-        Add rule
-      </button>
-    </div>
+    />
   )
 }

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -15,7 +15,11 @@ vi.mock('../../hooks/useDataContracts', () => ({
   useDataContract: vi.fn(), useDataContractYaml: vi.fn(), useDeleteDataContract: vi.fn(), useUpdateDataContract: vi.fn(),
   useContractVersions: vi.fn(), useContractVersionYaml: vi.fn(),
 }))
-vi.mock('./DataContractForm', () => ({ default: () => null }))
+vi.mock('./DataContractForm', () => ({
+  default: ({ onSubmit }: { onSubmit: (input: object) => void }) => (
+    <button type="button" onClick={() => onSubmit({ title: 'New' })}>Submit form</button>
+  ),
+}))
 
 const base = {
   id: 'c1', title: 'Orders', version: '1.0.0', owner: 'alice', domain: 'commerce', domain_id: 'd1',
@@ -30,22 +34,78 @@ function mockVersions(rows: ContractVersion[]) {
   vi.mocked(useContractVersionYaml).mockReturnValue({ data: undefined, isFetching: false } as never)
 }
 
-beforeEach(() => {
-  const mutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, isError: false, error: null }
-  vi.mocked(useUpdateDataContract).mockReturnValue(mutation as never)
-  vi.mocked(useDeleteDataContract).mockReturnValue(mutation as never)
-  vi.mocked(useDataContractYaml).mockReturnValue({ data: undefined, isFetching: false } as never)
-  mockVersions([])
+const mutationOf = (over = {}) => ({
+  mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false, isError: false, error: null, ...over,
 })
+let mutation = mutationOf()
 
-function renderDetail(contract: object = {}) {
-  vi.mocked(useDataContract).mockReturnValue({ data: { ...base, ...contract }, isLoading: false, error: null } as never)
+function renderDetail(contract: object = {}, query: object = {}) {
+  vi.mocked(useDataContract).mockReturnValue(
+    { data: { ...base, ...contract }, isLoading: false, error: null, ...query } as never,
+  )
   render(
     <MemoryRouter initialEntries={['/data-contracts/c1']}>
-      <Routes><Route path="/data-contracts/:id" element={<DataContractDetail />} /></Routes>
+      <Routes>
+        <Route path="/data-contracts/:id" element={<DataContractDetail />} />
+        <Route path="/data-contracts" element={<p>contract list</p>} />
+      </Routes>
     </MemoryRouter>,
   )
 }
+
+beforeEach(() => {
+  mutation = mutationOf()
+  vi.mocked(useUpdateDataContract).mockReturnValue(mutation as never)
+  vi.mocked(useDeleteDataContract).mockReturnValue(mutation as never)
+  vi.mocked(useDataContractYaml).mockReturnValue({ data: 'apiVersion: v3.2.0', isFetching: false } as never)
+  mockVersions([])
+})
+
+describe('DataContractDetail states and actions', () => {
+  it('shows a spinner while loading', () => {
+    renderDetail({}, { data: undefined, isLoading: true })
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
+  })
+
+  it('shows the load error and goes back to the list', async () => {
+    renderDetail({}, { data: undefined, error: new Error('Contract gone') })
+    expect(screen.getByText('Contract gone')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to list' }))
+    expect(await screen.findByText('contract list')).toBeInTheDocument()
+  })
+
+  it('approves or requests changes on a contract in review', () => {
+    renderDetail({ status: 'in_review' })
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(mutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'active' })
+    fireEvent.click(screen.getByRole('button', { name: 'Request Changes' }))
+    expect(mutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'draft' })
+  })
+
+  it('opens the YAML, saves an edit and shows the mutation error', async () => {
+    mutation = mutationOf({ isError: true, error: new Error('Save failed') })
+    vi.mocked(useUpdateDataContract).mockReturnValue(mutation as never)
+    renderDetail({})
+    fireEvent.click(screen.getByRole('button', { name: /view yaml/i }))
+    expect(screen.getByText('apiVersion: v3.2.0')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close modal' }))
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    expect(screen.getByText('Save failed')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Submit form' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Submit form' })).toBeNull())
+    expect(mutation.mutateAsync).toHaveBeenCalledWith({ id: 'c1', title: 'New' })
+  })
+
+  it('deletes after confirmation and returns to the list', async () => {
+    renderDetail({})
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[1])
+    expect(await screen.findByText('contract list')).toBeInTheDocument()
+    expect(mutation.mutateAsync).toHaveBeenCalledWith('c1')
+  })
+})
 
 describe('DataContractDetail metadata', () => {
   it('shows description, team, support and servers', () => {

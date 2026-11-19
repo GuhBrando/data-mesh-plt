@@ -1,7 +1,3 @@
-import json
-from pathlib import Path
-
-import jsonschema
 import pytest
 import yaml
 
@@ -13,13 +9,8 @@ from tests.fixtures.odcs.sample_contract import (
     make_contract,
     make_field,
     sample_contract,
-    SLA_CASES,
 )
-
-SCHEMA = Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json"
-VALIDATOR = jsonschema.Draft201909Validator(
-    json.loads(SCHEMA.read_text(encoding="utf-8"))
-)
+from tests.fixtures.odcs.validator import VALIDATOR
 
 EXPECTED_YAML = """\
 apiVersion: v3.2.0

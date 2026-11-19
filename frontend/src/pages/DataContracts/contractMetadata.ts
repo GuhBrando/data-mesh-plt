@@ -76,9 +76,17 @@ function firstError<T>(rows: T[], check: (row: T, position: number) => string | 
   return null
 }
 
-// A synced file can carry any string as a support url; only these schemes become links.
+// Mirrors SUPPORT_URL_SCHEMES in backend/domain/contract_metadata.py: only these become links.
 export function safeUrl(url: string): string | null {
   return /^(https?:|mailto:)/i.test(url) ? url : null
+}
+
+function supportError(channel: SupportChannel, position: number): string | null {
+  if (isBlank(channel.channel)) return `Support channel ${position} needs a channel`
+  if (channel.url && !safeUrl(channel.url)) {
+    return `Support channel ${position} needs an http, https or mailto URL`
+  }
+  return null
 }
 
 export function serverLocation(server: ContractServer): string {
@@ -103,7 +111,7 @@ export function metadataError(
 ): string | null {
   return (
     firstError(members, (m, n) => (isBlank(m.username) ? `Team member ${n} needs a username` : null)) ??
-    firstError(support, (s, n) => (isBlank(s.channel) ? `Support channel ${n} needs a channel` : null)) ??
+    firstError(support, supportError) ??
     firstError(servers, serverError)
   )
 }

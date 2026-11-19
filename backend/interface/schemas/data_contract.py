@@ -11,10 +11,14 @@ from pydantic import (
     model_validator,
 )
 
-from backend.domain.contract_metadata import server_problems
+from backend.domain.contract_metadata import server_problems, support_url_problem
 from backend.domain.quality_rules import find_quality_rule_problems
+from backend.domain.service_levels import service_level_problems
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# The nested rows forbid unknown keys, like the ODCS reader: a key the platform
+# does not model must fail loudly instead of being dropped.
+_STRICT = ConfigDict(extra="forbid")
 
 
 class SchemaField(BaseModel):
@@ -38,7 +42,7 @@ def _reject_bool(value: Any) -> Any:
 class QualityRule(BaseModel):
     """An ODCS quality rule: a library metric the tool can run, or text."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     type: Literal["library", "text"]
     dimension: (
@@ -98,50 +102,67 @@ class ModelsSection(BaseModel):
 
 
 class ServiceLevelProperty(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     property: str = Field(min_length=1)
     value: int | float | str
     unit: str | None = None
 
-    @field_validator("value", mode="before")
-    @classmethod
-    def _storable(cls, value: Any) -> Any:
-        if isinstance(value, str) and not value.strip():
-            raise ValueError("a text value cannot be blank")
-        return _reject_bool(value)
+    _no_bool_value = field_validator("value", mode="before")(_reject_bool)
 
 
 class ServiceLevels(BaseModel):
     # forbid: a stale client sending the old four keys gets 422, not an empty SLA.
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     properties: list[ServiceLevelProperty] = []
 
+    @model_validator(mode="after")
+    def _storable(self) -> "ServiceLevels":
+        # The rules the file readers apply: what is saved here can sync back.
+        problems = service_level_problems([p.model_dump() for p in self.properties])
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
 
 class ContractDescription(BaseModel):
+    model_config = _STRICT
+
     purpose: str = ""
     usage: str = ""
     limitations: str = ""
 
 
 class TeamMember(BaseModel):
+    model_config = _STRICT
+
     username: NonEmptyStr
     name: str = ""
     role: str = ""
 
 
 class SupportChannel(BaseModel):
+    model_config = _STRICT
+
     channel: NonEmptyStr
     url: str = ""
     tool: str = ""
     scope: str = ""
 
+    @field_validator("url")
+    @classmethod
+    def _linkable(cls, url: str) -> str:
+        problem = support_url_problem(url)
+        if problem:
+            raise ValueError(problem)
+        return url
+
 
 class ContractServer(BaseModel):
     """Where the data lives. Coordinates only: no credential belongs here."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     server: NonEmptyStr
     type: Literal["databricks", "postgres", "azure", "local"]

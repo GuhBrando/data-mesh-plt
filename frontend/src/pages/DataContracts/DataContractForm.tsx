@@ -84,6 +84,8 @@ const schema = z
     limitations: z.string(),
   })
   .superRefine((data, ctx) => {
+    // A hidden section must not block the save with an error nobody can see.
+    if (!tierShowsSLAs(data.tier)) return
     const required = requiredSlaKeys(data.tier)
     for (const key of SLA_KEYS) {
       const input = { value: data[key], unit: data[unitKey(key)] }
@@ -451,8 +453,10 @@ export default function DataContractForm({
   ) as Record<SlaKey, string>
 
   const handleFormSubmit = (values: FormValues) => {
-    if (!validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)) return
-    if (!metadata.validate()) return
+    // Both run, so a message the user has since fixed never lingers on screen.
+    const arraysValid = validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)
+    const metadataValid = metadata.validate()
+    if (!arraysValid || !metadataValid) return
 
     onSubmit({
       title: values.title,

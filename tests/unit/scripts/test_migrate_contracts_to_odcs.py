@@ -11,6 +11,7 @@ import yaml
 import scripts.migrate_contracts_to_odcs as migration
 from backend.infra.github_client import ContractFile, GitHubClient
 from backend.use_cases.data_contract.odcs import from_odcs
+from tests.fixtures.odcs.sample_contract import make_field
 
 
 SALES = """\
@@ -161,6 +162,19 @@ def test_values_the_legacy_reader_would_coerce_or_drop_are_refused(change, reaso
     result = _convert("p.yaml", yaml.safe_dump(doc))
     assert result.action == "refused"
     assert reason in result.reason
+
+
+def test_rules_out_of_field_order_convert_because_odcs_regroups_them():
+    doc = yaml.safe_load(SALES)
+    doc["models"] = {"fields": [make_field("id")]}
+    doc["quality"] = [{"dimension": "freshness", "operator": "<=", "threshold": "24h"},
+                      {"dimension": "completeness", "column": "id", "operator": ">=", "threshold": "99%"}]
+    assert _convert("p.yaml", yaml.safe_dump(doc)).action == "convert"
+
+
+def test_servicelevels_that_are_not_an_object_refuse_only_that_file():
+    result = _convert("p.yaml", yaml.safe_dump({**yaml.safe_load(SALES), "servicelevels": "24h"}))
+    assert (result.action, result.reason) == ("refused", "ContractParseError: servicelevels must be an object")
 
 
 def test_a_bug_in_the_conversion_is_not_reported_as_a_bad_file(monkeypatch):

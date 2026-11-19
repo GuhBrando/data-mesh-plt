@@ -206,9 +206,15 @@ def _without_empty(section: dict[str, Any]) -> dict[str, Any]:
 
 
 def _comparable(parsed: ParsedContract) -> dict[str, Any]:
-    """The contract's values, ignoring the empty ones ODCS omits by design."""
+    """The contract's values, ignoring what ODCS cannot carry by design: empty
+    values, and the order of the rules, which it keeps under their property."""
     values = dataclasses.asdict(parsed)
-    values["models"] = _without_empty(values["models"])
+    models = _without_empty(values["models"])
+    if "quality" in models:
+        models["quality"] = sorted(
+            models["quality"], key=lambda rule: json.dumps(rule, sort_keys=True)
+        )
+    values["models"] = models
     values["servicelevels"] = _without_empty(values["servicelevels"])
     return values
 

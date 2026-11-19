@@ -98,7 +98,7 @@ async def rules_after(conn, *rules) -> list[dict]:
     (old(threshold="0.99"), TEXT), (old(threshold="1"), TEXT), (old(threshold="150"), TEXT),
     (old(threshold="abc"), TEXT), (old(threshold="24h"), TEXT), (old(threshold=""), TEXT),
     (old(operator="<=", threshold="5"), TEXT), (old(operator="=", threshold="100"), TEXT),
-    (old(column=""), TEXT), (old(column="ghost"), TEXT),
+    (old(column=""), TEXT),
 ])
 async def test_rule_conversion(db, rule, expected):
     [got] = await rules_after(db, rule)

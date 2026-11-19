@@ -4,9 +4,12 @@ Raises plain ValueError; odcs.py wraps it. This module must not import odcs.py,
 which imports it.
 """
 
+from collections.abc import Mapping
+from datetime import date
 from typing import Any
 
 from backend.domain.quality_rules import QUALITY_OPERATORS
+from backend.use_cases.data_contract.parsed_contract import printable, unknown_keys
 
 _RULE_KEYS = frozenset(
     {"type", "dimension", "metric", "unit", "arguments", "description"}
@@ -15,11 +18,13 @@ _RULE_KEYS = frozenset(
 _CHECK_KEYS = ("metric", "unit", "arguments", *QUALITY_OPERATORS)
 _SLA_KEYS = frozenset({"property", "value", "unit"})
 # ODCS writes % and min. Files written by hand or by other tools use these too.
-_SLA_UNIT_ALIASES = {"percent": "%", "m": "min"}
+SLA_UNIT_ALIASES = {"percent": "%", "m": "min"}
 
 
-def _unknown(keys: Any, allowed: frozenset[str]) -> str:
-    return ", ".join(sorted(str(key) for key in keys if key not in allowed))
+def _object(item: Any, where: str) -> Mapping[str, Any]:
+    if not isinstance(item, Mapping):
+        raise ValueError(f"{where} must be an object")
+    return item
 
 
 def rule_to_odcs(rule: dict[str, Any]) -> dict[str, Any]:
@@ -41,20 +46,26 @@ def rule_to_odcs(rule: dict[str, Any]) -> dict[str, Any]:
 def _valid_values(arguments: Any) -> list[str]:
     if arguments is None:
         return []
-    unknown = _unknown(arguments, frozenset({"validValues"}))
+    arguments = _object(arguments, "quality rule arguments")
+    unknown = unknown_keys(arguments, frozenset({"validValues"}))
     if unknown:
         raise ValueError(f"quality rule arguments has unsupported keys: {unknown}")
     values = arguments.get("validValues") or []
-    if any(value is None for value in values):
-        raise ValueError("quality rule validValues cannot hold an empty value")
+    # A YAML scalar is a string, which would split into one value per character.
+    if not isinstance(values, list):
+        raise ValueError("quality rule validValues must be a list")
+    if any(value is None or isinstance(value, Mapping | list) for value in values):
+        raise ValueError("quality rule validValues can only hold scalar values")
     return [str(value) for value in values]
 
 
 def rule_from_odcs(item: dict[str, Any], column: str) -> dict[str, Any]:
-    kind = item.get("type") or ("library" if "metric" in item else "text")
+    kind = _object(item, "quality rule").get("type") or (
+        "library" if "metric" in item else "text"
+    )
     if kind not in ("library", "text"):
         raise ValueError(f"quality type {kind!r} is not supported")
-    unknown = _unknown(item, _RULE_KEYS)
+    unknown = unknown_keys(item, _RULE_KEYS)
     if unknown:
         raise ValueError(f"quality rule has unsupported keys: {unknown}")
 
@@ -96,27 +107,34 @@ def sla_to_odcs(servicelevels: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
-def sla_from_odcs(items: list[dict[str, Any]]) -> dict[str, Any]:
+def _sla_value(value: Any, where: str) -> Any:
+    # YAML reads an unquoted date or timestamp as an object JSON cannot hold.
+    if isinstance(value, date):
+        return value.isoformat()
+    if value is None or isinstance(value, bool | Mapping | list):
+        raise ValueError(f"{where} has no storable value")
+    return value
+
+
+def sla_from_odcs(items: Any) -> dict[str, Any]:
+    """Shapes only; service_level_problems decides what may be stored."""
+    if not isinstance(items, list):
+        raise ValueError("slaProperties must be a list")
     properties = []
     for item in items:
-        name = item["property"]
-        unknown = _unknown(item, _SLA_KEYS)
+        name = _object(item, "slaProperties entry").get("property")
+        where = f"slaProperties entry {printable(name)}"
+        unknown = unknown_keys(item, _SLA_KEYS)
         if unknown:
-            raise ValueError(
-                f"slaProperties entry {name} has unsupported keys: {unknown}"
-            )
-        value = item.get("value")
-        if value is None:
-            raise ValueError(f"slaProperties entry {name} has no storable value")
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            # YAML reads an unquoted timestamp as a datetime, which JSON cannot hold.
-            value = str(value)
+            raise ValueError(f"{where} has unsupported keys: {unknown}")
         unit = item.get("unit")
+        if isinstance(unit, str):
+            unit = SLA_UNIT_ALIASES.get(unit, unit)
         properties.append(
             {
                 "property": name,
-                "value": value,
-                "unit": _SLA_UNIT_ALIASES.get(unit, unit),
+                "value": _sla_value(item.get("value"), where),
+                "unit": unit,
             }
         )
     return {"properties": properties}

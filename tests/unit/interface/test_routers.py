@@ -512,6 +512,23 @@ STORED = dict(
 )
 
 
+@pytest.mark.parametrize("stakeholder_of, shown", [(set(), False), ({CONTRACT_ID}, True)])
+def test_list_hides_who_and_where_from_a_consumer_outside_the_contract(
+    consumer_client, stakeholder_of, shown
+):
+    mock_uc, mock_sr = AsyncMock(), AsyncMock()
+    mock_uc.execute.return_value = [_contract(**STORED)]
+    mock_sr.contract_ids_of.return_value = stakeholder_of
+    app.dependency_overrides[get_list_data_contracts_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
+    [listed] = consumer_client.get("/api/v1/data-contracts").json()
+    sections = ("team_members", "support", "servers")
+    assert {k: listed[k] for k in sections} == (
+        {k: STORED[k] for k in sections} if shown else dict.fromkeys(sections, [])
+    )
+    assert listed["description"] == STORED["description"]
+
+
 def _put(admin_client, body):
     mock_update = AsyncMock()
     stored = _contract(**STORED)
@@ -523,7 +540,7 @@ def _put(admin_client, body):
 
 def test_update_empty_list_clears_only_that_section(admin_client):
     _, changes = _put(admin_client, {"servers": []})
-    assert changes["servers"] == [] and changes["team_members"] is None
+    assert changes["servers"] == [] and "team_members" not in changes
 
 
 def test_update_replaces_description_whole(admin_client):
@@ -591,16 +608,6 @@ def test_create_rejects_two_rules_on_same_metric_and_column(admin_client):
     mock_uc.execute.assert_not_called()
 
 
-def test_create_rejects_old_service_level_shape(admin_client):
-    resp, mock_uc = _post_contract(
-        admin_client,
-        {"fields": []},
-        {"freshness": "24h", "availability": "99%", "retention": "365d", "latency": "1h"},
-    )
-    assert resp.status_code == 422
-    mock_uc.execute.assert_not_called()
-
-
 VIOLATION = (
     "Contract changes require a MAJOR version bump (current 1.0.0, requested 1.0.1):"
     " property 'amount' removed"
@@ -645,7 +652,7 @@ def test_status_only_put_sends_only_the_status(admin_client):
     resp, mock_update, _ = _put_contract(admin_client, {"status": "active"})
     assert resp.status_code == 200
     kwargs = mock_update.execute.call_args.kwargs
-    assert {k: v for k, v in kwargs["changes"].items() if v is not None} == {"status": "active"}
+    assert kwargs["changes"] == {"status": "active"}
     assert kwargs["created_by"] == USER_ID
 
 

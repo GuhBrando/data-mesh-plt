@@ -12,7 +12,6 @@ from tests.fixtures.odcs.sample_contract import (
     make_contract,
     make_field,
     sample_contract,
-    SLA_CASES,
 )
 
 
@@ -85,7 +84,14 @@ def test_missing_team_means_no_owner():
         ({"customProperties": [{"property": "tier", "value": "2"}]}, "tier must be"),
         ({"slaProperties": [{"property": "a", "value": 1, "driver": "x"}]}, "driver"),
         ({"slaProperties": [{"property": "a", "value": None}]}, "no storable value"),
-        ({"slaProperties": [{"value": 1}]}, "malformed"),
+        ({"slaProperties": [{"value": 1}]}, "property name"),
+        ({"customProperties": [{"value": 1}]}, "malformed"),
+        # Values the API refuses: storing them would block every later save.
+        ({"slaProperties": [{"property": "frequency", "value": " ", "unit": "d"}]}, "blank"),
+        ({"slaProperties": [{"property": "frequency", "value": 1, "unit": 7}]}, "unit must be text"),
+        ({"schema": [{"name": "t", "properties": [{"name": "email", "logicalType": "string",
+                                                   "quality": [{"type": "text", "description": 5}]}]}]},
+         "description must be text"),
         # An unquoted 1.10 loads as the float 1.1; null as None.
         ({"version": 1.1}, "version must be of type str"),
         ({"version": None}, "version must be of type str"),

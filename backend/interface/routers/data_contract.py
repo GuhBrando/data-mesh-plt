@@ -1,6 +1,5 @@
 import logging
 import uuid
-from collections.abc import Sequence
 from typing import Any, List
 
 import httpx
@@ -100,8 +99,31 @@ async def _require_contract_read_access(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
-def _rows(rows: Sequence[BaseModel]) -> list[dict[str, Any]]:
-    return [row.model_dump() for row in rows]
+def _plain(value: Any) -> Any:
+    """A request value as the use cases take it: models and rows become dicts."""
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _content(body: BaseModel) -> dict[str, Any]:
+    """The contract values a request sends. None is "not sent": the stored value
+    stays, while an empty list clears that section."""
+    return {name: _plain(value) for name, value in body if value is not None}
+
+
+# Who works on a contract and where its data lives: shown in the list only to
+# the readers _require_contract_read_access lets see the contract itself.
+_RESTRICTED_SECTIONS = ("team_members", "support", "servers")
+
+
+async def _readable_ids(current_user: User, stakeholder_repo) -> set[uuid.UUID] | None:
+    """The contracts the user may read in full; None means all of them."""
+    if current_user.role != UserRole.DATA_CONSUMER:
+        return None
+    return await stakeholder_repo.contract_ids_of(current_user.id)
 
 
 def _to_response(contract: DataContract) -> DataContractResponseModel:
@@ -152,21 +174,7 @@ async def create_data_contract(
             detail="You are not a member of the specified domain",
         )
     try:
-        contract = await use_case.execute(
-            title=body.title,
-            version=body.version,
-            owner=body.owner,
-            domain_id=body.domain_id,
-            tier=body.tier,
-            status=body.status,
-            models=body.models.model_dump(),
-            servicelevels=body.servicelevels.model_dump(),
-            description=body.description.model_dump(),
-            team_members=_rows(body.team_members),
-            support=_rows(body.support),
-            servers=_rows(body.servers),
-            created_by=current_user.id,
-        )
+        contract = await use_case.execute(**_content(body), created_by=current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     await _push_to_github(github, contract, "Add contract")
@@ -176,10 +184,16 @@ async def create_data_contract(
 @router.get("/data-contracts", response_model=List[DataContractResponseModel])
 async def list_data_contracts(
     use_case: ListDataContractsUseCase = Depends(get_list_data_contracts_use_case),
-    _: User = Depends(get_current_user),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
 ):
     contracts = await use_case.execute()
-    return [_to_response(c) for c in contracts]
+    readable = await _readable_ids(current_user, stakeholder_repo)
+    responses = [_to_response(c) for c in contracts]
+    if readable is None:
+        return responses
+    hidden = {section: [] for section in _RESTRICTED_SECTIONS}
+    return [r if r.id in readable else r.model_copy(update=hidden) for r in responses]
 
 
 @router.get("/data-contracts/{contract_id}/yaml", response_class=PlainTextResponse)
@@ -272,11 +286,11 @@ async def update_data_contract(
         if not await is_domain_member(current_user.id, existing.domain_id, db):
             raise HTTPException(status_code=403, detail="Not a member of this domain")
     try:
-        # None keeps the stored section; an empty list clears it. The use case
-        # merges under the row lock, so a concurrent update is not overwritten.
+        # Only the sent values: the use case merges them into the row it locks,
+        # so a concurrent update is never overwritten with stale values.
         result = await use_case.execute(
             contract_id=contract_id,
-            changes=body.model_dump(),
+            changes=_content(body),
             created_by=current_user.id,
         )
     except ContractEvolutionError as e:

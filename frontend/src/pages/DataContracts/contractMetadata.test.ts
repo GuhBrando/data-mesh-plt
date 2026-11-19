@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emptyServer, metadataError, withServerType } from './contractMetadata'
+import { emptyServer, metadataError, safeUrl, serverLocation, withServerType } from './contractMetadata'
 
 describe('withServerType', () => {
   it('clears keys the new type does not take and keeps shared ones', () => {
@@ -15,14 +15,13 @@ describe('metadataError', () => {
     expect(metadataError([], [], [])).toBeNull()
     expect(metadataError([{ username: '', name: 'x', role: '' }], [], [])).toBe('Team member 1 needs a username')
     expect(metadataError([], [{ channel: ' ', url: '', tool: '', scope: '' }], [])).toBe('Support channel 1 needs a channel')
+    expect(metadataError([], [{ channel: 'c', url: 'javascript:alert(1)', tool: '', scope: '' }], []))
+      .toBe('Support channel 1 needs an http, https or mailto URL')
     expect(metadataError([], [], [emptyServer()])).toBe('Server 1 needs a name')
     expect(metadataError([], [], [{ ...emptyServer(), server: 'a', type: 'postgres', host: 'h' }]))
       .toBe('Server 1 (postgres) needs Port, Database, Schema')
   })
 })
-
-
-import { safeUrl, serverLocation } from './contractMetadata'
 
 describe('safeUrl', () => {
   it.each(['https://example.com', 'http://example.com', 'mailto:a@example.com', 'HTTPS://example.com'])(

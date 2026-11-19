@@ -50,36 +50,10 @@ def _quality_checks(tmp_path):
     return result["result"], {(c["type"], c["field"]): c for c in result["checks"]
                               if c["category"] == "quality"}
 
-def test_lint_accepts_the_emitted_contract_without_warnings(tmp_path):
-    contract = _on_local_server("pass")
-    assert server_problems(contract.servers[0]) == []
-    doc = to_odcs(contract)
-    assert doc["servers"][0]["type"] == "local"
-    proc = _cli(tmp_path, "lint", doc)
-    assert _report(tmp_path)["result"] == "passed", proc.stdout
+# Two CLI runs in all: each one starts the tool. CI's odcs-lint job lints the
+# emitted contracts, so lint is not run here again.
 
-def test_rules_pass_on_good_data(tmp_path):
-    proc = _cli(tmp_path, "test", to_odcs(_on_local_server("pass")))
-    overall, checks = _quality_checks(tmp_path)
-    assert proc.returncode == 0, proc.stdout
-    assert overall == "passed"
-    assert {k: c["result"] for k, c in checks.items()} == {
-        ("row_count", None): "passed", ("field_duplicate_values", "order_id"): "passed",
-        ("field_null_values", "customer_id"): "passed", ("field_invalid_values", "status"): "passed",
-        ("field_null_values", "amount"): "passed"}
-
-def test_rules_fail_on_bad_data(tmp_path):
-    proc = _cli(tmp_path, "test", to_odcs(_on_local_server("fail")))
-    overall, checks = _quality_checks(tmp_path)
-    assert proc.returncode == 1
-    assert overall == "failed"
-    assert "was 4, expected >= 5" in checks[("row_count", None)]["reason"]
-    assert "75.0% (3 of 4 rows)" in checks[("field_null_values", "customer_id")]["reason"]
-    assert "was 2, expected = 0" in checks[("field_duplicate_values", "order_id")]["reason"]
-    assert "was 2, expected = 0" in checks[("field_invalid_values", "status")]["reason"]
-    assert checks[("field_null_values", "amount")]["result"] == "passed"
-
-def test_every_unit_the_api_accepts_is_executed(tmp_path):
+def test_every_metric_and_unit_the_api_accepts_runs_and_passes_on_good_data(tmp_path):
     allowed = {(m, u) for m in QUALITY_METRICS for u in QUALITY_UNITS
                if u == "rows" or m in PERCENT_METRICS}
     rules = [
@@ -97,7 +71,20 @@ def test_every_unit_the_api_accepts_is_executed(tmp_path):
     contract = _on_local_server("pass")
     contract.models = {**contract.models, "quality": rules}
     assert find_quality_rule_problems(rules, contract.models["fields"]) == []
-    _cli(tmp_path, "test", to_odcs(contract))
-    _, checks = _quality_checks(tmp_path)
+    assert server_problems(contract.servers[0]) == []
+    proc = _cli(tmp_path, "test", to_odcs(contract))
+    overall, checks = _quality_checks(tmp_path)
+    assert (proc.returncode, overall) == (0, "passed"), proc.stdout
     assert len(checks) == len(rules)
-    assert all(c["result"] in ("passed", "failed") for c in checks.values())
+    assert all(c["result"] == "passed" for c in checks.values())
+
+def test_rules_fail_on_bad_data(tmp_path):
+    proc = _cli(tmp_path, "test", to_odcs(_on_local_server("fail")))
+    overall, checks = _quality_checks(tmp_path)
+    assert proc.returncode == 1
+    assert overall == "failed"
+    assert "was 4, expected >= 5" in checks[("row_count", None)]["reason"]
+    assert "75.0% (3 of 4 rows)" in checks[("field_null_values", "customer_id")]["reason"]
+    assert "was 2, expected = 0" in checks[("field_duplicate_values", "order_id")]["reason"]
+    assert "was 2, expected = 0" in checks[("field_invalid_values", "status")]["reason"]
+    assert checks[("field_null_values", "amount")]["result"] == "passed"

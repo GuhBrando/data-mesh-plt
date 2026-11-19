@@ -277,7 +277,8 @@ class PostgresDataContractRepository(IDataContractRepository):
         support: list[dict[str, Any]],
         servers: list[dict[str, Any]],
     ) -> DataContract:
-        # One statement: the caller already holds the row lock, or no row exists.
+        # One statement, so it cannot race a concurrent sync of the same file.
+        # The caller knows whether the row existed from its locked read.
         await self.db.execute(
             """
             INSERT INTO catalog.data_contracts

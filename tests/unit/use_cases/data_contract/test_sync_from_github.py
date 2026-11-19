@@ -161,7 +161,7 @@ async def test_quality_merged_into_models(use_case, github, repo):
     await use_case.execute()
     quality = repo.upsert.call_args.kwargs["models"]["quality"]
     assert [rule["type"] for rule in quality] == ["text"]
-    assert "[legacy rule: dimension=freshness" in quality[0]["description"]
+    assert quality[0]["description"] == '[legacy rule: {"dimension": "freshness"}]'
 
 
 async def test_resolve_domain_creates_when_not_found(use_case, github, repo, domain_repo):

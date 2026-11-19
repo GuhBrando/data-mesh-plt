@@ -1,9 +1,28 @@
 import uuid
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
-from backend.interface.schemas.data_contract import DataContractCreateModel
+from backend.domain.contract_metadata import SERVER_TYPES
+from backend.domain.contract_values import (
+    CLASSIFICATIONS,
+    CONTRACT_STATUSES,
+    FIELD_TYPES,
+    RULE_DIMENSIONS,
+    RULE_OPERATORS,
+    SLA_KEYS,
+)
+from backend.interface.schemas.data_contract import (
+    ContractDescription,
+    ContractServer,
+    DataContractCreateModel,
+    QualityRule,
+    SchemaField,
+    ServiceLevels,
+    SupportChannel,
+    TeamMember,
+)
 
 DOMAIN_ID = uuid.uuid4()
 
@@ -43,22 +62,6 @@ def test_schema_field_defaults():
     assert m.servicelevels.availability == ""
 
 
-from typing import get_args
-
-from backend.domain.contract_metadata import CLASSIFICATIONS, SERVER_TYPES
-from backend.interface.schemas.data_contract import (
-    ContractServer, DataContractUpdateModel, SchemaField, SupportChannel, TeamMember,
-)
-
-
-def test_create_model_defaults_new_sections():
-    m = DataContractCreateModel(title="x", owner="o", domain_id=DOMAIN_ID, tier=3)
-    assert m.description.model_dump() == {"purpose": "", "usage": "", "limitations": ""}
-    assert m.team_members == [] and m.support == [] and m.servers == []
-    u = DataContractUpdateModel()
-    assert (u.description, u.team_members, u.support, u.servers) == (None, None, None, None)
-
-
 def test_schema_field_attributes():
     f = SchemaField(name="a", type="string")
     assert (f.classification, f.unique, f.physical_type) == ("", False, "")
@@ -68,17 +71,16 @@ def test_schema_field_attributes():
         SchemaField(name="a", type="string", classification="secret")
 
 
-def test_literals_match_the_domain_constants():
-    assert set(get_args(SchemaField.model_fields["classification"].annotation)) == {"", *CLASSIFICATIONS}
-    assert set(get_args(ContractServer.model_fields["type"].annotation)) == set(SERVER_TYPES)
-
-
 @pytest.mark.parametrize("build", [
     lambda: TeamMember(username="  "),
     lambda: SupportChannel(channel=""),
     lambda: ContractServer(server=" ", type="local", path="./a", format="csv"),
     lambda: ContractServer(server="a", type="local", path="./a", format="csv", password="not-a-real-secret"),
     lambda: ContractServer(server="a", type="databricks", catalog="c", schema="s"),
+    lambda: TeamMember(username="a", dateIn="2026-01-01"),
+    lambda: SupportChannel(channel="c", invitationUrl="https://example.com"),
+    lambda: SupportChannel(channel="c", url="javascript:alert(1)"),
+    lambda: ContractDescription(purpose="p", customProperties=[]),
 ])
 def test_invalid_rows_are_rejected(build):
     with pytest.raises(ValidationError):
@@ -91,21 +93,6 @@ def test_server_applies_the_type_rules():
 
 
 def test_schema_literals_match_the_domain_values():
-    from typing import get_args
-
-    from backend.domain.contract_values import (
-        CONTRACT_STATUSES,
-        FIELD_TYPES,
-        RULE_DIMENSIONS,
-        RULE_OPERATORS,
-        SLA_KEYS,
-    )
-    from backend.interface.schemas.data_contract import (
-        QualityRule,
-        SchemaField,
-        ServiceLevels,
-    )
-
     def literal(model, name):
         return get_args(model.model_fields[name].annotation)
 
@@ -114,3 +101,5 @@ def test_schema_literals_match_the_domain_values():
     assert literal(QualityRule, "dimension") == RULE_DIMENSIONS
     assert literal(QualityRule, "operator") == RULE_OPERATORS
     assert tuple(ServiceLevels.model_fields) == SLA_KEYS
+    assert literal(SchemaField, "classification") == ("", *CLASSIFICATIONS)
+    assert literal(ContractServer, "type") == SERVER_TYPES

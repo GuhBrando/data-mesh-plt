@@ -1,6 +1,5 @@
 import logging
 import uuid
-from collections.abc import Sequence
 from typing import Any, List
 
 import httpx
@@ -92,8 +91,31 @@ async def _require_contract_read_access(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
-def _rows(rows: Sequence[BaseModel]) -> list[dict[str, Any]]:
-    return [row.model_dump() for row in rows]
+def _plain(value: Any) -> Any:
+    """A request value as the use cases take it: models and rows become dicts."""
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _content(body: BaseModel) -> dict[str, Any]:
+    """The contract values a request sends. None is "not sent": the stored value
+    stays, while an empty list clears that section."""
+    return {name: _plain(value) for name, value in body if value is not None}
+
+
+# Who works on a contract and where its data lives: shown in the list only to
+# the readers _require_contract_read_access lets see the contract itself.
+_RESTRICTED_SECTIONS = ("team_members", "support", "servers")
+
+
+async def _readable_ids(current_user: User, stakeholder_repo) -> set[uuid.UUID] | None:
+    """The contracts the user may read in full; None means all of them."""
+    if current_user.role != UserRole.DATA_CONSUMER:
+        return None
+    return await stakeholder_repo.contract_ids_of(current_user.id)
 
 
 def _to_response(contract: DataContract) -> DataContractResponseModel:
@@ -144,20 +166,7 @@ async def create_data_contract(
             detail="You are not a member of the specified domain",
         )
     try:
-        contract = await use_case.execute(
-            title=body.title,
-            version=body.version,
-            owner=body.owner,
-            domain_id=body.domain_id,
-            tier=body.tier,
-            status=body.status,
-            models=body.models.model_dump(),
-            servicelevels=body.servicelevels.model_dump(),
-            description=body.description.model_dump(),
-            team_members=_rows(body.team_members),
-            support=_rows(body.support),
-            servers=_rows(body.servers),
-        )
+        contract = await use_case.execute(**_content(body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     await _push_to_github(github, contract, "Add contract")
@@ -167,10 +176,16 @@ async def create_data_contract(
 @router.get("/data-contracts", response_model=List[DataContractResponseModel])
 async def list_data_contracts(
     use_case: ListDataContractsUseCase = Depends(get_list_data_contracts_use_case),
-    _: User = Depends(get_current_user),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
 ):
     contracts = await use_case.execute()
-    return [_to_response(c) for c in contracts]
+    readable = await _readable_ids(current_user, stakeholder_repo)
+    responses = [_to_response(c) for c in contracts]
+    if readable is None:
+        return responses
+    hidden = {section: [] for section in _RESTRICTED_SECTIONS}
+    return [r if r.id in readable else r.model_copy(update=hidden) for r in responses]
 
 
 @router.get("/data-contracts/{contract_id}/yaml", response_class=PlainTextResponse)
@@ -218,43 +233,10 @@ async def update_data_contract(
         current_user.id, existing.domain_id, db
     ):
         raise HTTPException(status_code=403, detail="Not a member of this domain")
-    target_domain_id = (
-        body.domain_id if body.domain_id is not None else existing.domain_id
-    )
+    stored = {name: getattr(existing, name) for name in type(body).model_fields}
     try:
         contract = await use_case.execute(
-            contract_id=contract_id,
-            title=body.title if body.title is not None else existing.title,
-            version=body.version if body.version is not None else existing.version,
-            owner=body.owner if body.owner is not None else existing.owner,
-            domain_id=target_domain_id,
-            tier=body.tier if body.tier is not None else existing.tier,
-            status=body.status if body.status is not None else existing.status,
-            models=body.models.model_dump()
-            if body.models is not None
-            else existing.models,
-            servicelevels=(
-                body.servicelevels.model_dump()
-                if body.servicelevels is not None
-                else existing.servicelevels
-            ),
-            # None keeps the stored section; an empty list clears it.
-            description=(
-                body.description.model_dump()
-                if body.description is not None
-                else existing.description
-            ),
-            team_members=(
-                _rows(body.team_members)
-                if body.team_members is not None
-                else existing.team_members
-            ),
-            support=(
-                _rows(body.support) if body.support is not None else existing.support
-            ),
-            servers=(
-                _rows(body.servers) if body.servers is not None else existing.servers
-            ),
+            contract_id=contract_id, **{**stored, **_content(body)}
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

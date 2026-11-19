@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from backend.domain.contract_metadata import (
-    CLASSIFICATIONS,
     DESCRIPTION_KEYS,
     MEMBER_KEYS,
     SERVER_KEYS,
@@ -15,8 +14,10 @@ from backend.domain.contract_metadata import (
     empty_description,
     empty_server,
     server_problems,
+    support_url_problem,
 )
 from backend.domain.contract_values import (
+    CLASSIFICATIONS,
     CONTRACT_STATUSES,
     FIELD_TYPES,
     RULE_DIMENSIONS,
@@ -234,8 +235,6 @@ _DOCUMENT_KEYS = frozenset(
 )
 _TEAM_KEYS = frozenset({"name", "members"})
 _DESCRIPTION_KEYS = frozenset(DESCRIPTION_KEYS)
-_MEMBER_KEYS = frozenset(MEMBER_KEYS)
-_SUPPORT_KEYS = frozenset(SUPPORT_KEYS)
 _SERVER_KEYS = frozenset(
     "schema" if key == "schema_name" else key for key in SERVER_KEYS
 )
@@ -322,16 +321,22 @@ def _parse_owner(doc: dict[str, Any]) -> str:
     if isinstance(team, list):
         raise OdcsParseError("team must be an object, not the deprecated array")
     _reject_unknown(team, _TEAM_KEYS, "team")
-    return team.get("name", "")
+    return _require(team.get("name", ""), str, "team name")
 
 
 def _parse_rows(
-    rows: Any, allowed: frozenset[str], keys: tuple[str, ...], where: str
-) -> list[dict[str, Any]]:
+    rows: Any, keys: tuple[str, ...], required: str, where: str
+) -> list[dict[str, str]]:
+    """Text rows, like the API takes them: every value a string, `required` set."""
+    allowed = frozenset(keys)
     parsed = []
     for index, row in enumerate(rows or []):
-        _reject_unknown(row, allowed, f"{where}[{index}]")
-        parsed.append({key: row.get(key, "") for key in keys})
+        at = f"{where}[{index}]"
+        _reject_unknown(row, allowed, at)
+        values = {key: _require(row.get(key, ""), str, f"{at} {key}") for key in keys}
+        if not values[required].strip():
+            raise OdcsParseError(f"{at} needs a {required}")
+        parsed.append(values)
     return parsed
 
 
@@ -340,12 +345,24 @@ def _parse_description(doc: dict[str, Any]) -> dict[str, str]:
     if description is None:
         return empty_description()
     _reject_unknown(description, _DESCRIPTION_KEYS, "description")
-    return {key: description.get(key, "") for key in DESCRIPTION_KEYS}
+    return {
+        key: _require(description.get(key, ""), str, f"description {key}")
+        for key in DESCRIPTION_KEYS
+    }
 
 
-def _parse_members(doc: dict[str, Any]) -> list[dict[str, Any]]:
+def _parse_members(doc: dict[str, Any]) -> list[dict[str, str]]:
     team = doc.get("team") or {}
-    return _parse_rows(team.get("members"), _MEMBER_KEYS, MEMBER_KEYS, "team.members")
+    return _parse_rows(team.get("members"), MEMBER_KEYS, "username", "team.members")
+
+
+def _parse_support(doc: dict[str, Any]) -> list[dict[str, str]]:
+    rows = _parse_rows(doc.get("support"), SUPPORT_KEYS, "channel", "support")
+    for index, row in enumerate(rows):
+        problem = support_url_problem(row["url"])
+        if problem:
+            raise OdcsParseError(f"support[{index}]: {problem}")
+    return rows
 
 
 def _parse_servers(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -520,14 +537,14 @@ def _parse(doc: dict[str, Any]) -> ParsedContract:
         # Not str(): an unquoted 1.10 loads as the float 1.1, and null as None.
         version=_require(doc.get("version", "1.0.0"), str, "version"),
         owner=_parse_owner(doc),
-        domain_name=doc.get("domain", ""),
+        domain_name=_require(doc.get("domain", ""), str, "domain"),
         tier=_parse_tier(doc),
         status=_parse_status(doc),
         models=_parse_models(doc),
         servicelevels=_parse_servicelevels(doc),
         description=_parse_description(doc),
         team_members=_parse_members(doc),
-        support=_parse_rows(doc.get("support"), _SUPPORT_KEYS, SUPPORT_KEYS, "support"),
+        support=_parse_support(doc),
         servers=_parse_servers(doc),
     )
 

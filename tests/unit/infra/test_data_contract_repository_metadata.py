@@ -3,6 +3,8 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+import pytest
+
 from backend.infra.repositories.data_contract_repository import PostgresDataContractRepository
 
 NOW = datetime.now(tz=timezone.utc)
@@ -29,10 +31,6 @@ class FakeConnection:
     async def fetchrow(self, query, *args):
         self.calls.append((query, args))
         return self.row
-
-    async def execute(self, query, *args):
-        self.calls.append((query, args))
-        return "INSERT 0 1"
 
 
 def _row() -> dict:
@@ -63,15 +61,9 @@ async def test_update_binds_contract_id_last():
     assert "WHERE id = $13" in query and args[8:12] == ENCODED and args[12] == cid
 
 
-async def test_upsert_insert_binds_the_new_sections():
-    db = FakeConnection(None)
-    assert await PostgresDataContractRepository(db).upsert(uuid.uuid4(), **BASE, **NEW) is True
-    query, args = db.calls[-1]
-    assert "$13::jsonb" in query and args[9:13] == ENCODED
-
-
-async def test_upsert_update_path_forwards_the_new_sections():
-    db = FakeConnection(_row())
-    assert await PostgresDataContractRepository(db).upsert(uuid.uuid4(), **BASE, **NEW) is False
-    _, update_args = next(c for c in db.calls if "UPDATE" in c[0])
-    assert update_args[8:12] == ENCODED
+@pytest.mark.parametrize("inserted", [True, False])
+async def test_upsert_is_one_statement_that_reports_an_insert(inserted):
+    db = FakeConnection({"inserted": inserted})
+    assert await PostgresDataContractRepository(db).upsert(uuid.uuid4(), **BASE, **NEW) is inserted
+    [(query, args)] = db.calls
+    assert "ON CONFLICT (id) DO UPDATE" in query and args[9:13] == ENCODED

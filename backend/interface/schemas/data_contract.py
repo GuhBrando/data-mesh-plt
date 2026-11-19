@@ -2,9 +2,16 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
-from backend.domain.contract_metadata import server_problems
+from backend.domain.contract_metadata import server_problems, support_url_problem
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -42,29 +49,48 @@ class ServiceLevels(BaseModel):
     latency: str = ""
 
 
+# The metadata rows forbid unknown keys, like the ODCS reader: a key the
+# platform does not model must fail loudly instead of being dropped.
+_STRICT = ConfigDict(extra="forbid")
+
+
 class ContractDescription(BaseModel):
+    model_config = _STRICT
+
     purpose: str = ""
     usage: str = ""
     limitations: str = ""
 
 
 class TeamMember(BaseModel):
+    model_config = _STRICT
+
     username: NonEmptyStr
     name: str = ""
     role: str = ""
 
 
 class SupportChannel(BaseModel):
+    model_config = _STRICT
+
     channel: NonEmptyStr
     url: str = ""
     tool: str = ""
     scope: str = ""
 
+    @field_validator("url")
+    @classmethod
+    def _linkable(cls, url: str) -> str:
+        problem = support_url_problem(url)
+        if problem:
+            raise ValueError(problem)
+        return url
+
 
 class ContractServer(BaseModel):
     """Where the data lives. Coordinates only: no credential belongs here."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     server: NonEmptyStr
     type: Literal["databricks", "postgres", "azure", "local"]

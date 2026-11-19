@@ -1,7 +1,7 @@
 """Rules for the contract metadata sections. Pure: no I/O, no backend imports.
 
 Pydantic and the ODCS reader both enforce these, so the API and a synced file
-accept the same servers.
+accept the same servers and support links.
 """
 
 import re
@@ -9,8 +9,8 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
-CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")
-SERVER_TYPES = ("databricks", "postgres", "azure", "local")
+# Any other scheme, javascript: above all, must not become a link elsewhere.
+SUPPORT_URL_SCHEMES = ("http", "https", "mailto")
 
 DESCRIPTION_KEYS = ("purpose", "usage", "limitations")
 MEMBER_KEYS = ("username", "name", "role")
@@ -37,9 +37,15 @@ SERVER_RULES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "azure": (("location", "format"), ()),
     "local": (("path", "format"), ()),
 }
+SERVER_TYPES = tuple(SERVER_RULES)
 _COMMON_KEYS = ("server", "type", "environment")
 _TYPE_KEYS = tuple(key for key in SERVER_KEYS if key not in _COMMON_KEYS)
 _HOST = re.compile(r"[A-Za-z0-9.-]+")
+# A URL carrying a password, or a key=value secret as in a connection string.
+_CREDENTIAL = re.compile(
+    r"://[^/\s@]*:[^/\s@]*@|\b(?:password|pwd|secret|token|sig|accountkey)\s*=",
+    re.IGNORECASE,
+)
 
 
 def empty_description() -> dict[str, str]:
@@ -50,8 +56,9 @@ def empty_server() -> dict[str, Any]:
     return {key: None if key == "port" else "" for key in SERVER_KEYS}
 
 
-def _absent(value: Any) -> bool:
-    return value is None or value == ""
+def _absent(key: str, value: Any) -> bool:
+    # port is the one number: None is its empty value, as "" is for the text keys.
+    return value is None if key == "port" else value == ""
 
 
 def _host_problem(host: Any) -> str | None:
@@ -79,11 +86,31 @@ def _port_problem(port: Any) -> str | None:
     return None
 
 
+def _text_problem(key: str, value: Any) -> str | None:
+    if not isinstance(value, str):
+        return f"{key} must be text"
+    if _CREDENTIAL.search(value):
+        return f"{key} must not carry a password, token or connection string"
+    return None
+
+
 _VALUE_CHECKS = {
     "host": _host_problem,
     "location": _location_problem,
     "port": _port_problem,
 }
+
+
+def support_url_problem(url: Any) -> str | None:
+    if url == "":
+        return None
+    try:
+        scheme = urlsplit(url).scheme.lower()
+    except (ValueError, TypeError, AttributeError):
+        scheme = ""
+    if scheme not in SUPPORT_URL_SCHEMES:
+        return "url must be an http, https or mailto link"
+    return None
 
 
 def server_problems(server: Mapping[str, Any]) -> list[str]:
@@ -92,6 +119,9 @@ def server_problems(server: Mapping[str, Any]) -> list[str]:
     name = server.get("server")
     if not isinstance(name, str) or not name.strip():
         problems.append("server needs a name")
+    environment = server.get("environment")
+    if environment != "" and (problem := _text_problem("environment", environment)):
+        problems.append(problem)
 
     kind = server.get("type")
     if not isinstance(kind, str) or kind not in SERVER_RULES:
@@ -101,7 +131,7 @@ def server_problems(server: Mapping[str, Any]) -> list[str]:
     required, optional = SERVER_RULES[kind]
     for key in _TYPE_KEYS:
         value = server.get(key)
-        if _absent(value):
+        if _absent(key, value):
             if key in required:
                 problems.append(f"{key} is required for a {kind} server")
             continue
@@ -109,7 +139,7 @@ def server_problems(server: Mapping[str, Any]) -> list[str]:
             problems.append(f"{key} is not used by a {kind} server")
             continue
         check = _VALUE_CHECKS.get(key)
-        problem = check(value) if check else None
+        problem = check(value) if check else _text_problem(key, value)
         if problem:
             problems.append(problem)
     return problems

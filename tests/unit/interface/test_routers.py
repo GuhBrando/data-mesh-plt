@@ -505,6 +505,23 @@ STORED = dict(
 )
 
 
+@pytest.mark.parametrize("stakeholder_of, shown", [(set(), False), ({CONTRACT_ID}, True)])
+def test_list_hides_who_and_where_from_a_consumer_outside_the_contract(
+    consumer_client, stakeholder_of, shown
+):
+    mock_uc, mock_sr = AsyncMock(), AsyncMock()
+    mock_uc.execute.return_value = [_contract(**STORED)]
+    mock_sr.contract_ids_of.return_value = stakeholder_of
+    app.dependency_overrides[get_list_data_contracts_use_case] = lambda: mock_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
+    [listed] = consumer_client.get("/api/v1/data-contracts").json()
+    sections = ("team_members", "support", "servers")
+    assert {k: listed[k] for k in sections} == (
+        {k: STORED[k] for k in sections} if shown else dict.fromkeys(sections, [])
+    )
+    assert listed["description"] == STORED["description"]
+
+
 def _put(admin_client, body):
     mock_get, mock_update = AsyncMock(), AsyncMock()
     mock_get.execute.return_value = _contract(**STORED)

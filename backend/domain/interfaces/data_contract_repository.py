@@ -111,9 +111,5 @@ class IDataContractRepository(ABC):
         team_members: list[dict[str, Any]],
         support: list[dict[str, Any]],
         servers: list[dict[str, Any]],
-    ) -> bool:
-        """Insert or update a contract by id.
-
-        Returns True if created, False if updated.
-        """
-        ...
+    ) -> DataContract:
+        """Insert or update a contract by id and return it as stored."""

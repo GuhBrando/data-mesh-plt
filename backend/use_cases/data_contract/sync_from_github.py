@@ -1,3 +1,4 @@
+import copy
 import logging
 import uuid
 from typing import Any
@@ -7,6 +8,7 @@ from backend.domain.contract_evolution import (
     RetiredContractError,
     is_unchanged,
 )
+from backend.domain.entities.data_contract import CONTRACT_VALUE_FIELDS, DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.domain_repository import IDomainRepository
 from backend.infra.github_client import GitHubClient
@@ -15,9 +17,9 @@ from backend.use_cases.data_contract.contract_document import (
     parse_contract_document,
 )
 from backend.use_cases.data_contract.odcs import to_odcs
+from backend.use_cases.data_contract.parsed_contract import ParsedContract
 from backend.use_cases.data_contract.versioning import (
-    enforce_evolution,
-    record_version,
+    apply_evolution,
     validate_new_version,
 )
 
@@ -30,6 +32,19 @@ _MAX_ERROR_CHARS = 500
 def _error_text(exc: Exception) -> str:
     text = str(exc)
     return text if len(text) <= _MAX_ERROR_CHARS else text[:_MAX_ERROR_CHARS] + "…"
+
+
+def _file_matches(current: DataContract, parsed: ParsedContract) -> bool:
+    """Whether storing the file would leave the contract as it is.
+
+    Compares what the platform would store, not the raw file, so a file that
+    differs only in spelling (an older v3 apiVersion, an uppercase id, a legacy
+    DCS layout) still matches.
+    """
+    candidate = copy.copy(current)
+    for name in CONTRACT_VALUE_FIELDS:
+        setattr(candidate, name, getattr(parsed, name))
+    return is_unchanged(to_odcs(current), to_odcs(candidate))
 
 
 class SyncFromGitHubUseCase:
@@ -66,6 +81,9 @@ class SyncFromGitHubUseCase:
 
         async with self.repository.transaction():
             current = await self.repository.get_by_id_for_update(parsed.id)
+            if current is None and parsed.status == RETIRED_STATUS:
+                # Same rule as the API: a contract is not born retired.
+                raise ValueError(f"Contract {parsed.id} cannot be created as retired")
             if current is not None and current.domain != parsed.domain_name:
                 raise ValueError(
                     f"domain mismatch: YAML declares domain '{parsed.domain_name}'"
@@ -73,8 +91,8 @@ class SyncFromGitHubUseCase:
                 )
             if current is not None and current.status == RETIRED_STATUS:
                 # A retired contract's file stays in the repository; every sync
-                # re-reads it, so an identical file is silently skipped.
-                if is_unchanged(to_odcs(current), data):
+                # re-reads it, so an unchanged file is silently skipped.
+                if _file_matches(current, parsed):
                     return None
                 raise RetiredContractError(
                     f"Contract {parsed.id} is retired; its file changed and was ignored"
@@ -82,26 +100,13 @@ class SyncFromGitHubUseCase:
             validate_new_version(parsed.version, current)
             # Inside the transaction, so a rejected file leaves no new domain.
             domain_id = await self._resolve_domain_id(parsed.domain_name)
-            was_created = await self.repository.upsert(
+            stored = await self.repository.upsert(
                 contract_id=parsed.id,
-                title=parsed.title,
-                version=parsed.version,
-                owner=parsed.owner,
                 domain_id=domain_id,
-                tier=parsed.tier,
-                status=parsed.status,
-                models=parsed.models,
-                servicelevels=parsed.servicelevels,
-                description=parsed.description,
-                team_members=parsed.team_members,
-                support=parsed.support,
-                servers=parsed.servers,
+                **{name: getattr(parsed, name) for name in CONTRACT_VALUE_FIELDS},
             )
-            stored = await self.repository.get_by_id(parsed.id)
-            if current is not None:
-                enforce_evolution(current, stored)
-            await record_version(self.repository, current, stored, created_by)
-            return was_created
+            await apply_evolution(self.repository, current, stored, created_by)
+            return current is None
 
     async def execute(self, created_by: uuid.UUID | None = None) -> dict[str, Any]:
         yamls = await self.github.list_all_yaml_contents()

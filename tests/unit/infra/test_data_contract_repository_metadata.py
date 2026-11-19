@@ -63,15 +63,10 @@ async def test_update_binds_contract_id_last():
     assert "WHERE id = $13" in query and args[8:12] == ENCODED and args[12] == cid
 
 
-async def test_upsert_insert_binds_the_new_sections():
-    db = FakeConnection(None)
-    assert await PostgresDataContractRepository(db).upsert(uuid.uuid4(), **BASE, **NEW) is True
-    query, args = db.calls[-1]
-    assert "$13::jsonb" in query and args[9:13] == ENCODED
-
-
-async def test_upsert_update_path_forwards_the_new_sections():
+async def test_upsert_writes_once_and_returns_the_stored_row():
     db = FakeConnection(_row())
-    assert await PostgresDataContractRepository(db).upsert(uuid.uuid4(), **BASE, **NEW) is False
-    _, update_args = next(c for c in db.calls if "UPDATE" in c[0])
-    assert update_args[8:12] == ENCODED
+    cid = uuid.uuid4()
+    contract = await PostgresDataContractRepository(db).upsert(cid, **BASE, **NEW)
+    (query, args), (_, read_args) = db.calls
+    assert "ON CONFLICT (id) DO UPDATE" in query and args[0] == cid and args[9:13] == ENCODED
+    assert read_args == (cid,) and contract.title == "T"

@@ -7,7 +7,7 @@ import yaml
 
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.entities.domain import Domain
-from backend.use_cases.data_contract.odcs import from_odcs, to_odcs
+from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
 from tests.fixtures.odcs.sample_contract import sample_contract
@@ -17,8 +17,6 @@ NOW = datetime.now(tz=timezone.utc)
 DOMAIN_ID = uuid.uuid4()
 CONTRACT_ID = uuid.uuid4()
 USER_ID = uuid.uuid4()
-FIELD = {"name": "id", "type": "string", "description": "", "nullable": False,
-         "primary_key": True}
 
 
 def _yaml(
@@ -79,8 +77,7 @@ def _contract(domain: str = "commerce", status: str = "draft", version: str = "1
 @pytest.fixture
 def repo(contract_repo):
     contract_repo.get_by_id_for_update.return_value = None   # new contract by default
-    contract_repo.get_by_id.return_value = _contract()       # the read after upsert
-    contract_repo.upsert.return_value = True
+    contract_repo.upsert.return_value = _contract()          # the row as stored
     return contract_repo
 
 
@@ -110,7 +107,6 @@ async def test_empty_repo_returns_zeros(use_case):
 
 async def test_creates_new_contract(use_case, github, repo):
     github.list_all_yaml_contents.return_value = [("commerce/orders.yaml", _yaml())]
-    repo.upsert.return_value = True
     result = await use_case.execute()
     assert result["created"] == 1
     assert result["updated"] == 0
@@ -119,7 +115,7 @@ async def test_creates_new_contract(use_case, github, repo):
 
 async def test_updates_existing_contract(use_case, github, repo):
     github.list_all_yaml_contents.return_value = [("commerce/orders.yaml", _yaml())]
-    repo.upsert.return_value = False
+    repo.get_by_id_for_update.return_value = _contract()
     result = await use_case.execute()
     assert result["updated"] == 1
     assert result["created"] == 0
@@ -190,7 +186,7 @@ async def test_upsert_called_with_correct_fields(use_case, github, repo):
 
 
 async def test_multiple_yamls_counted_separately(use_case, github, repo):
-    repo.upsert.side_effect = [True, False, True]
+    repo.get_by_id_for_update.side_effect = [None, _contract(), None]
     github.list_all_yaml_contents.return_value = [
         ("a/a.yaml", _yaml(contract_id=uuid.uuid4())),
         ("b/b.yaml", _yaml(contract_id=uuid.uuid4())),
@@ -332,8 +328,7 @@ async def test_sync_reports_unsupported_rule_and_keeps_row(use_case, github, rep
 def _sync(repo, github, stored, after, content):
     repo.get_by_id_for_update.return_value = stored
     if after is not None:
-        repo.get_by_id.return_value = after
-    repo.upsert.return_value = stored is None
+        repo.upsert.return_value = after
     github.list_all_yaml_contents.return_value = [("c/o.yaml", content)]
 
 
@@ -362,7 +357,7 @@ async def test_unchanged_file_writes_no_snapshot(use_case, github, repo):
 
 
 async def test_breaking_change_without_bump_is_reported_and_skipped(use_case, github, repo):
-    _sync(repo, github, _contract(status="active", models={"fields": [FIELD]}),
+    _sync(repo, github, _contract(status="active", models=orders_contract().models),
           _contract(status="active", models={"fields": []}), _yaml(status="active"))
     result = await use_case.execute()
     errors = result["errors"]
@@ -379,9 +374,20 @@ async def test_file_behind_database_is_reported_and_skipped(use_case, github, re
     assert "lower than the current version 1.1.0" in result["errors"][0]["error"]
 
 
-async def test_retired_contract_with_unchanged_file_is_silent(use_case, github, repo):
-    stored = _contract(status="retired")
-    _sync(repo, github, stored, None, assemble_yaml(stored))
+RETIRED = _contract(status="retired")
+
+
+@pytest.mark.parametrize("content", [
+    pytest.param(assemble_yaml(RETIRED), id="same-file"),
+    pytest.param(yaml.dump({**to_odcs(RETIRED), "apiVersion": "v3.1.0"}), id="older-v3"),
+    pytest.param(yaml.dump({**to_odcs(RETIRED), "id": str(CONTRACT_ID).upper()}),
+                 id="uppercase-id"),
+    pytest.param(_yaml(status="retired"), id="legacy-dcs"),
+])
+async def test_retired_contract_with_an_equivalent_file_is_silent(
+    use_case, github, repo, content
+):
+    _sync(repo, github, RETIRED, None, content)
     result = await use_case.execute()
     assert result == {"created": 0, "updated": 0, "errors": []}
     repo.upsert.assert_not_called()
@@ -414,8 +420,11 @@ async def test_one_rejected_file_does_not_stop_the_others(use_case, github, repo
     assert [e["path"] for e in result["errors"]] == ["b.yaml"]
 
 
-def test_retired_round_trips_through_odcs():
-    assert from_odcs(to_odcs(_contract(status="retired"))).status == "retired"
+async def test_new_contract_cannot_be_born_retired(use_case, github, repo):
+    _sync(repo, github, None, None, _yaml(status="retired"))
+    result = await use_case.execute()
+    assert "cannot be created as retired" in result["errors"][0]["error"]
+    repo.upsert.assert_not_called()
 
 
 async def test_long_error_is_cut_to_a_bounded_size(use_case, github):

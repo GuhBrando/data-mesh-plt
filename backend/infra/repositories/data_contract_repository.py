@@ -276,47 +276,38 @@ class PostgresDataContractRepository(IDataContractRepository):
         team_members: list[dict[str, Any]],
         support: list[dict[str, Any]],
         servers: list[dict[str, Any]],
-    ) -> bool:
-        existing = await self.get_by_id(contract_id)
-        if existing is None:
-            async with self.db.transaction():
-                await self.db.execute(
-                    """
-                    INSERT INTO catalog.data_contracts
-                        (id, title, version, owner, domain_id, tier, status,
-                         models, servicelevels,
-                         description, team_members, support, servers)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb,
-                            $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb);
-                    """,
-                    contract_id,
-                    title,
-                    version,
-                    owner,
-                    domain_id,
-                    tier,
-                    status,
-                    json.dumps(models),
-                    json.dumps(servicelevels),
-                    json.dumps(description),
-                    json.dumps(team_members),
-                    json.dumps(support),
-                    json.dumps(servers),
-                )
-            return True
-        await self.update(
-            contract_id=contract_id,
-            title=title,
-            version=version,
-            owner=owner,
-            domain_id=domain_id,
-            tier=tier,
-            status=status,
-            models=models,
-            servicelevels=servicelevels,
-            description=description,
-            team_members=team_members,
-            support=support,
-            servers=servers,
+    ) -> DataContract:
+        # One statement: the caller already holds the row lock, or no row exists.
+        await self.db.execute(
+            """
+            INSERT INTO catalog.data_contracts
+                (id, title, version, owner, domain_id, tier, status,
+                 models, servicelevels,
+                 description, team_members, support, servers)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb,
+                    $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb)
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title, version = EXCLUDED.version,
+                owner = EXCLUDED.owner, domain_id = EXCLUDED.domain_id,
+                tier = EXCLUDED.tier, status = EXCLUDED.status,
+                models = EXCLUDED.models, servicelevels = EXCLUDED.servicelevels,
+                description = EXCLUDED.description,
+                team_members = EXCLUDED.team_members,
+                support = EXCLUDED.support, servers = EXCLUDED.servers,
+                updated_at = now();
+            """,
+            contract_id,
+            title,
+            version,
+            owner,
+            domain_id,
+            tier,
+            status,
+            json.dumps(models),
+            json.dumps(servicelevels),
+            json.dumps(description),
+            json.dumps(team_members),
+            json.dumps(support),
+            json.dumps(servers),
         )
-        return False
+        return await self.get_by_id(contract_id)

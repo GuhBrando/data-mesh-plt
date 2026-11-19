@@ -265,50 +265,18 @@ async def update_data_contract(
     github: GitHubClient | None = Depends(get_github_client),
     db=Depends(get_db_connection),
 ):
-    existing = await get_use_case.execute(contract_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Data contract not found")
-    if current_user.role == UserRole.DATA_STEWARD and not await is_domain_member(
-        current_user.id, existing.domain_id, db
-    ):
-        raise HTTPException(status_code=403, detail="Not a member of this domain")
-    target_domain_id = (
-        body.domain_id if body.domain_id is not None else existing.domain_id
-    )
+    if current_user.role == UserRole.DATA_STEWARD:
+        existing = await get_use_case.execute(contract_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Data contract not found")
+        if not await is_domain_member(current_user.id, existing.domain_id, db):
+            raise HTTPException(status_code=403, detail="Not a member of this domain")
     try:
-        contract = await use_case.execute(
+        # None keeps the stored section; an empty list clears it. The use case
+        # merges under the row lock, so a concurrent update is not overwritten.
+        result = await use_case.execute(
             contract_id=contract_id,
-            title=body.title if body.title is not None else existing.title,
-            version=body.version if body.version is not None else existing.version,
-            owner=body.owner if body.owner is not None else existing.owner,
-            domain_id=target_domain_id,
-            tier=body.tier if body.tier is not None else existing.tier,
-            status=body.status if body.status is not None else existing.status,
-            models=body.models.model_dump()
-            if body.models is not None
-            else existing.models,
-            servicelevels=(
-                body.servicelevels.model_dump()
-                if body.servicelevels is not None
-                else existing.servicelevels
-            ),
-            # None keeps the stored section; an empty list clears it.
-            description=(
-                body.description.model_dump()
-                if body.description is not None
-                else existing.description
-            ),
-            team_members=(
-                _rows(body.team_members)
-                if body.team_members is not None
-                else existing.team_members
-            ),
-            support=(
-                _rows(body.support) if body.support is not None else existing.support
-            ),
-            servers=(
-                _rows(body.servers) if body.servers is not None else existing.servers
-            ),
+            changes=body.model_dump(),
             created_by=current_user.id,
         )
     except ContractEvolutionError as e:
@@ -316,17 +284,18 @@ async def update_data_contract(
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if not contract:
+    if result is None:
         raise HTTPException(status_code=404, detail="Data contract not found")
+    previous, contract = result
     await _push_to_github(github, contract, "Update contract")
     if github:
-        old_path = github.contract_path(existing.domain, existing.title)
+        old_path = github.contract_path(previous.domain, previous.title)
         new_path = github.contract_path(contract.domain, contract.title)
         if old_path != new_path:
             try:
                 await github.delete(
                     old_path,
-                    f"Remove stale contract file: {existing.title}",
+                    f"Remove stale contract file: {previous.title}",
                 )
             except Exception as exc:
                 logger.warning(

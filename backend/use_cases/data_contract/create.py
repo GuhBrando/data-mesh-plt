@@ -4,7 +4,7 @@ from typing import Any
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.use_cases.data_contract.versioning import (
-    record_version,
+    apply_evolution,
     validate_new_version,
 )
 
@@ -47,5 +47,5 @@ class CreateDataContractUseCase:
                 support=support,
                 servers=servers,
             )
-            await record_version(self.repository, None, contract, created_by)
+            await apply_evolution(self.repository, None, contract, created_by)
         return contract

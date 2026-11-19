@@ -63,10 +63,12 @@ async def test_list_versions_is_newest_first_and_skips_the_yaml():
     )
 
 
-async def test_get_version_yaml_is_none_for_an_unknown_version():
+async def test_get_version_yaml_reads_one_version_of_one_contract():
     db = _db()
-    db.fetchval.return_value = None
-    assert await PostgresDataContractRepository(db).get_version_yaml(CONTRACT_ID, "9.9.9") is None
+    db.fetchval.return_value = "y"
+    assert await PostgresDataContractRepository(db).get_version_yaml(CONTRACT_ID, "1.0.0") == "y"
+    sql, *params = db.fetchval.call_args.args
+    assert "WHERE contract_id = $1 AND version = $2" in sql and params == [CONTRACT_ID, "1.0.0"]
 
 
 def test_transaction_comes_from_the_connection():

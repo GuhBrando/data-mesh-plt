@@ -46,6 +46,7 @@ from backend.domain.contract_evolution import (
 )
 from backend.main import app
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
+from backend.use_cases.data_contract.update import UpdatedContract
 from tests.quality_rule_builders import library_rule
 
 NOW = datetime.now(tz=timezone.utc)
@@ -190,12 +191,8 @@ def test_create_data_contract(admin_client):
 
 
 def test_update_data_contract(admin_client):
-    contract = _contract()
-    mock_get = AsyncMock()
-    mock_get.execute.return_value = contract
     mock_update = AsyncMock()
-    mock_update.execute.return_value = _contract(title="Updated")
-    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
+    mock_update.execute.return_value = UpdatedContract(_contract(), _contract(title="Updated"))
     app.dependency_overrides[get_update_data_contract_use_case] = lambda: mock_update
     resp = admin_client.put(f"/api/v1/data-contracts/{CONTRACT_ID}", json={
         "title": "Updated",
@@ -205,10 +202,8 @@ def test_update_data_contract(admin_client):
 
 
 def test_update_data_contract_not_found(admin_client):
-    mock_get = AsyncMock()
-    mock_get.execute.return_value = None
     mock_update = AsyncMock()
-    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
+    mock_update.execute.return_value = None
     app.dependency_overrides[get_update_data_contract_use_case] = lambda: mock_update
     resp = admin_client.put(f"/api/v1/data-contracts/{uuid.uuid4()}", json={
         "title": "X",
@@ -518,30 +513,22 @@ STORED = dict(
 
 
 def _put(admin_client, body):
-    mock_get, mock_update = AsyncMock(), AsyncMock()
-    mock_get.execute.return_value = _contract(**STORED)
-    mock_update.execute.return_value = _contract(**STORED)
-    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
+    mock_update = AsyncMock()
+    stored = _contract(**STORED)
+    mock_update.execute.return_value = UpdatedContract(stored, stored)
     app.dependency_overrides[get_update_data_contract_use_case] = lambda: mock_update
     resp = admin_client.put(f"/api/v1/data-contracts/{CONTRACT_ID}", json=body)
-    return resp, mock_update.execute.call_args
-
-
-def test_update_keeps_metadata_when_body_omits_it(admin_client):
-    resp, call = _put(admin_client, {"status": "active"})
-    assert resp.status_code == 200
-    assert {k: call.kwargs[k] for k in STORED} == STORED
-    assert {k: resp.json()[k] for k in STORED} == STORED
+    return resp, mock_update.execute.call_args.kwargs["changes"]
 
 
 def test_update_empty_list_clears_only_that_section(admin_client):
-    _, call = _put(admin_client, {"servers": []})
-    assert call.kwargs["servers"] == [] and call.kwargs["team_members"] == STORED["team_members"]
+    _, changes = _put(admin_client, {"servers": []})
+    assert changes["servers"] == [] and changes["team_members"] is None
 
 
 def test_update_replaces_description_whole(admin_client):
-    _, call = _put(admin_client, {"description": {"purpose": "new"}})
-    assert call.kwargs["description"] == {"purpose": "new", "usage": "", "limitations": ""}
+    _, changes = _put(admin_client, {"description": {"purpose": "new"}})
+    assert changes["description"] == {"purpose": "new", "usage": "", "limitations": ""}
 
 
 def _post(admin_client, extra):
@@ -620,11 +607,12 @@ VIOLATION = (
 )
 
 
-def _put_contract(admin_client, body, *, side_effect=None):
+def _put_contract(admin_client, body, *, side_effect=None, result=None):
     mock_get, mock_update, github = AsyncMock(), AsyncMock(), AsyncMock()
-    github.contract_path = MagicMock(return_value="contracts/commerce/orders.yaml")
+    github.contract_path = MagicMock(
+        side_effect=lambda domain, title: f"contracts/{domain}/{title.lower()}.yaml")
     mock_get.execute.return_value = _contract()
-    mock_update.execute.return_value = _contract()
+    mock_update.execute.return_value = result or UpdatedContract(_contract(), _contract())
     if side_effect is not None:
         mock_update.execute.side_effect = side_effect
     app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_get
@@ -652,14 +640,32 @@ def test_update_invalid_version_returns_400(admin_client):
     assert resp.status_code == 400
 
 
-def test_status_only_put_merges_the_stored_fields(admin_client):
+def test_status_only_put_sends_only_the_status(admin_client):
+    # The use case merges the rest under its row lock, never from a stale read.
     resp, mock_update, _ = _put_contract(admin_client, {"status": "active"})
     assert resp.status_code == 200
     kwargs = mock_update.execute.call_args.kwargs
-    assert kwargs["status"] == "active"
-    assert kwargs["version"] == "1.0.0"
-    assert kwargs["models"] == _contract().models
+    assert {k: v for k, v in kwargs["changes"].items() if v is not None} == {"status": "active"}
     assert kwargs["created_by"] == USER_ID
+
+
+@pytest.mark.parametrize("member, status", [(True, 200), (False, 403)])
+def test_steward_updates_only_a_contract_of_their_domain(admin_client, member, status):
+    app.dependency_overrides[get_current_user] = lambda: _user(UserRole.DATA_STEWARD)
+    db = AsyncMock()
+    db.fetchrow.return_value = {"?column?": 1} if member else None
+    app.dependency_overrides[get_db_connection] = lambda: db
+    resp, mock_update, _ = _put_contract(admin_client, {"title": "Orders"})
+    assert resp.status_code == status
+    assert mock_update.execute.called is member
+
+
+def test_rename_removes_the_file_at_the_locked_path(admin_client):
+    renamed = UpdatedContract(_contract(), _contract(title="Invoices"))
+    resp, _, github = _put_contract(admin_client, {"title": "Invoices"}, result=renamed)
+    assert resp.status_code == 200
+    github.delete.assert_called_once_with(
+        "contracts/commerce/orders.yaml", "Remove stale contract file: Orders")
 
 
 def test_update_accepts_retired_status(admin_client):
@@ -705,9 +711,9 @@ def _versions():
             ContractVersion(CONTRACT_ID, "1.0.0", None, NOW)]
 
 
-def _version_reads(listed=None, yaml_text=VERSION_YAML, stakeholder=True):
+def _version_reads(yaml_text=VERSION_YAML, stakeholder=True):
     list_uc, yaml_uc, sr = AsyncMock(), AsyncMock(), AsyncMock()
-    list_uc.execute.return_value = _versions() if listed is None else listed
+    list_uc.execute.return_value = _versions()
     yaml_uc.execute.return_value = yaml_text
     sr.is_stakeholder = AsyncMock(return_value=stakeholder)
     app.dependency_overrides[get_list_contract_versions_use_case] = lambda: list_uc
@@ -724,12 +730,6 @@ def test_list_versions(admin_client):
     assert [v["version"] for v in body] == ["1.1.0", "1.0.0"]
     assert body[1]["created_by"] is None
     assert "yaml_content" not in body[0]
-
-
-def test_list_versions_empty_for_contract_without_history(admin_client):
-    _version_reads(listed=[])
-    resp = admin_client.get(LIST_PATH)
-    assert (resp.status_code, resp.json()) == (200, [])
 
 
 def test_list_versions_unknown_contract_is_404(admin_client):

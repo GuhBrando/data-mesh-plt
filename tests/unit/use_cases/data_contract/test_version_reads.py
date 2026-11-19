@@ -1,20 +1,24 @@
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.use_cases.data_contract.get_version_yaml import GetContractVersionYamlUseCase
 from backend.use_cases.data_contract.list_versions import ListContractVersionsUseCase
 
-
-async def test_list_versions_is_none_for_an_unknown_contract(contract_repo):
-    contract_repo.get_by_id.return_value = None
-    assert await ListContractVersionsUseCase(contract_repo).execute(uuid.uuid4()) is None
-    contract_repo.list_versions.assert_not_called()
+ROWS = [MagicMock()]
 
 
-async def test_list_versions_returns_the_repository_rows(contract_repo):
-    contract_repo.get_by_id.return_value = MagicMock()
-    contract_repo.list_versions.return_value = []
-    assert await ListContractVersionsUseCase(contract_repo).execute(uuid.uuid4()) == []
+@pytest.mark.parametrize("history, contract, expected", [
+    pytest.param(ROWS, None, ROWS, id="history-needs-no-existence-check"),
+    pytest.param([], MagicMock(), [], id="contract-without-history"),
+    pytest.param([], None, None, id="unknown-contract"),
+])
+async def test_list_versions(contract_repo, history, contract, expected):
+    contract_repo.list_versions.return_value = history
+    contract_repo.get_by_id.return_value = contract
+    assert await ListContractVersionsUseCase(contract_repo).execute(uuid.uuid4()) == expected
+    assert contract_repo.get_by_id.called is (not history)
 
 
 async def test_get_version_yaml_passes_the_version_through(contract_repo):

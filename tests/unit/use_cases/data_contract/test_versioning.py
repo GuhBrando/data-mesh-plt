@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from backend.domain.contract_evolution import ContractEvolutionError, RetiredContractError
-from backend.domain.entities.data_contract import DataContract
+from backend.domain.entities.data_contract import CONTRACT_VALUE_FIELDS, DataContract
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
@@ -29,67 +29,74 @@ def _contract(**kw) -> DataContract:
     return DataContract(**{**defaults, **kw})
 
 
-async def _put(repo, before: DataContract, after: DataContract) -> DataContract | None:
-    """`before` is the locked row; the repository's update returns `after`."""
+def _values(contract: DataContract) -> dict:
+    return {name: getattr(contract, name) for name in ("domain_id", *CONTRACT_VALUE_FIELDS)}
+
+
+async def _put(repo, before: DataContract, after: DataContract, **changes):
+    """`before` is the locked row; the repository's update returns `after`.
+
+    Without `changes`, the request sends every value of `after`.
+    """
     repo.get_by_id_for_update.return_value = before
     repo.update.return_value = after
     return await UpdateDataContractUseCase(repo).execute(
-        contract_id=CID, title=after.title, version=after.version, owner=after.owner,
-        domain_id=DOMAIN_ID, tier=after.tier, status=after.status, models=after.models,
-        servicelevels=after.servicelevels, **METADATA, created_by=USER_ID)
+        CID, changes or _values(after), created_by=USER_ID)
 
 
-async def test_status_only_update_keeps_working_without_a_snapshot(contract_repo):
-    after = _contract(status="deprecated")
-    assert await _put(contract_repo, _contract(), after) is after
+@pytest.mark.parametrize("before, after, message", [
+    pytest.param(_contract(), _contract(models=WITH_AMOUNT), "property 'amount' added",
+                 id="change-without-bump"),
+    pytest.param(_contract(), _contract(models=NO_FIELDS, version="1.1.0"),
+                 "require a MAJOR version bump", id="bump-smaller-than-the-change"),
+    pytest.param(_contract(status="deprecated"),
+                 _contract(status="deprecated", models=WITH_AMOUNT), "require a MINOR",
+                 id="deprecated"),
+    pytest.param(_contract(), _contract(status="draft", models=WITH_AMOUNT),
+                 "require a MINOR", id="previous-status-decides"),
+])
+async def test_policy_rejection_writes_no_snapshot(contract_repo, before, after, message):
+    with pytest.raises(ContractEvolutionError, match=message):
+        await _put(contract_repo, before, after)
+    contract_repo.add_version.assert_not_called()
+
+
+@pytest.mark.parametrize("before, after", [
+    pytest.param(_contract(), _contract(status="deprecated"), id="status-only"),
+    pytest.param(_contract(status="draft"), _contract(status="draft", models=NO_FIELDS),
+                 id="draft-changes-freely"),
+    pytest.param(_contract(), _contract(status="retired"), id="any-status-can-retire"),
+    pytest.param(_contract(version="1.0"), _contract(version="1.0", status="deprecated"),
+                 id="unchanged-legacy-version"),
+    pytest.param(_contract(), _contract(models={"fields": [
+        {**FIELD, "classification": "", "unique": False, "physical_type": ""}],
+        "quality": []}), id="resubmitted-form-defaults"),
+])
+async def test_allowed_change_in_the_same_version_writes_no_snapshot(
+    contract_repo, before, after
+):
+    assert await _put(contract_repo, before, after) == (before, after)
     contract_repo.add_version.assert_not_called()
     contract_repo.add_baseline_version.assert_not_called()
 
 
-async def test_content_change_without_bump_on_active_is_rejected(contract_repo):
-    with pytest.raises(ContractEvolutionError, match="property 'amount' added"):
-        await _put(contract_repo, _contract(), _contract(models=WITH_AMOUNT))
-    contract_repo.add_version.assert_not_called()
-
-
-async def test_bump_smaller_than_the_change_is_rejected(contract_repo):
-    with pytest.raises(ContractEvolutionError, match="require a MAJOR version bump"):
-        await _put(contract_repo, _contract(), _contract(models=NO_FIELDS, version="1.1.0"))
-    contract_repo.add_version.assert_not_called()
-
-
-async def test_deprecated_contract_is_governed(contract_repo):
-    with pytest.raises(ContractEvolutionError):
-        await _put(contract_repo, _contract(status="deprecated"),
-                   _contract(status="deprecated", models=WITH_AMOUNT))
-    contract_repo.add_version.assert_not_called()
-
-
-async def test_draft_changes_freely(contract_repo):
-    after = _contract(status="draft", models=NO_FIELDS)
-    assert await _put(contract_repo, _contract(status="draft"), after) is after
-
-
-async def test_previous_status_decides_when_rules_apply(contract_repo):
-    with pytest.raises(ContractEvolutionError):
-        await _put(contract_repo, _contract(), _contract(status="draft", models=WITH_AMOUNT))
-    contract_repo.add_version.assert_not_called()
-
-
-async def test_bump_writes_the_snapshot_inside_the_transaction(contract_repo):
-    after = _contract(version="1.1.0", models=WITH_AMOUNT)
-    await _put(contract_repo, _contract(), after)
-    contract_repo.transaction.assert_called_once()
-    contract_repo.add_version.assert_called_once_with(CID, "1.1.0", assemble_yaml(after), USER_ID)
-
-
-async def test_first_bump_without_history_captures_the_old_version_first(contract_repo):
+async def test_bump_snapshots_the_old_version_then_the_new_one(contract_repo):
     before = _contract(updated_at=EARLIER)
-    await _put(contract_repo, before, _contract(version="1.1.0", models=WITH_AMOUNT))
+    after = _contract(version="1.1.0", models=WITH_AMOUNT)
+    await _put(contract_repo, before, after)
+    contract_repo.transaction.assert_called_once()
     contract_repo.add_baseline_version.assert_called_once_with(
         CID, "1.0.0", assemble_yaml(before), EARLIER)
+    contract_repo.add_version.assert_called_once_with(CID, "1.1.0", assemble_yaml(after), USER_ID)
     names = [call[0] for call in contract_repo.method_calls]
     assert names.index("add_baseline_version") < names.index("add_version")
+
+
+async def test_absent_and_none_fields_keep_the_locked_values(contract_repo):
+    stored = _contract(servers=[{"server": "s", "type": "local", "path": "./a"}])
+    await _put(contract_repo, stored, stored, status="deprecated", owner=None, servers=[])
+    assert contract_repo.update.call_args.kwargs == {
+        "contract_id": CID, **_values(stored), "status": "deprecated", "servers": []}
 
 
 async def test_retired_contract_rejects_every_update(contract_repo):
@@ -100,12 +107,6 @@ async def test_retired_contract_rejects_every_update(contract_repo):
     contract_repo.add_version.assert_not_called()
 
 
-async def test_any_status_can_become_retired(contract_repo):
-    after = _contract(status="retired")
-    assert await _put(contract_repo, _contract(), after) is after
-    contract_repo.add_version.assert_not_called()
-
-
 async def test_new_version_must_be_semver(contract_repo):
     with pytest.raises(ValueError, match="MAJOR.MINOR.PATCH"):
         await _put(contract_repo, _contract(), _contract(version="1.1"))
@@ -113,24 +114,9 @@ async def test_new_version_must_be_semver(contract_repo):
     contract_repo.add_version.assert_not_called()
 
 
-async def test_unchanged_legacy_version_passes(contract_repo):
-    after = _contract(version="1.0", status="deprecated")
-    assert await _put(contract_repo, _contract(version="1.0"), after) is after
-
-
-async def test_resubmitted_form_defaults_are_not_a_change(contract_repo):
-    after = _contract(models={"fields": [{**FIELD, "classification": "", "unique": False,
-                                          "physical_type": ""}], "quality": []})
-    assert await _put(contract_repo, _contract(), after) is after
-
-
 async def test_missing_contract_returns_none(contract_repo):
     contract_repo.get_by_id_for_update.return_value = None
-    result = await UpdateDataContractUseCase(contract_repo).execute(
-        contract_id=CID, title="T", version="1.0.0", owner="o", domain_id=DOMAIN_ID,
-        tier=3, status="active", models=NO_FIELDS, servicelevels={"properties": []},
-        **METADATA)
-    assert result is None
+    assert await UpdateDataContractUseCase(contract_repo).execute(CID, {"title": "T"}) is None
     contract_repo.update.assert_not_called()
 
 

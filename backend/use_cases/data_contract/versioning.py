@@ -14,7 +14,7 @@ from backend.domain.contract_evolution import (
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.use_cases.data_contract.odcs import to_odcs
-from backend.use_cases.data_contract.yaml_builder import assemble_yaml
+from backend.use_cases.data_contract.yaml_builder import dump_odcs
 
 
 def validate_new_version(version: str, previous: DataContract | None) -> None:
@@ -25,28 +25,32 @@ def validate_new_version(version: str, previous: DataContract | None) -> None:
         raise ValueError(f"Version '{version}' must match MAJOR.MINOR.PATCH")
 
 
-def enforce_evolution(previous: DataContract, current: DataContract) -> None:
-    violation = evolution_violation(to_odcs(previous), to_odcs(current))
-    if violation:
-        raise ContractEvolutionError(violation)
-
-
-async def record_version(
+async def apply_evolution(
     repository: IDataContractRepository,
     previous: DataContract | None,
     current: DataContract,
     created_by: uuid.UUID | None,
 ) -> None:
-    """Snapshot `current` when it is new or its version changed."""
+    """Refuse a change the policy forbids, then snapshot `current` when it is new
+    or its version changed.
+
+    Call it after the write, inside the use case's transaction, so a refusal
+    rolls the write back. Each contract is turned into ODCS once.
+    """
+    current_doc = to_odcs(current)
     if previous is not None:
+        previous_doc = to_odcs(previous)
+        violation = evolution_violation(previous_doc, current_doc)
+        if violation:
+            raise ContractEvolutionError(violation)
         if previous.version == current.version:
             return
         # A contract older than the history has no row for the version it had.
         # The baseline is a no-op when the row exists. updated_at keeps it
         # ordered before the new row, which gets now().
         await repository.add_baseline_version(
-            previous.id, previous.version, assemble_yaml(previous), previous.updated_at
+            previous.id, previous.version, dump_odcs(previous_doc), previous.updated_at
         )
     await repository.add_version(
-        current.id, current.version, assemble_yaml(current), created_by
+        current.id, current.version, dump_odcs(current_doc), created_by
     )

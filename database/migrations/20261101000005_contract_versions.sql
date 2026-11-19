@@ -25,17 +25,24 @@ CREATE TABLE catalog.contract_versions (
 -- 3. Grants. ALTER DEFAULT PRIVILEGES hands every new catalog table to both roles
 --    with UPDATE and DELETE, so they are taken back here. DELETE stays on admin:
 --    where admin owns this table (azure), ON DELETE CASCADE runs as the owner and
---    fails without it. The trigger below covers direct deletes.
+--    fails without it. The triggers below cover direct deletes.
 REVOKE UPDATE, TRUNCATE ON catalog.contract_versions FROM admin, app_user;
 REVOKE DELETE ON catalog.contract_versions FROM app_user;
 
--- 4. Immutability for every role, including the owner and superusers. A cascade
---    from catalog.data_contracts runs inside the RI trigger, at depth 2.
+-- 4. Rows are immutable for every role, superusers included: no UPDATE, no
+--    TRUNCATE, and no DELETE except the cascade from catalog.data_contracts,
+--    recognised by the parent row being gone already. The table owner (admin on
+--    azure) and superusers can still disable or drop the triggers; they stop
+--    mistakes and the application, not the owner.
 CREATE FUNCTION catalog.reject_contract_version_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-    IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
-        RETURN OLD;
+    IF TG_OP = 'DELETE' THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM catalog.data_contracts WHERE id = OLD.contract_id
+        ) THEN
+            RETURN OLD;
+        END IF;
     END IF;
     RAISE EXCEPTION 'catalog.contract_versions rows are immutable (%)', TG_OP;
 END $$;
@@ -43,6 +50,10 @@ END $$;
 CREATE TRIGGER trg_contract_versions_immutable
     BEFORE UPDATE OR DELETE ON catalog.contract_versions
     FOR EACH ROW EXECUTE FUNCTION catalog.reject_contract_version_change();
+
+CREATE TRIGGER trg_contract_versions_no_truncate
+    BEFORE TRUNCATE ON catalog.contract_versions
+    FOR EACH STATEMENT EXECUTE FUNCTION catalog.reject_contract_version_change();
 
 -- =============================================================================
 -- ROLLBACK (run manually if needed):

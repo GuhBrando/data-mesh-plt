@@ -1,4 +1,4 @@
-h1:7bYvQUrLGrKuyxwn9ivD+vJNncOvnpKzhYL8+3lGyIg=
+h1:bqsw5putktHgwrXdGKdRJOaRXeeQ9S/BnPGUXJy0gLw=
 20260326000001_create_ddl.sql h1:S+EXRWsbBDU+A9UXQ8G2E8/XlNZ+5CmMwzKxst+s2L4=
 20260326000002_setup_roles.sql h1:dAw0scTDnRs9j4TiI79bvTkZjBEGB6PO48shGvPHVdY=
 20260401000001_fix_admin_schema_grants.sql h1:3oX/BlKhc/oBbhVK7xIxfbuFwe324+kLPPJX9jWHB7w=
@@ -10,4 +10,4 @@ h1:7bYvQUrLGrKuyxwn9ivD+vJNncOvnpKzhYL8+3lGyIg=
 20260610000001_data_products_repo_url.sql h1:gE0brQYqXa1IrDmYoCJmm0ifADbKeyfV9y5HEjffqH0=
 20261101000003_data_contract_metadata.sql h1:/j2B6Bu9qLgRVymQapRjZa8KZYAxs50amM0qgVkY4Xc=
 20261101000004_odcs_quality_and_sla.sql h1:CL899XdbY4t2+pv1Y/BGwWH2R5+hTQGm9XCDzZTuzyg=
-20261101000005_contract_versions.sql h1:uQBeED0rCqneNlYHkTd+IevbQ0dw6GcjXFMk3yo0gzw=
+20261101000005_contract_versions.sql h1:WpwE09TwIk9sVxsaB9EYdwNhCFSoLs8ONEbd8cLZwDI=

@@ -6,13 +6,15 @@ interface BadgeProps {
   className?: string
 }
 
+// Variant names are kept for existing callers; they map onto the semantic tokens.
+// `badge-<variant>` stays on the element so the variant remains identifiable.
 const variantClasses: Record<string, string> = {
-  blue: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
-  green: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
-  yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800',
-  red: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
-  gray: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600',
-  purple: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
+  blue: 'bg-accent/10 text-accent-fg border-accent/25',
+  green: 'bg-ok/10 text-ok border-ok/25',
+  yellow: 'bg-warn/10 text-warn border-warn/25',
+  red: 'bg-bad/10 text-bad border-bad/25',
+  gray: 'bg-raised text-tx2 border-line',
+  purple: 'bg-tx/5 text-tx border-tx/20',
 }
 
 export default function Badge({
@@ -22,7 +24,7 @@ export default function Badge({
 }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${variantClasses[variant]} ${className}`}
+      className={`badge-${variant} inline-flex h-5 items-center rounded-[5px] border px-1.5 text-[11.5px] font-medium ${variantClasses[variant]} ${className}`}
     >
       {children}
     </span>

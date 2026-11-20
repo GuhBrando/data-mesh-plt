@@ -149,7 +149,7 @@ function PanelContent({
           Owner
         </p>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shrink-0">
+          <div className="w-5 h-5 rounded-full bg-raised flex items-center justify-center shrink-0">
             <span className="text-white text-[9px] font-bold">
               {domain.owner_username.charAt(0).toUpperCase()}
             </span>
@@ -171,7 +171,7 @@ function PanelContent({
               <button
                 type="button"
                 onClick={() => setAddOpen(true)}
-                className="flex items-center gap-1 text-[10px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                className="flex items-center gap-1 text-[10px] font-medium text-accent-fg hover:text-tx dark:text-accent-fg"
               >
                 <UserPlus size={11} />
                 Add

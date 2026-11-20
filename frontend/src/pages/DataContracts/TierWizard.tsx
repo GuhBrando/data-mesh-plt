@@ -4,7 +4,7 @@ import Button from '../../components/ui/Button'
 const TIER_LABELS: Record<number, { name: string; description: string; color: string }> = {
   1: { name: 'Critical / Regulated', description: 'Errors can cause legal, regulatory, or material financial consequences.', color: 'text-red-600 dark:text-red-400' },
   2: { name: 'Business Important', description: 'Errors can lead to wrong business decisions with measurable financial impact.', color: 'text-orange-600 dark:text-orange-400' },
-  3: { name: 'Operational / Internal', description: 'Errors are manageable informally with no material damage.', color: 'text-blue-600 dark:text-blue-400' },
+  3: { name: 'Operational / Internal', description: 'Errors are manageable informally with no material damage.', color: 'text-accent-fg dark:text-accent-fg' },
   4: { name: 'Experimental / Sandbox', description: 'Exploration or hypothesis validation. No production consumers allowed.', color: 'text-gray-600 dark:text-gray-400' },
 }
 

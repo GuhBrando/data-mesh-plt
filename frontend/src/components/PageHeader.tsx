@@ -1,6 +1,6 @@
 import { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronRightIcon } from './icons'
 
 interface PageHeaderProps {
   title: string
@@ -18,25 +18,23 @@ export default function PageHeader({
   const navigate = useNavigate()
 
   return (
-    <div className="flex items-start justify-between mb-6">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
       <div className="flex items-start gap-3">
         {backTo && (
           <button
             onClick={() => navigate(backTo)}
-            className="mt-0.5 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-700"
+            className="mt-0.5 grid h-8 w-8 place-items-center rounded-lg text-tx3 transition-colors hover:bg-hover hover:text-tx"
             aria-label="Go back"
           >
-            <ChevronLeft size={18} />
+            <ChevronRightIcon className="rotate-180" />
           </button>
         )}
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">{title}</h1>
-          {subtitle && (
-            <p className="mt-0.5 text-sm text-gray-500 dark:text-slate-400">{subtitle}</p>
-          )}
+          <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-tx">{title}</h1>
+          {subtitle && <p className="mt-1.5 text-[13px] text-tx2">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

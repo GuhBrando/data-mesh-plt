@@ -63,7 +63,7 @@ export default function DataProductDetail() {
         </p>
         <button
           onClick={() => navigate('/data-products')}
-          className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          className="mt-3 text-sm text-accent-fg dark:text-accent-fg hover:underline"
         >
           Back to list
         </button>
@@ -149,9 +149,9 @@ export default function DataProductDetail() {
               Data Contract ID
             </dt>
             <dd className="flex items-center gap-2">
-              <FileText size={13} className="text-indigo-500 shrink-0" />
+              <FileText size={13} className="text-accent-fg shrink-0" />
               <button
-                className="text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline break-all"
+                className="text-xs font-mono text-accent-fg dark:text-accent-fg hover:underline break-all"
                 onClick={() =>
                   navigate(`/data-contracts/${product.data_contracts_id}`)
                 }

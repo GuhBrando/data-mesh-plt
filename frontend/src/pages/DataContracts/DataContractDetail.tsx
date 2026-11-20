@@ -99,7 +99,7 @@ function SupportUrl({ url }: { url: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-blue-600 dark:text-blue-400 hover:underline"
+      className="text-accent-fg dark:text-accent-fg hover:underline"
     >
       {url}
     </a>
@@ -374,7 +374,7 @@ export default function DataContractDetail() {
       <div className="text-center py-16">
         <p className="text-red-500 font-medium">{error?.message ?? 'Contract not found'}</p>
         <button onClick={() => navigate('/data-contracts')}
-          className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline">
+          className="mt-3 text-sm text-accent-fg dark:text-accent-fg hover:underline">
           Back to list
         </button>
       </div>

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, FileText, Trash2 } from 'lucide-react'
 import {
   useDataContracts,
   useDeleteDataContract,
@@ -8,26 +7,12 @@ import {
 import PageHeader from '../../components/PageHeader'
 import Table from '../../components/ui/Table'
 import Button from '../../components/ui/Button'
-import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
+import { Avatar, DomainChip, StatusGlyph, TierGlyph } from '../../components/ui/Glyphs'
+import { ContractIcon, NewContractIcon, TrashIcon } from '../../components/icons'
+import { relativeTime } from '../../lib/format'
 import type { DataContract } from '../../types'
-import { STATUS_COLORS } from './contractStatus'
-
-const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
-  1: 'red',
-  2: 'yellow',
-  3: 'blue',
-  4: 'gray',
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 export default function DataContractsList() {
   const navigate = useNavigate()
@@ -42,45 +27,57 @@ export default function DataContractsList() {
     setDeleteTarget(null)
   }
 
+  const sorted = [...contracts].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  )
+
   const columns = [
     {
       key: 'title',
-      header: 'Title',
+      header: 'Contract',
       render: (row: DataContract) => (
-        <span className="font-medium text-gray-800 dark:text-slate-200">{row.title}</span>
+        <span className="flex min-w-0 items-center gap-2.5">
+          <ContractIcon className="text-tx3" />
+          <span className="truncate font-medium text-tx">{row.title}</span>
+          <span className="font-mono text-[11.5px] text-tx3">v{row.version}</span>
+        </span>
       ),
-    },
-    {
-      key: 'tier',
-      header: 'Tier',
-      render: (row: DataContract) => (
-        <Badge variant={TIER_COLORS[row.tier]}>Tier {row.tier}</Badge>
-      ),
-      className: 'w-24',
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (row: DataContract) => (
-        <Badge variant={STATUS_COLORS[row.status] ?? 'gray'}>
-          {row.status.replace('_', ' ')}
-        </Badge>
-      ),
-      className: 'w-28',
     },
     {
       key: 'domain',
       header: 'Domain',
-      render: (row: DataContract) => (
-        <span className="text-sm text-gray-600 dark:text-slate-300">{row.domain}</span>
-      ),
+      render: (row: DataContract) => <DomainChip name={row.domain} />,
     },
     {
-      key: 'created_at',
-      header: 'Created',
-      render: (row: DataContract) => (
-        <span className="text-sm text-gray-500 dark:text-slate-400">{formatDate(row.created_at)}</span>
-      ),
+      key: 'status',
+      header: 'Status',
+      render: (row: DataContract) => <StatusGlyph status={row.status} />,
+      className: 'w-32',
+    },
+    {
+      key: 'tier',
+      header: 'Tier',
+      render: (row: DataContract) => <TierGlyph tier={row.tier} />,
+      className: 'w-20',
+    },
+    {
+      key: 'owner',
+      header: 'Owner',
+      mobileHidden: true,
+      render: (row: DataContract) =>
+        row.owner ? (
+          <span className="inline-flex items-center gap-2 text-[12.5px]">
+            <Avatar name={row.owner} size={20} />
+            {row.owner}
+          </span>
+        ) : (
+          <span className="text-tx3">—</span>
+        ),
+    },
+    {
+      key: 'updated_at',
+      header: 'Updated',
+      render: (row: DataContract) => <span className="text-tx3">{relativeTime(row.updated_at)}</span>,
     },
     {
       key: 'actions',
@@ -91,7 +88,7 @@ export default function DataContractsList() {
           className="btn-danger"
           title="Delete"
         >
-          <Trash2 size={13} />
+          <TrashIcon size={13} />
           Delete
         </button>
       ),
@@ -101,44 +98,48 @@ export default function DataContractsList() {
 
   return (
     <div>
+      <div className="animate-enter">
       <PageHeader
         title="Data Contracts"
         subtitle={`${contracts.length} contract${contracts.length !== 1 ? 's' : ''}`}
         actions={
           <Button onClick={() => navigate('/data-contracts/new')}>
-            <Plus size={16} />
+            <NewContractIcon size={15} />
             New Contract
           </Button>
         }
       />
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Spinner size="lg" /></div>
       ) : error ? (
         <div className="text-center py-16">
-          <p className="text-red-500">{error.message}</p>
+          <p className="text-bad">{error.message}</p>
         </div>
       ) : contracts.length === 0 ? (
-        <div className="text-center py-20">
-          <FileText size={48} className="text-gray-200 dark:text-slate-700 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-slate-400 font-medium mb-1">No data contracts yet</p>
-          <p className="text-sm text-gray-400 dark:text-slate-500 mb-4">
-            Create your first contract to get started.
-          </p>
+        <div className="flex animate-enter flex-col items-center rounded-[10px] border border-dashed border-line2 px-6 py-16 text-center">
+          <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl border border-line bg-raised text-tx3">
+            <ContractIcon size={20} />
+          </span>
+          <p className="mb-1 font-medium text-tx">No data contracts yet</p>
+          <p className="mb-5 text-[13px] text-tx3">Create your first contract to get started.</p>
           <Button onClick={() => navigate('/data-contracts/new')}>
-            <Plus size={16} />
+            <NewContractIcon size={15} />
             New Contract
           </Button>
         </div>
       ) : (
+        <div className="animate-enter [animation-delay:0.06s]">
         <Table
           columns={columns}
-          data={contracts}
+          data={sorted}
           keyExtractor={(c) => c.id}
           onRowClick={(c) => navigate(`/data-contracts/${c.id}`)}
           emptyMessage="No contracts found."
           mobileCardConfig={{ titleKey: 'title', badgeKey: 'status' }}
         />
+        </div>
       )}
 
       <Modal
@@ -147,11 +148,11 @@ export default function DataContractsList() {
         title="Delete Data Contract"
         size="sm"
       >
-        <p className="text-sm text-gray-600 dark:text-slate-300 mb-2">
+        <p className="text-[13px] text-tx2 mb-2">
           Are you sure you want to delete{' '}
-          <span className="font-medium">{deleteTarget?.title}</span>?
+          <span className="font-medium text-tx">{deleteTarget?.title}</span>?
         </p>
-        <p className="text-xs text-gray-400 dark:text-slate-500 mb-6">This action cannot be undone.</p>
+        <p className="text-xs text-tx3 mb-6">This action cannot be undone.</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
           <Button variant="danger" loading={deleteMutation.isPending} onClick={handleDelete}>
@@ -159,7 +160,7 @@ export default function DataContractsList() {
           </Button>
         </div>
         {deleteMutation.isError && (
-          <p className="mt-3 text-sm text-red-500">{deleteMutation.error.message}</p>
+          <p className="mt-3 text-[13px] text-bad">{deleteMutation.error.message}</p>
         )}
       </Modal>
     </div>

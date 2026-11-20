@@ -53,3 +53,13 @@ class PostgresStakeholderRepository(IStakeholderRepository):
             user_id,
         )
         return row is not None
+
+    async def contract_ids_of(self, user_id: uuid.UUID) -> set[uuid.UUID]:
+        rows = await self.db.fetch(
+            """
+            SELECT contract_id FROM catalog.contract_stakeholders
+            WHERE user_id = $1;
+            """,
+            user_id,
+        )
+        return {row["contract_id"] for row in rows}

@@ -82,6 +82,10 @@ class SyncFromGitHubUseCase:
                     status=parsed.status,
                     models=parsed.models,
                     servicelevels=parsed.servicelevels,
+                    description=parsed.description,
+                    team_members=parsed.team_members,
+                    support=parsed.support,
+                    servers=parsed.servers,
                 )
                 if was_created:
                     created += 1

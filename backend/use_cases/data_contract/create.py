@@ -19,6 +19,10 @@ class CreateDataContractUseCase:
         status: str,
         models: dict[str, Any],
         servicelevels: dict[str, Any],
+        description: dict[str, Any],
+        team_members: list[dict[str, Any]],
+        support: list[dict[str, Any]],
+        servers: list[dict[str, Any]],
     ) -> DataContract:
         if not title:
             raise ValueError("Data contract title cannot be empty")
@@ -31,4 +35,8 @@ class CreateDataContractUseCase:
             status=status,
             models=models,
             servicelevels=servicelevels,
+            description=description,
+            team_members=team_members,
+            support=support,
+            servers=servers,
         )

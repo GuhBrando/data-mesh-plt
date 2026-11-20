@@ -212,6 +212,10 @@ async def test_odcs_file_is_upserted_with_the_contract_values(use_case, github, 
         "status": contract.status,
         "models": contract.models,
         "servicelevels": contract.servicelevels,
+        "description": contract.description,
+        "team_members": contract.team_members,
+        "support": contract.support,
+        "servers": contract.servers,
     }
 
 
@@ -229,10 +233,10 @@ async def test_unsupported_odcs_key_is_reported_and_nothing_is_written(
     use_case, github, repo
 ):
     github.list_all_yaml_contents.return_value = [
-        ("c/o.yaml", _odcs_yaml(servers=[{"server": "prod", "type": "postgres"}]))
+        ("c/o.yaml", _odcs_yaml(tags=["x"]))
     ]
     result = await use_case.execute()
-    assert "unsupported keys: servers" in result["errors"][0]["error"]
+    assert "unsupported keys: tags" in result["errors"][0]["error"]
     repo.upsert.assert_not_called()
 
 
@@ -249,6 +253,46 @@ async def test_non_mapping_file_is_reported_and_the_next_file_still_syncs(
     assert result["errors"] == [
         {"path": "c/empty.yaml", "error": "contract file is not a YAML mapping"}
     ]
+
+
+async def test_sync_passes_metadata_to_upsert(use_case, github, repo):
+    github.list_all_yaml_contents.return_value = [("c/o.yaml", _odcs_yaml(
+        description={"purpose": "p"},
+        team={"name": "alice", "members": [{"username": "a"}]},
+        support=[{"channel": "c"}],
+        servers=[{"server": "dev", "type": "local", "path": "./a", "format": "csv"}],
+    ))]
+    result = await use_case.execute()
+    assert result["errors"] == []
+    kwargs = repo.upsert.call_args.kwargs
+    assert kwargs["description"] == {"purpose": "p", "usage": "", "limitations": ""}
+    assert kwargs["team_members"] == [{"username": "a", "name": "", "role": ""}]
+    assert kwargs["support"] == [{"channel": "c", "url": "", "tool": "", "scope": ""}]
+    assert kwargs["servers"][0]["path"] == "./a"
+
+
+async def test_sync_file_without_sections_clears_them(use_case, github, repo):
+    existing = _contract()
+    existing.team_members = [{"username": "a", "name": "", "role": ""}]
+    existing.servers = [{"server": "dev", "type": "local", "path": "./a", "format": "csv"}]
+    repo.get_by_id.return_value = existing
+    github.list_all_yaml_contents.return_value = [("c/o.yaml", _odcs_yaml())]
+    result = await use_case.execute()
+    assert result["errors"] == []
+    kwargs = repo.upsert.call_args.kwargs
+    assert kwargs["description"] == {"purpose": "", "usage": "", "limitations": ""}
+    assert (kwargs["team_members"], kwargs["support"], kwargs["servers"]) == ([], [], [])
+
+
+async def test_sync_reports_a_server_with_a_secret_and_skips_the_file(use_case, github, repo):
+    github.list_all_yaml_contents.return_value = [("c/o.yaml", _odcs_yaml(
+        servers=[{"server": "dev", "type": "local", "path": "./a", "format": "csv",
+                  "password": "not-a-real-secret"}],
+    ))]
+    result = await use_case.execute()
+    assert result["errors"][0]["path"] == "c/o.yaml" and "password" in result["errors"][0]["error"]
+    assert "not-a-real-secret" not in str(result)
+    repo.upsert.assert_not_called()
 
 
 async def test_long_error_is_cut_to_a_bounded_size(use_case, github):

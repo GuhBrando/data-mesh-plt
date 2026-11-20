@@ -5,8 +5,10 @@ ContractParseError, so callers depend on neither format module.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+from backend.domain.contract_metadata import empty_description
 
 
 class ContractParseError(ValueError):
@@ -24,3 +26,7 @@ class ParsedContract:
     status: str
     models: dict[str, Any]
     servicelevels: dict[str, Any]
+    description: dict[str, str] = field(default_factory=empty_description)
+    team_members: list[dict[str, Any]] = field(default_factory=list)
+    support: list[dict[str, Any]] = field(default_factory=list)
+    servers: list[dict[str, Any]] = field(default_factory=list)

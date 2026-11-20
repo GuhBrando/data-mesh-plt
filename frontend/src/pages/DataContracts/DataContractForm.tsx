@@ -14,14 +14,26 @@ import type { UseFormRegister, FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Button from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { Input, Textarea } from '../../components/ui/Input'
 import TierWizard from './TierWizard'
-import ContractFields from './ContractFields'
+import ContractFields, { withFieldDefaults } from './ContractFields'
 import QualityRules from './QualityRules'
+import TeamMembers from './TeamMembers'
+import SupportChannels from './SupportChannels'
+import ContractServers from './ContractServers'
+import { metadataError } from './contractMetadata'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
 import { getDomainAccess } from '../../lib/domains'
-import type { DataContract, DataContractInput, SchemaField, QualityRule } from '../../types'
+import type {
+  ContractServer,
+  DataContract,
+  DataContractInput,
+  QualityRule,
+  SchemaField,
+  SupportChannel,
+  TeamMember,
+} from '../../types'
 
 const tierRequiresAllSLAs = (t: number) => t === 1
 const tierRequiresFreshnessAvailability = (t: number) => t === 2
@@ -55,6 +67,9 @@ const schema = z
     availability: z.string().refine(isValidAvailability, { message: 'Use a percentage like 99.9%' }),
     retention: z.string().refine(isValidDuration, { message: 'Use a duration like 365d, 1y' }),
     latency: z.string().refine(isValidDuration, { message: 'Use a duration like 1h, 30m' }),
+    purpose: z.string(),
+    usage: z.string(),
+    limitations: z.string(),
   })
   .superRefine((data, ctx) => {
     if (data.tier === 1) {
@@ -85,6 +100,7 @@ function normalizeDefaults(v?: DataContract): FormValues {
       title: '', version: '1.0.0', owner: '', domain_id: '',
       tier: 4, status: 'draft',
       freshness: '', availability: '', retention: '', latency: '',
+      purpose: '', usage: '', limitations: '',
     }
   }
   return {
@@ -92,12 +108,15 @@ function normalizeDefaults(v?: DataContract): FormValues {
     tier: v.tier, status: v.status,
     freshness: v.servicelevels.freshness, availability: v.servicelevels.availability,
     retention: v.servicelevels.retention, latency: v.servicelevels.latency,
+    purpose: v.description?.purpose ?? '',
+    usage: v.description?.usage ?? '',
+    limitations: v.description?.limitations ?? '',
   }
 }
 
 function getInitialFields(v?: DataContract): SchemaField[] {
   if (!v) return []
-  return v.models.fields
+  return v.models.fields.map(withFieldDefaults)
 }
 
 function getInitialQuality(v?: DataContract): QualityRule[] {
@@ -229,6 +248,54 @@ function QualitySection({
   )
 }
 
+function useMetadataRows(v?: DataContract) {
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(v?.team_members ?? [])
+  const [support, setSupport] = useState<SupportChannel[]>(v?.support ?? [])
+  const [servers, setServers] = useState<ContractServer[]>(v?.servers ?? [])
+  const [error, setError] = useState<string | null>(null)
+  const validate = (): boolean => {
+    const problem = metadataError(teamMembers, support, servers)
+    setError(problem)
+    return problem === null
+  }
+  return { teamMembers, setTeamMembers, support, setSupport, servers, setServers, error, validate }
+}
+
+function MetadataSections({
+  register,
+  metadata,
+}: {
+  register: UseFormRegister<FormValues>
+  metadata: ReturnType<typeof useMetadataRows>
+}) {
+  return (
+    <>
+      <div className="space-y-3">
+        <SectionHeader label="Description" optional />
+        <Textarea label="Purpose" rows={2} {...register('purpose')} />
+        <Textarea label="Usage" rows={2} {...register('usage')} />
+        <Textarea label="Limitations" rows={2} {...register('limitations')} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Team Members" optional />
+        <TeamMembers rows={metadata.teamMembers} onChange={metadata.setTeamMembers} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Support" optional />
+        <SupportChannels rows={metadata.support} onChange={metadata.setSupport} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Servers" optional />
+        <p className="text-xs text-gray-400 dark:text-slate-500">
+          Where the data lives. Coordinates only: never a password, token or connection string.
+        </p>
+        <ContractServers rows={metadata.servers} onChange={metadata.setServers} />
+      </div>
+      {metadata.error && <p className="text-xs text-red-500 mt-1">{metadata.error}</p>}
+    </>
+  )
+}
+
 function DomainSelect({
   domains,
   loading,
@@ -272,6 +339,7 @@ export default function DataContractForm({
   const [quality, setQuality] = useState<QualityRule[]>(getInitialQuality(defaultValues))
   const [fieldsError, setFieldsError] = useState<string | null>(null)
   const [qualityError, setQualityError] = useState<string | null>(null)
+  const metadata = useMetadataRows(defaultValues)
 
   const { domains: accessibleDomains, isLoading: domainsLoading } = useAccessibleDomains()
 
@@ -289,7 +357,10 @@ export default function DataContractForm({
   const tier = watch('tier')
 
   const handleFormSubmit = (values: FormValues) => {
-    if (!validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)) return
+    // Both run, so a message the user has since fixed never lingers on screen.
+    const arraysValid = validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)
+    const metadataValid = metadata.validate()
+    if (!arraysValid || !metadataValid) return
 
     onSubmit({
       title: values.title,
@@ -310,6 +381,14 @@ export default function DataContractForm({
             latency: values.latency,
           }
         : { freshness: '', availability: '', retention: '', latency: '' },
+      description: {
+        purpose: values.purpose,
+        usage: values.usage,
+        limitations: values.limitations,
+      },
+      team_members: metadata.teamMembers,
+      support: metadata.support,
+      servers: metadata.servers,
     })
   }
 
@@ -402,6 +481,8 @@ export default function DataContractForm({
               error={qualityError}
             />
           )}
+
+          <MetadataSections register={register} metadata={metadata} />
 
           <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-slate-700">
             <Button type="button" variant="secondary" onClick={onCancel}>

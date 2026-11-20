@@ -23,6 +23,7 @@ import Table, { Column } from '../components/ui/Table'
 import { useAllDomains, useCreateDomain, useUpdateDomain, useDeleteDomain } from '../hooks/useDomains'
 import { useUsers } from '../hooks/useUsers'
 import type { DomainWithMembers, DomainInput, User } from '../types'
+import { Avatar } from '../components/ui/Glyphs'
 
 const ROLE_META: Record<
   string,
@@ -620,11 +621,7 @@ export default function Profile() {
 
       {/* Identity card — always visible */}
       <div className="card p-6 flex items-center gap-5">
-        <div className="w-14 h-14 rounded-full bg-raised flex items-center justify-center shrink-0">
-          <span className="text-white text-2xl font-bold">
-            {user.username.charAt(0).toUpperCase()}
-          </span>
-        </div>
+        <Avatar name={user.username} size={56} />
         <div className="min-w-0">
           <p className="text-lg font-semibold text-slate-900 dark:text-white truncate">
             {user.username}

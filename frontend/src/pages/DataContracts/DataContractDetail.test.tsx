@@ -150,6 +150,7 @@ describe('DataContractDetail metadata', () => {
       { ...emptyRule(), column: 'email', operator: 'mustBeLessOrEqualTo', value: 1, unit: 'percent' },
       { ...withType(emptyRule(), 'text'), description: 'Totals reconcile with the ledger.' },
     ] } })
+    fireEvent.click(screen.getByRole('tab', { name: /quality/i }))
     expect(screen.getByText('nullValues ≤ 1 percent')).toBeInTheDocument()
     expect(screen.getByText('Totals reconcile with the ledger.')).toBeInTheDocument()
   })
@@ -177,6 +178,7 @@ describe('DataContractDetail version history', () => {
     mockVersions([{ version: '1.1.0', created_by: null, created_at: T2 },
                   { version: '1.0.0', created_by: null, created_at: T1 }])
     renderDetail({ version: '1.1.0' })
+    fireEvent.click(screen.getByRole('tab', { name: /versions/i }))
     const rows = screen.getAllByTestId('version-row')
     expect(rows[0]).toHaveTextContent('1.1.0')
     expect(rows[0]).toHaveTextContent('current')
@@ -186,12 +188,14 @@ describe('DataContractDetail version history', () => {
 
   it('empty history shows the empty state', () => {
     renderDetail()
+    fireEvent.click(screen.getByRole('tab', { name: /versions/i }))
     expect(screen.getByText('No history yet. It starts at the next version change.')).toBeInTheDocument()
   })
 
   it('shows a message when the history cannot load', () => {
     vi.mocked(useContractVersions).mockReturnValue({ data: undefined, isLoading: false, isError: true } as never)
     renderDetail()
+    fireEvent.click(screen.getByRole('tab', { name: /versions/i }))
     expect(screen.getByText('Could not load version history.')).toBeInTheDocument()
   })
 
@@ -199,6 +203,7 @@ describe('DataContractDetail version history', () => {
     mockVersions([{ version: '1.0.0', created_by: null, created_at: T1 }])
     vi.mocked(useContractVersionYaml).mockReturnValue({ data: 'version: 1.0.0', isFetching: false } as never)
     renderDetail()
+    await userEvent.click(screen.getByRole('tab', { name: /versions/i }))
     await userEvent.click(screen.getByRole('button', { name: 'View YAML for version 1.0.0' }))
     expect(vi.mocked(useContractVersionYaml)).toHaveBeenLastCalledWith('c1', '1.0.0')
     expect(screen.getByText('version: 1.0.0')).toBeInTheDocument()

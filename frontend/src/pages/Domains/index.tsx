@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Building2 } from 'lucide-react'
+import { DomainIcon } from '../../components/icons'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
 import { getDomainAccess } from '../../lib/domains'
@@ -96,14 +96,9 @@ export default function DomainsList() {
   return (
     <div className="flex flex-col h-full">
       {/* Page header */}
-      <div className="flex items-center gap-3 px-1 mb-4">
-        <Building2 size={20} className="text-slate-500 dark:text-slate-400 shrink-0" />
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Domains</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Browse all domains and manage your access
-          </p>
-        </div>
+      <div className="mb-5 animate-enter">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-tx">Domains</h1>
+        <p className="mt-1.5 text-[13px] text-tx2">Browse all domains and manage your access.</p>
       </div>
 
       {/* Filter chips (mobile) / tabs (desktop) */}
@@ -116,10 +111,10 @@ export default function DomainsList() {
               type="button"
               aria-pressed={filter === tab.id}
               onClick={() => { setFilter(tab.id); setSelectedId(null) }}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 filter === tab.id
-                  ? 'bg-accent text-accent-ink'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                  ? 'border-tx3 bg-raised text-tx'
+                  : 'border-line text-tx2'
               }`}
             >
               {tab.label} ({tab.count})
@@ -128,17 +123,15 @@ export default function DomainsList() {
         </div>
 
         {/* Desktop: underline tabs */}
-        <div className="hidden md:flex border-b border-slate-200 dark:border-slate-700 gap-1">
+        <div className="hidden gap-0.5 border-b border-line md:flex">
           {filterTabs.filter((t) => t.count > 0 || t.id === 'all').map((tab) => (
             <button
               key={tab.id}
               type="button"
               aria-pressed={filter === tab.id}
               onClick={() => { setFilter(tab.id); setSelectedId(null) }}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                filter === tab.id
-                  ? 'text-accent-fg dark:text-accent-fg border-b-2 border-accent-fg dark:border-accent-fg'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              className={`relative h-10 px-3 text-[13px] font-medium transition-colors duration-150 after:absolute after:inset-x-2.5 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent-fg after:transition-transform after:duration-300 ${
+                filter === tab.id ? 'text-tx after:scale-x-100' : 'text-tx3 after:scale-x-0 hover:text-tx'
               }`}
             >
               {tab.label} ({tab.count})
@@ -152,14 +145,14 @@ export default function DomainsList() {
         {/* Card grid */}
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 gap-2 text-slate-400">
-              <Building2 size={32} className="opacity-30" />
+            <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-line2 text-tx3">
+              <DomainIcon size={24} />
               <p className="text-sm">
                 {filter === 'all' ? 'No domains exist yet.' : `No domains with "${FILTER_LABELS[filter]}" access.`}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid animate-enter grid-cols-1 gap-3 [animation-delay:0.06s] sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map(({ domain, access }) => (
                 <DomainCard
                   key={domain.id}

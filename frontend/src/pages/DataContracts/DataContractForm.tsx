@@ -70,7 +70,7 @@ const schema = z
     owner: z.string().min(1, 'Owner is required'),
     domain_id: z.string().min(1, 'Domain is required'),
     tier: z.number().int().min(1).max(4),
-    status: z.enum(['draft', 'in_review', 'active', 'deprecated']),
+    status: z.enum(['draft', 'in_review', 'active', 'deprecated', 'retired']),
     freshness: z.string(),
     freshnessUnit: z.string(),
     availability: z.string(),
@@ -362,6 +362,33 @@ function MetadataSections({
   )
 }
 
+function StatusSelect({
+  register,
+  editing,
+}: {
+  register: UseFormRegister<FormValues>
+  editing: boolean
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+        Status
+      </label>
+      <select
+        className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+        {...register('status')}
+      >
+        <option value="draft">Draft</option>
+        <option value="in_review">In Review</option>
+        <option value="active">Active</option>
+        <option value="deprecated">Deprecated</option>
+        {/* A contract is not born retired; retiring is an edit. */}
+        {editing && <option value="retired">Retired</option>}
+      </select>
+    </div>
+  )
+}
+
 function DomainSelect({
   domains,
   loading,
@@ -505,20 +532,7 @@ export default function DataContractForm({
                   </select>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
-                  Status
-                </label>
-                <select
-                  className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
-                  {...register('status')}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="in_review">In Review</option>
-                  <option value="active">Active</option>
-                  <option value="deprecated">Deprecated</option>
-                </select>
-              </div>
+              <StatusSelect register={register} editing={!!defaultValues} />
             </div>
           </div>
 

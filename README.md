@@ -342,6 +342,14 @@ Schema igual, significado diferente. Tecnicamente o contrato não é violado, ma
 
 A política específica de cada tier (janelas de notificação, deprecation, aprovações) é aplicada automaticamente pela plataforma com base no atributo `tier` do produto.
 
+**Limitações conhecidas**\
+A plataforma aplica esta política com quatro limitações, aceitas e documentadas em vez de corrigidas:
+
+- As regras valem apenas para contratos `active` ou `deprecated`. Mover um contrato `active` para `draft`, editá-lo e devolvê-lo a `active` contorna a política.
+- O histórico grava um snapshot só quando a versão muda. Edições feitas depois, na mesma versão, podem divergir do snapshot dessa versão.
+- A lista de mudanças MAJOR é fechada: remover ou renomear uma propriedade, mudar seu `logicalType` ou torná-la obrigatória. A plataforma não detecta mudança de significado semântico, e qualquer outra alteração conta como MINOR ou PATCH.
+- `GET /data-contracts` devolve os contratos completos também para consumidores.
+
 ---
 
 ## Decisões de Design e Trade-offs

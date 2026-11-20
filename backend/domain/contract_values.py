@@ -4,6 +4,7 @@ The ODCS mapper reads these; the API schemas spell them out as Literals, and a
 test keeps the two in step, so adding a value cannot reach only one of them.
 """
 
-CONTRACT_STATUSES = ("draft", "in_review", "active", "deprecated")
+# retired is terminal: reachable by an update only, never at creation.
+CONTRACT_STATUSES = ("draft", "in_review", "active", "deprecated", "retired")
 FIELD_TYPES = ("string", "integer", "float", "boolean", "date", "timestamp")
 CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")

@@ -93,7 +93,8 @@ def test_schema_validator_rejects_a_legacy_document():
 
 
 @pytest.mark.parametrize(
-    ("status", "expected"), [("draft", "draft"), ("in_review", "proposed")]
+    ("status", "expected"),
+    [("draft", "draft"), ("in_review", "proposed"), ("retired", "retired")],
 )
 def test_status_mapping(status, expected):
     assert to_odcs(make_contract(status=status))["status"] == expected

@@ -1,3 +1,5 @@
+from typing import Any
+
 import yaml
 
 from backend.domain.entities.data_contract import DataContract
@@ -7,11 +9,15 @@ from backend.use_cases.data_contract.odcs import to_odcs
 _DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
 
-def assemble_yaml(contract: DataContract) -> str:
+def dump_odcs(doc: dict[str, Any]) -> str:
     return yaml.dump(
-        to_odcs(contract),
+        doc,
         Dumper=_DUMPER,
         default_flow_style=False,
         allow_unicode=True,
         sort_keys=False,
     )
+
+
+def assemble_yaml(contract: DataContract) -> str:
+    return dump_odcs(to_odcs(contract))

@@ -4,6 +4,22 @@ from typing import Any
 
 from backend.domain.contract_metadata import empty_description
 
+# The values a contract file and an update both carry; identity, domain and
+# timestamps are not among them.
+CONTRACT_VALUE_FIELDS = (
+    "title",
+    "version",
+    "owner",
+    "tier",
+    "status",
+    "models",
+    "servicelevels",
+    "description",
+    "team_members",
+    "support",
+    "servers",
+)
+
 
 class DataContract:
     def __init__(

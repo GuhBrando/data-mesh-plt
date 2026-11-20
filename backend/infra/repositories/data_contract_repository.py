@@ -5,9 +5,13 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import uuid
+    from contextlib import AbstractAsyncContextManager
+    from datetime import datetime
 
 import asyncpg
 
+from backend.domain.contract_evolution import ContractVersionConflictError
+from backend.domain.entities.contract_version import ContractVersion
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 
@@ -47,6 +51,94 @@ def _row_to_entity(row) -> DataContract:
 class PostgresDataContractRepository(IDataContractRepository):
     def __init__(self, db):
         self.db = db
+
+    def transaction(self) -> AbstractAsyncContextManager[Any]:
+        return self.db.transaction()
+
+    async def get_by_id_for_update(self, contract_id: uuid.UUID) -> DataContract | None:
+        # OF dc: lock the contract row, not the joined domain.
+        row = await self.db.fetchrow(
+            f"{_SELECT} WHERE dc.id = $1 FOR UPDATE OF dc;",
+            contract_id,
+        )
+        return _row_to_entity(row) if row else None
+
+    async def add_version(
+        self,
+        contract_id: uuid.UUID,
+        version: str,
+        yaml_content: str,
+        created_by: uuid.UUID | None,
+    ) -> None:
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO catalog.contract_versions
+                    (contract_id, version, yaml_content, created_by)
+                VALUES ($1, $2, $3, $4);
+                """,
+                contract_id,
+                version,
+                yaml_content,
+                created_by,
+            )
+        except asyncpg.UniqueViolationError:
+            raise ContractVersionConflictError(
+                f"Version {version} already exists for this contract"
+            ) from None
+
+    async def add_baseline_version(
+        self,
+        contract_id: uuid.UUID,
+        version: str,
+        yaml_content: str,
+        created_at: datetime,
+    ) -> None:
+        # DO NOTHING needs no UPDATE privilege, which the history table lacks.
+        await self.db.execute(
+            """
+            INSERT INTO catalog.contract_versions
+                (contract_id, version, yaml_content, created_at)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (contract_id, version) DO NOTHING;
+            """,
+            contract_id,
+            version,
+            yaml_content,
+            created_at,
+        )
+
+    async def list_versions(self, contract_id: uuid.UUID) -> list[ContractVersion]:
+        rows = await self.db.fetch(
+            """
+            SELECT contract_id, version, created_by, created_at
+            FROM catalog.contract_versions
+            WHERE contract_id = $1
+            ORDER BY created_at DESC, version DESC;
+            """,
+            contract_id,
+        )
+        return [
+            ContractVersion(
+                contract_id=r["contract_id"],
+                version=r["version"],
+                created_by=r["created_by"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    async def get_version_yaml(
+        self, contract_id: uuid.UUID, version: str
+    ) -> str | None:
+        return await self.db.fetchval(
+            """
+            SELECT yaml_content FROM catalog.contract_versions
+            WHERE contract_id = $1 AND version = $2;
+            """,
+            contract_id,
+            version,
+        )
 
     async def create(
         self,
@@ -184,10 +276,10 @@ class PostgresDataContractRepository(IDataContractRepository):
         team_members: list[dict[str, Any]],
         support: list[dict[str, Any]],
         servers: list[dict[str, Any]],
-    ) -> bool:
-        # One statement: a read-then-write would race a concurrent sync of the
-        # same file. xmax is 0 only on a row this statement inserted.
-        row = await self.db.fetchrow(
+    ) -> DataContract:
+        # One statement, so it cannot race a concurrent sync of the same file.
+        # The caller knows whether the row existed from its locked read.
+        await self.db.execute(
             """
             INSERT INTO catalog.data_contracts
                 (id, title, version, owner, domain_id, tier, status,
@@ -195,16 +287,15 @@ class PostgresDataContractRepository(IDataContractRepository):
                  description, team_members, support, servers)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb,
                     $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb)
-            ON CONFLICT (id) DO UPDATE
-            SET title = EXCLUDED.title, version = EXCLUDED.version,
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title, version = EXCLUDED.version,
                 owner = EXCLUDED.owner, domain_id = EXCLUDED.domain_id,
                 tier = EXCLUDED.tier, status = EXCLUDED.status,
                 models = EXCLUDED.models, servicelevels = EXCLUDED.servicelevels,
                 description = EXCLUDED.description,
                 team_members = EXCLUDED.team_members,
                 support = EXCLUDED.support, servers = EXCLUDED.servers,
-                updated_at = now()
-            RETURNING (xmax = 0) AS inserted;
+                updated_at = now();
             """,
             contract_id,
             title,
@@ -220,4 +311,4 @@ class PostgresDataContractRepository(IDataContractRepository):
             json.dumps(support),
             json.dumps(servers),
         )
-        return row["inserted"]
+        return await self.get_by_id(contract_id)

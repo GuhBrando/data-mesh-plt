@@ -205,13 +205,22 @@ class DataContractUpdateModel(BaseModel):
     owner: str | None = None
     domain_id: uuid.UUID | None = None
     tier: int | None = Field(default=None, ge=1, le=4)
-    status: Literal["draft", "in_review", "active", "deprecated"] | None = None
+    # retired is reachable only by an update: a contract is not born retired.
+    status: Literal["draft", "in_review", "active", "deprecated", "retired"] | None = (
+        None
+    )
     models: ModelsSection | None = None
     servicelevels: ServiceLevels | None = None
     description: ContractDescription | None = None
     team_members: list[TeamMember] | None = None
     support: list[SupportChannel] | None = None
     servers: list[ContractServer] | None = None
+
+
+class ContractVersionResponseModel(BaseModel):
+    version: str
+    created_by: uuid.UUID | None
+    created_at: datetime
 
 
 class DataContractResponseModel(BaseModel):

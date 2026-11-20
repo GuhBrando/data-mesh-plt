@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from backend.domain.contract_evolution import ContractEvolutionError
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.entities.user import User
@@ -19,8 +20,10 @@ from backend.interface.dependencies import (
     get_data_contract_repository,
     get_delete_data_contract_use_case,
     get_domain_repository,
+    get_get_contract_version_yaml_use_case,
     get_get_data_contract_use_case,
     get_github_client,
+    get_list_contract_versions_use_case,
     get_list_data_contracts_use_case,
     get_remove_stakeholder_use_case,
     get_stakeholder_repository,
@@ -28,6 +31,7 @@ from backend.interface.dependencies import (
 )
 from backend.interface.permissions import is_domain_member, require_roles
 from backend.interface.schemas.data_contract import (
+    ContractVersionResponseModel,
     DataContractCreateModel,
     DataContractResponseModel,
     DataContractUpdateModel,
@@ -40,7 +44,11 @@ from backend.interface.security import get_current_user
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
 from backend.use_cases.data_contract.delete import DeleteDataContractUseCase
 from backend.use_cases.data_contract.get import GetDataContractUseCase
+from backend.use_cases.data_contract.get_version_yaml import (
+    GetContractVersionYamlUseCase,
+)
 from backend.use_cases.data_contract.list import ListDataContractsUseCase
+from backend.use_cases.data_contract.list_versions import ListContractVersionsUseCase
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
@@ -166,7 +174,7 @@ async def create_data_contract(
             detail="You are not a member of the specified domain",
         )
     try:
-        contract = await use_case.execute(**_content(body))
+        contract = await use_case.execute(**_content(body), created_by=current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     await _push_to_github(github, contract, "Add contract")
@@ -202,6 +210,51 @@ async def get_data_contract_yaml(
     return PlainTextResponse(assemble_yaml(contract), media_type="text/plain")
 
 
+@router.get(
+    "/data-contracts/{contract_id}/versions",
+    response_model=list[ContractVersionResponseModel],
+)
+async def list_data_contract_versions(
+    contract_id: uuid.UUID,
+    use_case: ListContractVersionsUseCase = Depends(
+        get_list_contract_versions_use_case
+    ),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    versions = await use_case.execute(contract_id)
+    if versions is None:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    return [
+        ContractVersionResponseModel(
+            version=v.version, created_by=v.created_by, created_at=v.created_at
+        )
+        for v in versions
+    ]
+
+
+@router.get(
+    "/data-contracts/{contract_id}/versions/{version}/yaml",
+    response_class=PlainTextResponse,
+)
+async def get_data_contract_version_yaml(
+    contract_id: uuid.UUID,
+    version: str,
+    use_case: GetContractVersionYamlUseCase = Depends(
+        get_get_contract_version_yaml_use_case
+    ),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    content = await use_case.execute(contract_id, version)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Contract version not found")
+    # The stored snapshot, untouched: history must not depend on today's mapper.
+    return PlainTextResponse(content, media_type="text/plain")
+
+
 @router.get("/data-contracts/{contract_id}", response_model=DataContractResponseModel)
 async def get_data_contract(
     contract_id: uuid.UUID,
@@ -226,31 +279,37 @@ async def update_data_contract(
     github: GitHubClient | None = Depends(get_github_client),
     db=Depends(get_db_connection),
 ):
-    existing = await get_use_case.execute(contract_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Data contract not found")
-    if current_user.role == UserRole.DATA_STEWARD and not await is_domain_member(
-        current_user.id, existing.domain_id, db
-    ):
-        raise HTTPException(status_code=403, detail="Not a member of this domain")
-    stored = {name: getattr(existing, name) for name in type(body).model_fields}
+    if current_user.role == UserRole.DATA_STEWARD:
+        existing = await get_use_case.execute(contract_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Data contract not found")
+        if not await is_domain_member(current_user.id, existing.domain_id, db):
+            raise HTTPException(status_code=403, detail="Not a member of this domain")
     try:
-        contract = await use_case.execute(
-            contract_id=contract_id, **{**stored, **_content(body)}
+        # Only the sent values: the use case merges them into the row it locks,
+        # so a concurrent update is never overwritten with stale values.
+        result = await use_case.execute(
+            contract_id=contract_id,
+            changes=_content(body),
+            created_by=current_user.id,
         )
+    except ContractEvolutionError as e:
+        # A rejected change never reaches GitHub: the push below is skipped.
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if not contract:
+    if result is None:
         raise HTTPException(status_code=404, detail="Data contract not found")
+    previous, contract = result
     await _push_to_github(github, contract, "Update contract")
     if github:
-        old_path = github.contract_path(existing.domain, existing.title)
+        old_path = github.contract_path(previous.domain, previous.title)
         new_path = github.contract_path(contract.domain, contract.title)
         if old_path != new_path:
             try:
                 await github.delete(
                     old_path,
-                    f"Remove stale contract file: {existing.title}",
+                    f"Remove stale contract file: {previous.title}",
                 )
             except Exception as exc:
                 logger.warning(
@@ -297,7 +356,7 @@ async def sync_data_contracts_from_github(
     github: GitHubClient | None = Depends(get_github_client),
     repo=Depends(get_data_contract_repository),
     domain_repo=Depends(get_domain_repository),
-    _: User = Depends(_admin_only),
+    current_user: User = Depends(_admin_only),
 ):
     if github is None:
         raise HTTPException(
@@ -308,7 +367,7 @@ async def sync_data_contracts_from_github(
         repository=repo, github=github, domain_repo=domain_repo
     )
     try:
-        return await use_case.execute()
+        return await use_case.execute(created_by=current_user.id)
     except (RuntimeError, httpx.HTTPError) as exc:
         # A dead token or a renamed repository must not look like an empty sync.
         raise HTTPException(

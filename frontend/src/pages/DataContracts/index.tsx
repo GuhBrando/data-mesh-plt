@@ -12,19 +12,13 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
 import type { DataContract } from '../../types'
+import { STATUS_COLORS } from './contractStatus'
 
 const TIER_COLORS: Record<number, 'red' | 'yellow' | 'blue' | 'gray'> = {
   1: 'red',
   2: 'yellow',
   3: 'blue',
   4: 'gray',
-}
-
-const STATUS_COLORS: Record<string, 'gray' | 'yellow' | 'green' | 'red'> = {
-  draft: 'gray',
-  in_review: 'yellow',
-  active: 'green',
-  deprecated: 'red',
 }
 
 function formatDate(iso: string) {

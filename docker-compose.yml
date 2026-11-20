@@ -7,15 +7,48 @@ services:
       - ./database/data/postgres:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${DB_NAME:-data_mesh_plt}
-      POSTGRES_USER: ${DB_USER:-postgres}
+      # The superuser owns the schema; DB_USER (admin) is an ordinary role
+      # created by the migrations.
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
       USER_PASSWORD: ${USER_PASSWORD}
+    # TLS like Neon. The self-signed certificate is generated inside the
+    # container, not on the bind mount, where Windows cannot hold the 0600
+    # key permissions Postgres demands. TCP clients must use TLS; only the
+    # unix socket (healthcheck, docker exec psql) is exempt.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        tls=/var/lib/postgresql/tls
+        if [ ! -f "$$tls/server.key" ]; then
+          mkdir -p "$$tls"
+          openssl req -new -x509 -days 825 -nodes -subj "/CN=db" \
+            -addext "subjectAltName=DNS:db,DNS:postgres_db,DNS:localhost,IP:127.0.0.1" \
+            -keyout "$$tls/server.key" -out "$$tls/server.crt"
+          printf 'local all all trust\nhostssl all all all scram-sha-256\n' > "$$tls/pg_hba.conf"
+          chown -R postgres:postgres "$$tls"
+          chmod 600 "$$tls/server.key"
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - pg-tls
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+      - -c
+      - hba_file=/var/lib/postgresql/tls/pg_hba.conf
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-data_mesh_plt}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DB_NAME:-data_mesh_plt}"]
       interval: 10s
       retries: 5
 
@@ -27,6 +60,11 @@ services:
     environment:
       DB_HOST: db
       CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      # The local volume is owned by the superuser, which also keeps the Atlas
+      # history in its own schema (Azure uses DB_USER and public).
+      MIGRATIONS_DB_USER: postgres
+      MIGRATIONS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      ATLAS_REVISIONS_SCHEMA: atlas_schema_revisions
     dns:
       - 8.8.8.8
       - 1.1.1.1

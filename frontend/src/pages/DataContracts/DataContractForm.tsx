@@ -194,14 +194,14 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-200">{label}</h3>
+      <h3 className="text-[13px] font-semibold text-tx">{label}</h3>
       {required && (
-        <span className="text-xs px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">
+        <span className="rounded border border-warn/30 bg-warn/10 px-1.5 text-[11px] font-medium leading-[18px] text-warn">
           Required
         </span>
       )}
       {optional && (
-        <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 border border-gray-200 rounded dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600">
+        <span className="rounded border border-line bg-raised px-1.5 text-[11px] font-medium leading-[18px] text-tx3">
           Optional
         </span>
       )}
@@ -228,10 +228,10 @@ function ServiceLevelsSection({
         required={required.length > 0}
         optional={required.length === 0}
       />
-      <p className="text-xs text-gray-400 dark:text-slate-500">
+      <p className="text-xs text-tx3">
         A number with a unit, or text with no unit.
       </p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {SLA_KEYS.map((key) => (
           <SlaInputRow
             key={key}
@@ -272,7 +272,7 @@ function SlaInputRow({
       />
       <select
         aria-label={`${SLA_LABELS[slaKey]} unit`}
-        className="mt-6 text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+        className="form-input mt-[22px] !w-auto shrink-0 !px-2"
         {...register(unitKey(slaKey))}
       >
         <option value="">—</option>
@@ -304,12 +304,12 @@ function QualitySection({
         required={tierRequiresQuality(tier)}
         optional={!tierRequiresQuality(tier)}
       />
-      <p className="text-xs text-gray-400 dark:text-slate-500">
+      <p className="text-xs text-tx3">
         A library rule is a check datacontract-cli runs on the data. A text rule documents a
         check no tool runs.
       </p>
       <QualityRules rules={quality} fieldNames={fieldNames} onChange={onChange} />
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {error && <p className="form-error">{error}</p>}
     </div>
   )
 }
@@ -352,12 +352,12 @@ function MetadataSections({
       </div>
       <div className="space-y-3">
         <SectionHeader label="Servers" optional />
-        <p className="text-xs text-gray-400 dark:text-slate-500">
+        <p className="text-xs text-tx3">
           Where the data lives. Coordinates only: never a password, token or connection string.
         </p>
         <ContractServers rows={metadata.servers} onChange={metadata.setServers} />
       </div>
-      {metadata.error && <p className="text-xs text-red-500 mt-1">{metadata.error}</p>}
+      {metadata.error && <p className="form-error">{metadata.error}</p>}
     </>
   )
 }
@@ -371,11 +371,11 @@ function StatusSelect({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+      <label className="form-label">
         Status
       </label>
       <select
-        className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+        className="form-input"
         {...register('status')}
       >
         <option value="draft">Draft</option>
@@ -402,11 +402,11 @@ function DomainSelect({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+      <label className="form-label">
         Domain
       </label>
       <select
-        className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 disabled:opacity-50"
+        className="form-input disabled:opacity-50"
         disabled={loading}
         {...register('domain_id')}
       >
@@ -415,7 +415,7 @@ function DomainSelect({
           <option key={d.id} value={d.id}>{d.name}</option>
         ))}
       </select>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="form-error">{error}</p>}
     </div>
   )
 }
@@ -483,7 +483,10 @@ export default function DataContractForm({
   }
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+    <form
+      onSubmit={handleSubmit(handleFormSubmit)}
+      className="space-y-6 [&>div+div]:border-t [&>div+div]:border-line [&>div+div]:pt-6"
+    >
       {showWizard && (
         <Controller
           name="tier"
@@ -504,7 +507,7 @@ export default function DataContractForm({
         <>
           <div className="space-y-3">
             <SectionHeader label="Contract Info" />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input label="Title" error={errors.title?.message} {...register('title')} />
               <Input label="Version" error={errors.version?.message} {...register('version')} />
               <Input label="Owner" error={errors.owner?.message} {...register('owner')} />
@@ -515,14 +518,14 @@ export default function DataContractForm({
                 error={errors.domain_id?.message}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {!showWizard && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+                  <label className="form-label">
                     Tier
                   </label>
                   <select
-                    className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+                    className="form-input"
                     {...register('tier', { valueAsNumber: true })}
                   >
                     <option value={1}>Tier 1 — Critical / Regulated</option>
@@ -543,7 +546,7 @@ export default function DataContractForm({
               optional={!tierRequiresFields(tier)}
             />
             <ContractFields fields={fields} onChange={setFields} />
-            {fieldsError && <p className="text-xs text-red-500 mt-1">{fieldsError}</p>}
+            {fieldsError && <p className="form-error">{fieldsError}</p>}
           </div>
 
           {tierShowsSLAs(tier) && (
@@ -567,7 +570,7 @@ export default function DataContractForm({
 
           <MetadataSections register={register} metadata={metadata} />
 
-          <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-slate-700">
+          <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={onCancel}>
               Cancel
             </Button>

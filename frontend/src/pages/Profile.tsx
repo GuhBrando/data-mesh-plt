@@ -17,7 +17,7 @@ const ROLE_META: Record<
 > = {
   PLATFORM_ADMIN: {
     label: 'Platform Admin',
-    color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    color: 'bg-bad/15 text-bad',
     description: 'Full control over all platform resources.',
     permissions: [
       'Create and delete users',
@@ -49,7 +49,7 @@ const ROLE_META: Record<
   },
   DATA_CONSUMER: {
     label: 'Data Consumer',
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: 'Read-only access to contracts where you are a stakeholder.',
     permissions: [
       'View data contracts where assigned as stakeholder',
@@ -88,7 +88,7 @@ function RoleSection({ userId }: { userId: string | undefined }) {
   if (!user) return null
   const role = ROLE_META[user.role] ?? {
     label: user.role,
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: '',
     permissions: [],
   }
@@ -97,15 +97,15 @@ function RoleSection({ userId }: { userId: string | undefined }) {
     <div className="space-y-6">
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <ShieldIcon size={16} className="text-slate-500 dark:text-slate-400" />
-          <h2 className="font-semibold text-slate-900 dark:text-white">Permissions</h2>
+          <ShieldIcon size={16} className="text-tx3" />
+          <h2 className="font-semibold text-tx">Permissions</h2>
         </div>
         {role.description && (
-          <p className="text-sm text-slate-600 dark:text-slate-400">{role.description}</p>
+          <p className="text-sm text-tx2">{role.description}</p>
         )}
         <ul className="space-y-2">
           {role.permissions.map((p) => (
-            <li key={p} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <li key={p} className="flex items-start gap-2 text-sm text-tx2">
               <ChevronRightIcon size={14} className="mt-0.5 shrink-0 text-accent-fg dark:text-accent-fg" />
               {p}
             </li>
@@ -115,24 +115,24 @@ function RoleSection({ userId }: { userId: string | undefined }) {
 
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <DomainIcon size={16} className="text-slate-500 dark:text-slate-400" />
-          <h2 className="font-semibold text-slate-900 dark:text-white">Domain Memberships</h2>
+          <DomainIcon size={16} className="text-tx3" />
+          <h2 className="font-semibold text-tx">Domain Memberships</h2>
         </div>
         {isLoading ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+          <p className="text-sm text-tx3">Loading…</p>
         ) : domains && domains.length > 0 ? (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+          <ul className="divide-y divide-line">
             {domains.map((d) => (
               <li key={d.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                 <div className="w-7 h-7 rounded-md bg-accent/15 dark:bg-accent/10 flex items-center justify-center shrink-0">
                   <UserIcon size={13} className="text-accent-fg dark:text-accent-fg" />
                 </div>
-                <span className="text-sm text-slate-800 dark:text-slate-200 font-medium">{d.name}</span>
+                <span className="text-sm text-tx font-medium">{d.name}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-tx3">
             You are not a member of any domain yet.
           </p>
         )}
@@ -168,7 +168,7 @@ function ShowablePasswordInput({
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
-        className="absolute right-3 top-8 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+        className="absolute right-3 top-8 text-tx3 hover:text-tx"
         tabIndex={-1}
       >
         {show ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
@@ -206,19 +206,19 @@ function PasswordSection({ userId }: { userId: string }) {
   return (
     <div className="card p-6 space-y-5">
       <div className="flex items-center gap-2">
-        <LockIcon size={16} className="text-slate-500 dark:text-slate-400" />
-        <h2 className="font-semibold text-slate-900 dark:text-white">Change Password</h2>
+        <LockIcon size={16} className="text-tx3" />
+        <h2 className="font-semibold text-tx">Change Password</h2>
       </div>
 
       {success && (
-        <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-ok bg-ok/10 rounded-lg px-3 py-2">
           <CheckCircleIcon size={15} />
           Password updated successfully.
         </div>
       )}
 
       {mutation.error && (
-        <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-bad bg-bad/10 rounded-lg px-3 py-2">
           <XCircleIcon size={15} />
           {(mutation.error as Error).message}
         </div>
@@ -249,7 +249,7 @@ function PasswordSection({ userId }: { userId: string }) {
           autoComplete="new-password"
         />
 
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-tx3">
           Min 8 chars · uppercase · lowercase · number · special char (!@#$%^&*)
         </p>
 
@@ -291,13 +291,13 @@ function OwnerSearch({
         placeholder="Search by username…"
       />
       {showList && (
-        <div className="mt-1 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+        <div className="mt-1 border border-line rounded-lg overflow-hidden max-h-32 overflow-y-auto">
           {filtered.map((u) => (
             <button
               key={u.id}
               type="button"
               onClick={() => onSelect(u.id, u.username)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-hover text-tx2"
             >
               {u.username}
             </button>
@@ -305,7 +305,7 @@ function OwnerSearch({
         </div>
       )}
       {showEmpty && (
-        <p className="text-xs text-slate-400 mt-1">No users found.</p>
+        <p className="text-xs text-tx3 mt-1">No users found.</p>
       )}
     </div>
   )
@@ -387,7 +387,7 @@ function DomainFormModal({
         />
 
         {mutation.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {mutation.error.message}
           </p>
         )}
@@ -439,12 +439,12 @@ function DeleteDomainModal({
   return (
     <Modal open={open} onClose={handleClose} title="Delete Domain" size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-slate-700 dark:text-slate-300">
+        <p className="text-sm text-tx2">
           Delete <strong>{domain?.name}</strong>? This will not delete associated data contracts.
           All members will lose domain access.
         </p>
         {deleteDomain.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {deleteDomain.error.message}
           </p>
         )}
@@ -477,28 +477,28 @@ function AdminDomainsSection() {
       key: 'name',
       header: 'Name',
       render: (d: DomainWithMembers) => (
-        <span className="font-medium text-slate-900 dark:text-white">{d.name}</span>
+        <span className="font-medium text-tx">{d.name}</span>
       ),
     },
     {
       key: 'owner',
       header: 'Owner',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.owner_username}</span>
+        <span className="text-tx3">{d.owner_username}</span>
       ),
     },
     {
       key: 'members',
       header: 'Members',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.members.length}</span>
+        <span className="text-tx3">{d.members.length}</span>
       ),
     },
     {
       key: 'contracts',
       header: 'Contracts',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.contract_count}</span>
+        <span className="text-tx3">{d.contract_count}</span>
       ),
     },
     {
@@ -531,8 +531,8 @@ function AdminDomainsSection() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-semibold text-slate-900 dark:text-white">Manage Domains</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <h2 className="font-semibold text-tx">Manage Domains</h2>
+          <p className="text-xs text-tx3 mt-0.5">
             Create, edit, and delete platform domains
           </p>
         </div>
@@ -546,7 +546,7 @@ function AdminDomainsSection() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+        <p className="text-sm text-tx3">Loading…</p>
       ) : (
         <Table
           columns={columns}
@@ -574,11 +574,11 @@ function AdminDomainsSection() {
 function AdminUsersSection() {
   return (
     <div className="card p-6 text-center">
-      <ShieldAlertIcon size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+      <ShieldAlertIcon size={32} className="mx-auto text-tx3 mb-3" />
+      <p className="text-sm font-medium text-tx2">
         User management coming soon.
       </p>
-      <p className="text-xs text-slate-400 mt-1">
+      <p className="text-xs text-tx3 mt-1">
         Additional admin functions will be added here.
       </p>
     </div>
@@ -596,7 +596,7 @@ export default function Profile() {
 
   const role = ROLE_META[user.role] ?? {
     label: user.role,
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: '',
     permissions: [],
   }
@@ -609,10 +609,10 @@ export default function Profile() {
       <div className="card p-6 flex items-center gap-5">
         <Avatar name={user.username} size={56} />
         <div className="min-w-0">
-          <p className="text-lg font-semibold text-slate-900 dark:text-white truncate">
+          <p className="text-lg font-semibold text-tx truncate">
             {user.username}
           </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
+          <p className="text-sm text-tx3 truncate">{user.email}</p>
           <span className={`mt-1.5 inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${role.color}`}>
             {role.label}
           </span>

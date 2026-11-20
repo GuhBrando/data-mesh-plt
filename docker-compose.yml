@@ -7,17 +7,11 @@ services:
       - ./database/data/postgres:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${DB_NAME:-data_mesh_plt}
-      # The superuser owns the schema; DB_USER (admin) is an ordinary role
-      # created by the migrations.
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
       USER_PASSWORD: ${USER_PASSWORD}
-    # TLS like Neon. The self-signed certificate is generated inside the
-    # container, not on the bind mount, where Windows cannot hold the 0600
-    # key permissions Postgres demands. TCP clients must use TLS; only the
-    # unix socket (healthcheck, docker exec psql) is exempt.
     entrypoint:
       - sh
       - -c
@@ -60,8 +54,6 @@ services:
     environment:
       DB_HOST: db
       CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      # The local volume is owned by the superuser, which also keeps the Atlas
-      # history in its own schema (Azure uses DB_USER and public).
       MIGRATIONS_DB_USER: postgres
       MIGRATIONS_DB_PASSWORD: ${POSTGRES_PASSWORD}
       ATLAS_REVISIONS_SCHEMA: atlas_schema_revisions

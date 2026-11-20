@@ -14,6 +14,7 @@ import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import UserForm from './UserForm'
 import type { User, UserFormData } from '../../types'
+import { Avatar } from '../../components/ui/Glyphs'
 
 export default function UsersList() {
   const [createOpen, setCreateOpen] = useState(false)
@@ -42,41 +43,13 @@ export default function UsersList() {
     setDeleteTarget(null)
   }
 
-  // Generate initials avatar color from name
-  function avatarColor(name: string): string {
-    const colors = [
-      'bg-blue-500',
-      'bg-indigo-500',
-      'bg-violet-500',
-      'bg-green-500',
-      'bg-amber-500',
-      'bg-rose-500',
-      'bg-teal-500',
-    ]
-    const idx = name.charCodeAt(0) % colors.length
-    return colors[idx]
-  }
-
-  function initials(name: string) {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase()
-  }
-
   const columns = [
     {
       key: 'name',
       header: 'Name',
       render: (row: User) => (
         <div className="flex items-center gap-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${avatarColor(row.username)}`}
-          >
-            {initials(row.username)}
-          </div>
+          <Avatar name={row.username} size={28} />
           <span className="font-medium text-gray-900 dark:text-slate-100">{row.username}</span>
         </div>
       ),
@@ -87,7 +60,7 @@ export default function UsersList() {
       render: (row: User) => (
         <a
           href={`mailto:${row.email}`}
-          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          className="text-sm text-accent-fg dark:text-accent-fg hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
           {row.email}
@@ -113,7 +86,7 @@ export default function UsersList() {
               e.stopPropagation()
               setEditTarget(row)
             }}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors dark:text-slate-500 dark:hover:text-blue-400 dark:hover:bg-blue-900/20"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-tx hover:bg-hover transition-colors dark:text-slate-500 dark:hover:text-tx dark:hover:bg-hover"
             title="Edit"
           >
             <Edit2 size={14} />

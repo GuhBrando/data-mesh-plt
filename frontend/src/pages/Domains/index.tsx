@@ -85,7 +85,7 @@ export default function DomainsList() {
         <button
           type="button"
           onClick={() => refetch()}
-          className="text-xs text-indigo-600 underline"
+          className="text-xs text-accent-fg underline"
         >
           Retry
         </button>
@@ -118,7 +118,7 @@ export default function DomainsList() {
               onClick={() => { setFilter(tab.id); setSelectedId(null) }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 filter === tab.id
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-accent text-accent-ink'
                   : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
               }`}
             >
@@ -137,7 +137,7 @@ export default function DomainsList() {
               onClick={() => { setFilter(tab.id); setSelectedId(null) }}
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 filter === tab.id
-                  ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400'
+                  ? 'text-accent-fg dark:text-accent-fg border-b-2 border-accent-fg dark:border-accent-fg'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >

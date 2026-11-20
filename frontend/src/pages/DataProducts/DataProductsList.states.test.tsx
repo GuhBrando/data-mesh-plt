@@ -21,6 +21,11 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
+// The marketplace joins each product to its contract for domain, tier and status.
+vi.mock('../../hooks/useDataContracts', () => ({
+  useDataContracts: () => ({ data: [], isLoading: false, error: null }),
+}))
+
 const product = {
   id: 'prod-1',
   name: 'Sales Product',

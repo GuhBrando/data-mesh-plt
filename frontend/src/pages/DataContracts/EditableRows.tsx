@@ -62,7 +62,7 @@ export default function EditableRows<T>({
       <button
         type="button"
         onClick={() => onChange([...rows, emptyRow()])}
-        className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        className="flex items-center gap-1 text-sm text-accent-fg dark:text-accent-fg hover:underline"
       >
         <Plus size={14} />
         {addLabel}

@@ -1,25 +1,36 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, FileText, Package, Users, Building2 } from 'lucide-react'
+import { ContractIcon, DomainIcon, MarketplaceIcon, OverviewIcon, UsersIcon } from './icons'
 
 const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-  { to: '/domains', icon: Building2, label: 'Domains' },
-  { to: '/data-contracts', icon: FileText, label: 'Contracts' },
-  { to: '/data-products', icon: Package, label: 'Products' },
-  { to: '/users', icon: Users, label: 'Users' },
+  { to: '/dashboard', icon: OverviewIcon, label: 'Overview' },
+  { to: '/data-products', icon: MarketplaceIcon, label: 'Market' },
+  { to: '/data-contracts', icon: ContractIcon, label: 'Contracts' },
+  { to: '/domains', icon: DomainIcon, label: 'Domains' },
+  { to: '/users', icon: UsersIcon, label: 'Users' },
 ]
 
 export default function BottomNav() {
   return (
-    <nav aria-label="Mobile navigation" className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900 border-t border-slate-800 flex items-stretch z-50">
+    <nav
+      aria-label="Mobile navigation"
+      className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-stretch border-t border-line bg-side md:hidden"
+    >
       {navItems.map(({ to, icon: Icon, label }) => (
         <NavLink
           key={to}
           to={to}
-          className={({ isActive }) => `bottom-nav-link ${isActive ? 'active' : ''}`}
+          className={({ isActive }) =>
+            `flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors ${
+              isActive ? 'text-tx' : 'text-tx3 hover:text-tx2'
+            }`
+          }
         >
-          <Icon size={20} />
-          <span>{label}</span>
+          {({ isActive }) => (
+            <>
+              <Icon size={18} className={isActive ? 'text-accent-fg' : ''} />
+              <span>{label}</span>
+            </>
+          )}
         </NavLink>
       ))}
     </nav>

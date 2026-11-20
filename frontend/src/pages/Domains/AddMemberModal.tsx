@@ -86,7 +86,7 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
                 onClick={() => setSelectedUserId(u.id)}
                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                   selectedUserId === u.id
-                    ? 'bg-indigo-600 text-white'
+                    ? 'bg-accent text-accent-ink'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >
@@ -107,7 +107,7 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
                 onClick={() => setRole(r)}
                 className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${
                   role === r
-                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    ? 'bg-accent text-accent-ink border-accent'
                     : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >

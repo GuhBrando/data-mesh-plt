@@ -40,8 +40,12 @@ def test_legacy_file_is_read_with_its_stored_shape():
     assert (parsed.title, parsed.version, parsed.owner) == ("Sales", "1.0.0", "alice")
     assert (parsed.domain_name, parsed.tier, parsed.status) == ("commerce", 2, "draft")
     assert parsed.models == {"fields": []}
-    assert parsed.servicelevels == {"freshness": "24h", "availability": "99%",
-                                    "retention": "365d", "latency": "1h"}
+    assert parsed.servicelevels == {"properties": [
+        {"property": "freshness", "value": 24, "unit": "h"},
+        {"property": "availability", "value": 99, "unit": "%"},
+        {"property": "retention", "value": 365, "unit": "d"},
+        {"property": "latency", "value": 1, "unit": "h"},
+    ]}
 
 
 def test_legacy_defaults_match_the_previous_sync():
@@ -49,15 +53,93 @@ def test_legacy_defaults_match_the_previous_sync():
     assert (parsed.title, parsed.version, parsed.owner) == ("", "1.0.0", "")
     assert (parsed.domain_name, parsed.tier, parsed.status) == ("", 4, "draft")
     assert parsed.models == {}
-    assert parsed.servicelevels == {}
+    assert parsed.servicelevels == {"properties": []}
 
 
 def test_legacy_quality_is_merged_into_models():
     doc = yaml.safe_load(LEGACY_FILE)
     doc["quality"] = [{"dimension": "freshness"}]
     assert from_legacy_dcs(doc).models == {
-        "fields": [], "quality": [{"dimension": "freshness"}],
+        "fields": [],
+        "quality": [{
+            "type": "text", "dimension": "timeliness", "column": "", "metric": None,
+            "operator": None, "value": None, "unit": None, "valid_values": [],
+            "description": '[legacy rule: {"dimension": "freshness"}]',
+        }],
     }
+
+
+def test_legacy_service_levels_keep_text_and_minutes():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["servicelevels"] = {"freshness": "30m", "availability": "best effort",
+                            "retention": "", "latency": None}
+    assert from_legacy_dcs(doc).servicelevels == {"properties": [
+        {"property": "freshness", "value": 30, "unit": "min"},
+        {"property": "availability", "value": "best effort", "unit": None},
+    ]}
+
+
+def test_legacy_rule_keeps_its_values_in_the_description():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["models"] = {"fields": [{"name": "id", "type": "string"}]}
+    doc["quality"] = [
+        {"dimension": "completeness", "column": "id", "operator": ">=",
+         "threshold": "99%", "description": "Ids are present"},
+        {"dimension": "validity", "column": "ghost", "operator": "=", "threshold": "BRL"},
+    ]
+    rules = from_legacy_dcs(doc).models["quality"]
+    assert [(r["type"], r["dimension"], r["column"]) for r in rules] == [
+        ("text", "completeness", "id"), ("text", "conformity", ""),
+    ]
+    assert rules[0]["description"] == (
+        "Ids are present [legacy rule: dimension=completeness column=id"
+        " operator=>= threshold=99%]"
+    )
+    assert "column=ghost" in rules[1]["description"]
+
+
+def test_rule_without_a_threshold_keeps_its_content_like_the_migration():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["quality"] = {"type": "SodaCL", "specification": {"checks": ["row_count > 0"]}}
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule["description"] == (
+        '[legacy rule: {"type": "SodaCL", "specification": {"checks": ["row_count > 0"]}}]'
+    )
+
+
+def test_stored_shape_rule_is_completed_and_checked_like_the_api():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["models"] = {"fields": [{"name": "id", "type": "integer"}]}
+    doc["quality"] = [{"type": "library", "metric": "rowCount", "mustBeGreaterThan": 5}]
+    with pytest.raises(ContractParseError, match="mustBeGreaterThan"):
+        from_legacy_dcs(doc)
+    doc["quality"] = [{"type": "library", "metric": "duplicateValues", "column": "id",
+                       "operator": "mustBe", "value": 0, "unit": "percent"}]
+    with pytest.raises(ContractParseError, match="percent"):
+        from_legacy_dcs(doc)
+    doc["quality"] = [{"type": "text", "description": "Reconciled daily"}]
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule == {"type": "text", "dimension": None, "column": "", "metric": None,
+                    "operator": None, "value": None, "unit": None, "valid_values": [],
+                    "description": "Reconciled daily"}
+
+
+@pytest.mark.parametrize(("levels", "fragment"), [
+    ("24h", "servicelevels must be an object"), (["24h"], "servicelevels must be an object"),
+    ({5: "24h"}, "property name"),
+])
+def test_service_levels_the_api_would_refuse_are_refused(levels, fragment):
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["servicelevels"] = levels
+    with pytest.raises(ContractParseError, match=fragment):
+        from_legacy_dcs(doc)
+
+
+def test_rule_that_is_not_an_object_becomes_text_like_the_migration():
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["quality"] = ["rows match the ledger"]
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert rule["description"] == '[legacy rule: "rows match the ledger"]'
 
 
 def test_marker_routes_to_the_legacy_reader():
@@ -91,7 +173,7 @@ def test_non_mapping_document_is_rejected(doc):
     ({"fields": {"id": {"type": "string"}}}, None, "models.fields must be a list"),
     ({"fields": ["id"]}, None, "models.fields must be a list"),
     ("fields", None, "models must be an object"),
-    ({"fields": []}, ["a rule"], "quality must be a list"),
+    ({"fields": []}, "a rule", "quality must be a list"),
 ])
 def test_legacy_models_the_platform_cannot_write_back_are_rejected(models, quality, message):
     doc = yaml.safe_load(LEGACY_FILE)
@@ -115,3 +197,12 @@ def test_oversized_file_is_refused_before_parsing():
 
 def test_plain_yaml_loads():
     assert load_contract_yaml(LEGACY_FILE)["info"]["title"] == "Sales"
+
+
+def test_legacy_rules_inside_models_are_converted_too():
+    # Stored raw, they would crash to_odcs, which emits only the new rule shape.
+    doc = yaml.safe_load(LEGACY_FILE)
+    doc["models"] = {"fields": [], "quality": [
+        {"dimension": "freshness", "operator": "<=", "threshold": "24h"}]}
+    [rule] = from_legacy_dcs(doc).models["quality"]
+    assert (rule["type"], rule["dimension"]) == ("text", "timeliness")

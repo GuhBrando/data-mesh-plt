@@ -3,6 +3,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DataContractDetail from './DataContractDetail'
 import { emptyServer } from './contractMetadata'
+import { emptyRule, withType } from '../../lib/qualityRules'
 import {
   useDataContract, useDataContractYaml, useDeleteDataContract, useUpdateDataContract,
 } from '../../hooks/useDataContracts'
@@ -19,7 +20,7 @@ vi.mock('./DataContractForm', () => ({
 const base = {
   id: 'c1', title: 'Orders', version: '1.0.0', owner: 'alice', domain: 'commerce', domain_id: 'd1',
   tier: 4, status: 'draft', models: { fields: [], quality: [] },
-  servicelevels: { freshness: '', availability: '', retention: '', latency: '' },
+  servicelevels: { properties: [] },
   description: { purpose: '', usage: '', limitations: '' }, team_members: [], support: [], servers: [],
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
 }
@@ -133,5 +134,28 @@ describe('DataContractDetail metadata', () => {
     expect(screen.getByText('restricted')).toBeInTheDocument()
     expect(screen.getByText('VARCHAR(255)')).toBeInTheDocument()
     expect(screen.getByText('legacy')).toBeInTheDocument()
+  })
+
+  it('lists library and text rules', () => {
+    renderDetail({ models: { fields: [], quality: [
+      { ...emptyRule(), column: 'email', operator: 'mustBeLessOrEqualTo', value: 1, unit: 'percent' },
+      { ...withType(emptyRule(), 'text'), description: 'Totals reconcile with the ledger.' },
+    ] } })
+    expect(screen.getByText('nullValues ≤ 1 percent')).toBeInTheDocument()
+    expect(screen.getByText('Totals reconcile with the ledger.')).toBeInTheDocument()
+  })
+
+  it('renders service levels', () => {
+    renderDetail({ servicelevels: { properties: [
+      { property: 'freshness', value: 24, unit: 'h' },
+      { property: 'availability', value: 99.9, unit: '%' },
+    ] } })
+    expect(screen.getByText('24 h')).toBeInTheDocument()
+    expect(screen.getByText('99.9 %')).toBeInTheDocument()
+  })
+
+  it('survives an unmigrated row', () => {
+    renderDetail({ servicelevels: { freshness: '24h' } })
+    expect(screen.getByText('No service levels')).toBeInTheDocument()
   })
 })

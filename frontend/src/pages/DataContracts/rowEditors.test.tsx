@@ -7,6 +7,7 @@ import QualityRules from './QualityRules'
 import SupportChannels from './SupportChannels'
 import TeamMembers from './TeamMembers'
 import { emptyServer } from './contractMetadata'
+import { emptyRule } from '../../lib/qualityRules'
 
 type Editor = (rows: never[], onChange: (rows: unknown[]) => void) => ReactElement
 
@@ -19,9 +20,8 @@ const EDITORS: [string, Editor, object, string][] = [
     { channel: 'c', url: '', tool: '', scope: '' }, 'No support channels yet.'],
   ['ContractServers', (rows, onChange) => <ContractServers rows={rows} onChange={onChange} />,
     { ...emptyServer(), server: 'prod' }, 'No servers yet.'],
-  ['QualityRules', (rows, onChange) => <QualityRules rules={rows} onChange={onChange} />,
-    { dimension: 'completeness', column: '', operator: '>=', threshold: '', description: '' },
-    'No quality rules yet.'],
+  ['QualityRules', (rows, onChange) => <QualityRules rules={rows} fieldNames={['email']} onChange={onChange} />,
+    emptyRule(), 'No quality rules yet.'],
   ['ContractFields', (rows, onChange) => <ContractFields fields={rows} onChange={onChange} />,
     { name: 'a', type: 'string', description: '', nullable: true, primary_key: false,
       classification: '', unique: false, physical_type: '' }, 'No fields yet.'],

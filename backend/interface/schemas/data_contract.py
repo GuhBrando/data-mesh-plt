@@ -12,8 +12,13 @@ from pydantic import (
 )
 
 from backend.domain.contract_metadata import server_problems, support_url_problem
+from backend.domain.quality_rules import find_quality_rule_problems
+from backend.domain.service_levels import service_level_problems
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# The nested rows forbid unknown keys, like the ODCS reader: a key the platform
+# does not model must fail loudly instead of being dropped.
+_STRICT = ConfigDict(extra="forbid")
 
 
 class SchemaField(BaseModel):
@@ -27,31 +32,98 @@ class SchemaField(BaseModel):
     physical_type: str = ""
 
 
+def _reject_bool(value: Any) -> Any:
+    # Pydantic's lax mode would store True as the number 1.
+    if isinstance(value, bool):
+        raise ValueError("must be a number, not a boolean")
+    return value
+
+
 class QualityRule(BaseModel):
-    dimension: Literal[
-        "completeness", "freshness", "uniqueness", "validity", "integrity"
-    ]
+    """An ODCS quality rule: a library metric the tool can run, or text."""
+
+    model_config = _STRICT
+
+    type: Literal["library", "text"]
+    dimension: (
+        Literal[
+            "accuracy",
+            "completeness",
+            "conformity",
+            "consistency",
+            "coverage",
+            "timeliness",
+            "uniqueness",
+        ]
+        | None
+    ) = None
     column: str = ""
-    operator: Literal[">=", "<=", "="]
-    threshold: str
+    metric: (
+        Literal[
+            "nullValues",
+            "missingValues",
+            "invalidValues",
+            "duplicateValues",
+            "rowCount",
+        ]
+        | None
+    ) = None
+    operator: (
+        Literal[
+            "mustBe",
+            "mustNotBe",
+            "mustBeGreaterThan",
+            "mustBeGreaterOrEqualTo",
+            "mustBeLessThan",
+            "mustBeLessOrEqualTo",
+        ]
+        | None
+    ) = None
+    value: int | float | None = None
+    unit: Literal["rows", "percent"] | None = None
+    valid_values: list[str] = []
     description: str = ""
+
+    _no_bool_value = field_validator("value", mode="before")(_reject_bool)
 
 
 class ModelsSection(BaseModel):
     fields: list[SchemaField] = []
     quality: list[QualityRule] = []
 
+    @model_validator(mode="after")
+    def _rules_can_run(self) -> "ModelsSection":
+        rules = [r.model_dump() for r in self.quality]
+        fields = [f.model_dump() for f in self.fields]
+        problems = find_quality_rule_problems(rules, fields)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class ServiceLevelProperty(BaseModel):
+    model_config = _STRICT
+
+    property: str = Field(min_length=1)
+    value: int | float | str
+    unit: str | None = None
+
+    _no_bool_value = field_validator("value", mode="before")(_reject_bool)
+
 
 class ServiceLevels(BaseModel):
-    freshness: str = ""
-    availability: str = ""
-    retention: str = ""
-    latency: str = ""
+    # forbid: a stale client sending the old four keys gets 422, not an empty SLA.
+    model_config = _STRICT
 
+    properties: list[ServiceLevelProperty] = []
 
-# The metadata rows forbid unknown keys, like the ODCS reader: a key the
-# platform does not model must fail loudly instead of being dropped.
-_STRICT = ConfigDict(extra="forbid")
+    @model_validator(mode="after")
+    def _storable(self) -> "ServiceLevels":
+        # The rules the file readers apply: what is saved here can sync back.
+        problems = service_level_problems([p.model_dump() for p in self.properties])
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
 
 class ContractDescription(BaseModel):

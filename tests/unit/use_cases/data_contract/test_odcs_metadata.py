@@ -1,7 +1,3 @@
-import json
-from pathlib import Path
-
-import jsonschema
 import pytest
 
 from backend.domain.contract_values import CLASSIFICATIONS
@@ -14,8 +10,8 @@ from tests.fixtures.odcs.sample_contract import (
     make_contract,
 )
 
-SCHEMA = json.loads(Path("tests/fixtures/odcs/odcs-json-schema-v3.2.0.json").read_text(encoding="utf-8"))
-VALIDATOR = jsonschema.Draft201909Validator(SCHEMA)
+from tests.fixtures.odcs.validator import VALIDATOR
+
 SECRET = "not-a-real-secret"
 
 

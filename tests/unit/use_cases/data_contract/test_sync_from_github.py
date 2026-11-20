@@ -10,6 +10,7 @@ from backend.domain.entities.domain import Domain
 from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
 from tests.fixtures.odcs.sample_contract import sample_contract
+from tests.quality_rule_builders import orders_contract
 
 NOW = datetime.now(tz=timezone.utc)
 DOMAIN_ID = uuid.uuid4()
@@ -157,7 +158,9 @@ async def test_quality_merged_into_models(use_case, github, repo):
         ("c/o.yaml", _yaml(models={"field1": {}}, quality=[{"dimension": "freshness"}]))
     ]
     await use_case.execute()
-    assert "quality" in repo.upsert.call_args.kwargs["models"]
+    quality = repo.upsert.call_args.kwargs["models"]["quality"]
+    assert [rule["type"] for rule in quality] == ["text"]
+    assert quality[0]["description"] == '[legacy rule: {"dimension": "freshness"}]'
 
 
 async def test_resolve_domain_creates_when_not_found(use_case, github, repo, domain_repo):
@@ -292,6 +295,32 @@ async def test_sync_reports_a_server_with_a_secret_and_skips_the_file(use_case, 
     result = await use_case.execute()
     assert result["errors"][0]["path"] == "c/o.yaml" and "password" in result["errors"][0]["error"]
     assert "not-a-real-secret" not in str(result)
+    repo.upsert.assert_not_called()
+
+
+async def test_sync_stores_library_rules_and_structured_sla(use_case, github, repo):
+    contract = orders_contract()
+    github.list_all_yaml_contents.return_value = [
+        ("c/o.yaml", yaml.safe_dump(to_odcs(contract)))
+    ]
+    result = await use_case.execute()
+    assert result["errors"] == []
+    kwargs = repo.upsert.call_args.kwargs
+    assert kwargs["servicelevels"] == contract.servicelevels
+    stored = kwargs["models"]["quality"]
+    assert sorted(rule["metric"] or "" for rule in stored) == [
+        "", "duplicateValues", "invalidValues", "nullValues", "nullValues", "rowCount",
+    ]
+
+
+async def test_sync_reports_unsupported_rule_and_keeps_row(use_case, github, repo):
+    doc = to_odcs(orders_contract())
+    doc["schema"][0]["properties"][0]["quality"].append(
+        {"metric": "rowCount", "mustBeBetween": [1, 2]}
+    )
+    github.list_all_yaml_contents.return_value = [("c/o.yaml", yaml.safe_dump(doc))]
+    result = await use_case.execute()
+    assert "mustBeBetween" in result["errors"][0]["error"]
     repo.upsert.assert_not_called()
 
 

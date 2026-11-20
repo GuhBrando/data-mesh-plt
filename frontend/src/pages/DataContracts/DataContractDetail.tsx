@@ -16,6 +16,8 @@ import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
 import DataContractForm from './DataContractForm'
 import { safeUrl, serverLocation } from './contractMetadata'
+import { describeCheck } from '../../lib/qualityRules'
+import { formatServiceLevel } from '../../lib/serviceLevels'
 import type {
   ContractServer,
   DataContractInput,
@@ -43,16 +45,24 @@ function formatDateTime(iso: string) {
   })
 }
 
-function ServiceLevelsCard({ sla }: { sla: DataContractType['servicelevels'] }) {
+function ServiceLevelsCard({ sla }: { sla?: DataContractType['servicelevels'] }) {
+  // An unmigrated row holds no properties key; it shows as empty instead of crashing.
+  const properties = Array.isArray(sla?.properties) ? sla.properties : []
   return (
     <Card>
       <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Service Levels</h2>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-        <div><dt className="text-gray-400 dark:text-slate-500">Freshness</dt><dd className="text-gray-800 dark:text-slate-200">{sla.freshness || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Availability</dt><dd className="text-gray-800 dark:text-slate-200">{sla.availability || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Retention</dt><dd className="text-gray-800 dark:text-slate-200">{sla.retention || '—'}</dd></div>
-        <div><dt className="text-gray-400 dark:text-slate-500">Latency</dt><dd className="text-gray-800 dark:text-slate-200">{sla.latency || '—'}</dd></div>
-      </dl>
+      {properties.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-slate-500 italic">No service levels</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          {properties.map((p) => (
+            <div key={p.property}>
+              <dt className="text-gray-400 dark:text-slate-500">{p.property}</dt>
+              <dd className="text-gray-800 dark:text-slate-200">{formatServiceLevel(p)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </Card>
   )
 }
@@ -100,7 +110,7 @@ const MUTED = 'text-gray-500 dark:text-slate-400'
 const STRONG = 'text-gray-800 dark:text-slate-200'
 const MONO = 'font-mono text-gray-600 dark:text-slate-300'
 
-const dash = (value?: string) => value || '—'
+const dash = (value?: string | null) => value || '—'
 const mark = (on?: boolean) => (on ? '✓' : '—')
 
 interface Column<T> {
@@ -167,10 +177,10 @@ const FIELD_COLUMNS: Column<SchemaField>[] = [
 ]
 
 const RULE_COLUMNS: Column<QualityRule>[] = [
-  { header: 'Dimension', cell: (r) => r.dimension, className: STRONG },
+  { header: 'Type', cell: (r) => r.type },
+  { header: 'Dimension', cell: (r) => dash(r.dimension), className: STRONG },
   { header: 'Column', cell: (r) => dash(r.column), className: MONO },
-  { header: 'Operator', cell: (r) => r.operator },
-  { header: 'Threshold', cell: (r) => r.threshold, className: STRONG },
+  { header: 'Check', cell: describeCheck, className: `font-mono ${STRONG}` },
   { header: 'Description', cell: (r) => dash(r.description) },
 ]
 

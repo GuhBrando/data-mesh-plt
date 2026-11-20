@@ -1,25 +1,16 @@
-import json
-from pathlib import Path
-
-import jsonschema
 import pytest
 import yaml
 
 from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.yaml_builder import assemble_yaml
+from tests.quality_rule_builders import text_rule
 from tests.fixtures.odcs.sample_contract import (
     emit,
     make_contract,
     make_field,
-    make_rule,
     sample_contract,
-    SLA_CASES,
 )
-
-SCHEMA = Path(__file__).parents[3] / "fixtures/odcs/odcs-json-schema-v3.2.0.json"
-VALIDATOR = jsonschema.Draft201909Validator(
-    json.loads(SCHEMA.read_text(encoding="utf-8"))
-)
+from tests.fixtures.odcs.validator import VALIDATOR
 
 EXPECTED_YAML = """\
 apiVersion: v3.2.0
@@ -42,18 +33,12 @@ schema:
     required: true
     primaryKey: true
     quality:
-    - type: text
+    - type: library
       dimension: completeness
+      metric: nullValues
+      mustBeLessOrEqualTo: 0.5
+      unit: percent
       description: Every order has an id
-      customProperties:
-      - property: dmpltDimension
-        value: completeness
-      - property: dmpltOperator
-        value: '>='
-      - property: dmpltThreshold
-        value: '99.5'
-      - property: dmpltPosition
-        value: 1
   - name: amount
     description: Order total in BRL
     logicalType: number
@@ -67,29 +52,12 @@ schema:
   quality:
   - type: text
     dimension: timeliness
-    customProperties:
-    - property: dmpltDimension
-      value: freshness
-    - property: dmpltOperator
-      value: <=
-    - property: dmpltThreshold
-      value: 24h
-    - property: dmpltPosition
-      value: 0
-  - type: text
-    dimension: conformity
-    description: Only BRL orders
-    customProperties:
-    - property: dmpltDimension
-      value: validity
-    - property: dmpltOperator
-      value: '='
-    - property: dmpltThreshold
-      value: BRL
-    - property: dmpltColumn
-      value: currency
-    - property: dmpltPosition
-      value: 2
+    description: Orders arrive within 24 hours.
+  - type: library
+    dimension: completeness
+    metric: rowCount
+    mustBeGreaterThan: 0
+    unit: rows
 slaProperties:
 - property: freshness
   value: 24
@@ -105,21 +73,16 @@ customProperties:
 """
 
 
-def _custom(rule: dict) -> dict:
-    return {entry["property"]: entry["value"] for entry in rule["customProperties"]}
-
-
 @pytest.mark.parametrize(
     "contract",
     [
         sample_contract(),
         make_contract(),
         make_contract(title="", owner=""),
-        make_contract(models={"fields": [], "quality": [make_rule(column="ghost")]}),
+        make_contract(models={"fields": [], "quality": [text_rule()]}),
         make_contract(models={"fields": [make_field()], "quality": []}),
-        make_contract(models={"quality": [{"dimension": "not-in-the-model"}]}),
     ],
-    ids=["sample", "empty", "blank", "only-quality", "only-fields", "partial-rule"],
+    ids=["sample", "empty", "blank", "only-quality", "only-fields"],
 )
 def test_output_is_valid_against_the_official_schema(contract):
     assert list(VALIDATOR.iter_errors(emit(contract))) == []
@@ -159,47 +122,6 @@ def test_schema_name_is_a_snake_case_slug(title, expected):
     models = {"fields": [make_field()], "quality": []}
     doc = to_odcs(make_contract(title=title, models=models))
     assert doc["schema"][0]["name"] == expected
-
-
-@pytest.mark.parametrize(
-    ("field", "column", "under_property", "dmplt_column"),
-    [("id", "id", True, None), ("id", "ghost", False, "ghost"),
-     ("id", "", False, None), ("", "", False, None)],
-)
-def test_rule_placement(field, column, under_property, dmplt_column):
-    models = {"fields": [make_field(field)], "quality": [make_rule(column=column)]}
-    schema = to_odcs(make_contract(models=models))["schema"][0]
-    prop = schema["properties"][0]
-    owner, other = (prop, schema) if under_property else (schema, prop)
-    assert "quality" not in other
-    assert owner["quality"][0]["type"] == "text"
-    assert _custom(owner["quality"][0]).get("dmpltColumn") == dmplt_column
-
-
-@pytest.mark.parametrize(
-    ("dimension", "expected"),
-    [("completeness", "completeness"), ("uniqueness", "uniqueness"),
-     ("freshness", "timeliness"), ("validity", "conformity"),
-     ("integrity", "consistency")],
-)
-def test_dimension_mapping_keeps_the_original_value(dimension, expected):
-    models = {"fields": [], "quality": [make_rule(dimension=dimension)]}
-    rule = to_odcs(make_contract(models=models))["schema"][0]["quality"][0]
-    assert rule["dimension"] == expected
-    assert _custom(rule)["dmpltDimension"] == dimension
-
-
-def test_rule_without_description_carries_none():
-    # A generated sentence would go stale as soon as a value is edited in Git.
-    models = {"fields": [], "quality": [make_rule("freshness", "", "<=", "24h")]}
-    rule = to_odcs(make_contract(models=models))["schema"][0]["quality"][0]
-    assert "description" not in rule
-
-
-@pytest.mark.parametrize(("raw", "expected"), SLA_CASES)
-def test_sla_value_maps_to_odcs(raw, expected):
-    doc = to_odcs(make_contract(servicelevels={"freshness": raw}))
-    assert doc["slaProperties"] == [{"property": "freshness", **expected}]
 
 
 def test_empty_sla_values_are_omitted():

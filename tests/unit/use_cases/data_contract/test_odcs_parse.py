@@ -11,9 +11,7 @@ from tests.fixtures.odcs.sample_contract import (
     emit,
     make_contract,
     make_field,
-    make_rule,
     sample_contract,
-    SLA_CASES,
 )
 
 
@@ -48,55 +46,6 @@ def test_round_trip_status_and_tier(status, tier):
 def test_round_trip_field(field_type, nullable, primary_key):
     field = make_field("a", field_type, "text", nullable, primary_key)
     _assert_round_trip(make_contract(models={"fields": [field], "quality": []}))
-
-
-# Every dimension, operator and column kind once; descriptions empty and written.
-@pytest.mark.parametrize(
-    ("dimension", "column", "operator", "description"),
-    [("completeness", "", ">=", ""), ("freshness", "a", "<=", "free text"),
-     ("uniqueness", "ghost", "=", ""), ("validity", "a", ">=", "free text"),
-     ("integrity", "ghost", "<=", "")],
-)
-def test_round_trip_rule(dimension, column, operator, description):
-    rule = make_rule(dimension, column, operator, "0.99", description)
-    models = {"fields": [make_field("a")], "quality": [rule]}
-    _assert_round_trip(make_contract(models=models))
-
-
-@pytest.mark.parametrize("order", [["z", "a", "", "ghost"], ["ghost", "", "a", "z"]])
-def test_round_trip_keeps_rule_order(order):
-    models = {"fields": [make_field("z"), make_field("a")],
-              "quality": [make_rule(column=column) for column in order]}
-    _assert_round_trip(make_contract(models=models))
-
-
-@pytest.mark.parametrize("raw", [raw for raw, _ in SLA_CASES])
-def test_round_trip_sla_value(raw):
-    levels = {"freshness": raw, "availability": "", "retention": "", "latency": ""}
-    _assert_round_trip(make_contract(servicelevels=levels))
-
-
-def test_sla_unit_aliases_are_read():
-    doc = _doc(slaProperties=[{"property": "availability", "value": 99, "unit": "percent"},
-                              {"property": "latency", "value": 30, "unit": "m"}])
-    levels = from_odcs(doc).servicelevels
-    assert (levels["availability"], levels["latency"]) == ("99%", "30m")
-
-
-def test_threshold_edited_in_git_is_read_with_no_stale_description():
-    doc = to_odcs(make_contract(models={"fields": [], "quality": [make_rule()]}))
-    custom = doc["schema"][0]["quality"][0]["customProperties"]
-    next(e for e in custom if e["property"] == "dmpltThreshold")["value"] = "95"
-    rule = from_odcs(doc).models["quality"][0]
-    assert (rule["threshold"], rule["description"]) == ("95", "")
-
-
-def test_sla_key_outside_the_four_is_kept():
-    doc = _doc(slaProperties=[{"property": "endOfSupport", "value": "2030-01-01"}])
-    assert from_odcs(doc).servicelevels == {
-        "freshness": "", "availability": "", "retention": "", "latency": "",
-        "endOfSupport": "2030-01-01",
-    }
 
 
 def test_missing_tier_means_4():
@@ -134,8 +83,14 @@ def test_missing_team_means_no_owner():
         ({"customProperties": [{"property": "tier", "value": "2"}]}, "tier must be"),
         ({"slaProperties": [{"property": "a", "value": 1, "driver": "x"}]}, "driver"),
         ({"slaProperties": [{"property": "a", "value": None}]}, "no storable value"),
-        ({"slaProperties": [{"property": "a", "value": True}]}, "no storable value"),
-        ({"slaProperties": [{"value": 1}]}, "malformed"),
+        ({"slaProperties": [{"value": 1}]}, "property name"),
+        ({"customProperties": [{"value": 1}]}, "malformed"),
+        # Values the API refuses: storing them would block every later save.
+        ({"slaProperties": [{"property": "frequency", "value": " ", "unit": "d"}]}, "blank"),
+        ({"slaProperties": [{"property": "frequency", "value": 1, "unit": 7}]}, "unit must be text"),
+        ({"schema": [{"name": "t", "properties": [{"name": "email", "logicalType": "string",
+                                                   "quality": [{"type": "text", "description": 5}]}]}]},
+         "description must be text"),
         # An unquoted 1.10 loads as the float 1.1; null as None.
         ({"version": 1.1}, "version must be of type str"),
         ({"version": None}, "version must be of type str"),
@@ -164,22 +119,6 @@ def test_logical_type_the_model_cannot_hold(logical):
         from_odcs(_doc(schema=[{"name": "a", "properties": [prop]}]))
 
 
-@pytest.mark.parametrize(
-    "rule",
-    [{"type": "library", "metric": "nullValues", "mustBe": 0},
-     {"type": "text", "description": "Hand written"},
-     {"type": "sql", "customProperties": [
-         {"property": "dmpltDimension", "value": "freshness"},
-         {"property": "dmpltOperator", "value": "<="},
-         {"property": "dmpltThreshold", "value": "24h"},
-         {"property": "dmpltPosition", "value": 0}]}],
-    ids=["library", "text-without-dmplt", "non-text-with-dmplt"],
-)
-def test_rule_outside_the_stored_format_is_rejected(rule):
-    with pytest.raises(OdcsParseError, match="quality rule on the schema"):
-        from_odcs(_doc(schema=[{"name": "a", "quality": [rule]}]))
-
-
 def _with_property(**values) -> dict:
     prop = {"name": "b", "logicalType": "string", **values}
     return _doc(schema=[{"name": "a", "properties": [prop]}])
@@ -188,6 +127,8 @@ def _with_property(**values) -> dict:
 @pytest.mark.parametrize(("values", "message"), [
     ({"required": "false"}, "required must be of type bool"),
     ({"primaryKey": None}, "primaryKey must be of type bool"),
+    ({"unique": "yes"}, "unique must be of type bool"),
+    ({"physicalType": 5}, "physicalType must be of type str"),
     ({"description": 5}, "description must be of type str"),
     ({"name": None}, "needs a non-empty name"),
     ({"name": " "}, "needs a non-empty name"),
@@ -195,31 +136,6 @@ def _with_property(**values) -> dict:
 def test_property_values_must_have_the_stored_type(values, message):
     with pytest.raises(OdcsParseError, match=message):
         from_odcs(_with_property(**values))
-
-
-PLAN1_CUSTOM = {"dmpltDimension": "freshness", "dmpltOperator": "<=",
-                "dmpltThreshold": "24h", "dmpltPosition": 0}
-
-
-def _with_rule(custom=None, **values) -> dict:
-    entries = {**PLAN1_CUSTOM, **(custom or {})}
-    rule = {"type": "text", **values,
-            "customProperties": [{"property": k, "value": v} for k, v in entries.items()]}
-    return _doc(schema=[{"name": "a", "quality": [rule]}])
-
-
-@pytest.mark.parametrize(("custom", "values", "message"), [
-    ({"dmpltOperator": "!="}, {}, "dmpltOperator '!='"),
-    ({"dmpltDimension": "accuracy"}, {}, "dmpltDimension 'accuracy'"),
-    ({}, {"dimension": "accuracy"}, "dimension does not match dmpltDimension"),
-    ({"dmpltThreshold": 99}, {}, "dmpltThreshold must be of type str"),
-    ({"dmpltPosition": True}, {}, "dmpltPosition must be of type int"),
-    ({"dmpltColumn": 3}, {}, "column must be of type str"),
-    ({}, {"description": 5}, "description must be of type str"),
-])
-def test_rule_values_the_api_would_refuse_are_rejected(custom, values, message):
-    with pytest.raises(OdcsParseError, match=message):
-        from_odcs(_with_rule(custom, **values))
 
 
 @pytest.mark.parametrize(("key", "value"), [("logicalType", "array"),

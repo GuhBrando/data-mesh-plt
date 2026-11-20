@@ -28,13 +28,12 @@ import {
   hasMaintainer,
   pct,
   plural,
-  useOverview,
   type AttentionItem,
   type DomainCard,
-  type Overview,
   type RecentRow,
   type StatusCounts,
 } from './dashboard/overview'
+import { useOverview, type Overview } from './dashboard/useOverview'
 
 const STATUS_BG: Record<ContractStatus, string> = {
   active: 'bg-ok',

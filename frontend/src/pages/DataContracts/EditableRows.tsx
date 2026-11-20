@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { PlusIcon, TrashIcon } from '../../components/icons'
 
 export const ROW_INPUT_CLASS =
   'text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200'
@@ -55,7 +55,7 @@ export default function EditableRows<T>({
             className="col-span-1 flex items-center justify-center text-red-400 hover:text-red-600"
             title="Remove"
           >
-            <Trash2 size={14} />
+            <TrashIcon size={14} />
           </button>
         </div>
       ))}
@@ -64,7 +64,7 @@ export default function EditableRows<T>({
         onClick={() => onChange([...rows, emptyRow()])}
         className="flex items-center gap-1 text-sm text-accent-fg dark:text-accent-fg hover:underline"
       >
-        <Plus size={14} />
+        <PlusIcon size={14} />
         {addLabel}
       </button>
     </div>

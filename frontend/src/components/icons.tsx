@@ -246,3 +246,53 @@ export const CodeFileIcon = icon(
 )
 
 export const SupportIcon = icon(<path d="M2.5 3.5h11v7.5H7l-3 2.5v-2.5H2.5z" />, 'SupportIcon')
+
+export const CloseIcon = icon(<path d="M4 4l8 8M12 4l-8 8" />, 'CloseIcon')
+
+export const UserIcon = icon(
+  <>
+    <circle cx="8" cy="5.5" r="2.5" />
+    <path d="M3.25 13.5c.5-2.5 2.4-4 4.75-4s4.25 1.5 4.75 4" />
+  </>,
+  'UserIcon',
+)
+
+export const LockIcon = icon(
+  <>
+    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+  </>,
+  'LockIcon',
+)
+
+export const EyeIcon = icon(
+  <>
+    <path d="M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8z" />
+    <circle cx="8" cy="8" r="2" />
+  </>,
+  'EyeIcon',
+)
+
+export const EyeOffIcon = icon(
+  <>
+    <path d="M6.6 3.9A6.4 6.4 0 0 1 8 3.75C12 3.75 14.25 8 14.25 8a11 11 0 0 1-1.6 2.2M10.1 11.8A5.8 5.8 0 0 1 8 12.25C4 12.25 1.75 8 1.75 8a11.3 11.3 0 0 1 2.4-2.9" />
+    <path d="M2.5 2.5l11 11" />
+  </>,
+  'EyeOffIcon',
+)
+
+export const CheckCircleIcon = icon(
+  <>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="m5.5 8.25 1.75 1.75 3.25-3.5" />
+  </>,
+  'CheckCircleIcon',
+)
+
+export const XCircleIcon = icon(
+  <>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="m6 6 4 4M10 6l-4 4" />
+  </>,
+  'XCircleIcon',
+)

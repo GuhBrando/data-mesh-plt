@@ -70,7 +70,7 @@ export default function UserForm({
       />
 
       {apiError && !/email already in use/i.test(apiError) && (
-        <p className="text-sm text-red-500 dark:text-red-400">{apiError}</p>
+        <p className="text-sm text-bad">{apiError}</p>
       )}
 
       <div className="flex justify-end gap-3 pt-2">

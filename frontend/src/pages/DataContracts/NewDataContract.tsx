@@ -15,13 +15,15 @@ export default function NewDataContract() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="New Data Contract"
-        subtitle="Define a new ODCS-compliant contract for your data product."
-        backTo="/data-contracts"
-      />
-      <Card>
+    <div className="mx-auto max-w-[880px]">
+      <div className="animate-enter">
+        <PageHeader
+          title="New Data Contract"
+          subtitle="Define a new ODCS-compliant contract for your data product. Start by classifying its tier."
+          backTo="/data-contracts"
+        />
+      </div>
+      <Card className="animate-enter [animation-delay:0.06s]">
         <DataContractForm
           onSubmit={handleSubmit}
           onCancel={() => navigate('/data-contracts')}
@@ -29,7 +31,7 @@ export default function NewDataContract() {
           showWizard
         />
         {createMutation.isError && (
-          <p className="mt-3 text-sm text-red-500">{createMutation.error.message}</p>
+          <p className="mt-3 text-[13px] text-bad">{createMutation.error.message}</p>
         )}
       </Card>
     </div>

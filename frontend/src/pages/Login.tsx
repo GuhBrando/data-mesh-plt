@@ -3,12 +3,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2 } from 'lucide-react'
 import { post, get } from '../lib/api'
 import { setTokens, isSafeRedirect, decodeJwtPayload } from '../lib/auth'
 import { useAuth } from '../contexts/AuthContext'
 import Mark from '../components/brand/Mark'
-import { ArrowRightIcon } from '../components/icons'
+import { ArrowRightIcon, PendingIcon } from '../components/icons'
 import type { User } from '../types'
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -99,7 +98,7 @@ function SubmitButton({
       disabled={loading}
       className="btn-primary group mt-2 h-[42px] w-full justify-center text-[14px]"
     >
-      {loading && <Loader2 size={15} className="animate-spin" />}
+      {loading && <PendingIcon size={15} className="animate-spin" />}
       {children}
       {!loading && (
         <ArrowRightIcon className="transition-transform duration-200 group-hover:translate-x-[3px]" />

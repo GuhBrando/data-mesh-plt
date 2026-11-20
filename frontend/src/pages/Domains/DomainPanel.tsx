@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { X, UserPlus, Pencil } from 'lucide-react'
 import { useRemoveDomainMember } from '../../hooks/useDomainMembers'
 import { useUpdateDomain } from '../../hooks/useDomains'
 import type { DomainWithMembers, DomainAccess } from '../../types'
@@ -9,6 +8,7 @@ import Modal from '../../components/ui/Modal'
 import { Input, Textarea } from '../../components/ui/Input'
 import AddMemberModal from './AddMemberModal'
 import { Avatar } from '../../components/ui/Glyphs'
+import { CloseIcon, EditIcon, UserPlusIcon } from '../../components/icons'
 
 const MEMBER_ROLE_VARIANT = {
   maintainer: 'yellow',
@@ -135,7 +135,7 @@ function PanelContent({
           className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
           aria-label="Close panel"
         >
-          <X size={15} />
+          <CloseIcon size={15} />
         </button>
       </div>
 
@@ -170,7 +170,7 @@ function PanelContent({
                 onClick={() => setAddOpen(true)}
                 className="flex items-center gap-1 text-[10px] font-medium text-accent-fg hover:text-tx dark:text-accent-fg"
               >
-                <UserPlus size={11} />
+                <UserPlusIcon size={11} />
                 Add
               </button>
             )}
@@ -198,7 +198,7 @@ function PanelContent({
                         className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors text-xs leading-none"
                         aria-label={`Remove ${m.username}`}
                       >
-                        <X size={12} />
+                        <CloseIcon size={12} />
                       </button>
                     )}
                   </div>
@@ -218,7 +218,7 @@ function PanelContent({
             onClick={() => setEditOpen(true)}
             className="w-full flex items-center justify-center gap-1.5"
           >
-            <Pencil size={12} />
+            <EditIcon size={12} />
             Edit Domain Info
           </Button>
         </div>

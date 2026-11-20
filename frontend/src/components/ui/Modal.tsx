@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { CloseIcon } from '../icons'
 
 interface ModalProps {
   open: boolean
@@ -74,7 +74,7 @@ export default function Modal({
             className="p-1.5 rounded-lg text-tx3 hover:text-tx hover:bg-hover transition-colors"
             aria-label="Close modal"
           >
-            <X size={16} />
+            <CloseIcon size={16} />
           </button>
         </div>
 

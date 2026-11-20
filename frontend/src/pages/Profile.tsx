@@ -1,19 +1,4 @@
 import { useState } from 'react'
-import {
-  Shield,
-  ShieldAlert,
-  Building2,
-  User as UserIcon,
-  Lock,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  XCircle,
-  Trash2,
-  Pencil,
-  Plus,
-} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useUserDomains, useChangePassword } from '../hooks/useProfile'
 import Button from '../components/ui/Button'
@@ -24,6 +9,7 @@ import { useAllDomains, useCreateDomain, useUpdateDomain, useDeleteDomain } from
 import { useUsers } from '../hooks/useUsers'
 import type { DomainWithMembers, DomainInput, User } from '../types'
 import { Avatar } from '../components/ui/Glyphs'
+import { CheckCircleIcon, ChevronRightIcon, DomainIcon, EditIcon, EyeIcon, EyeOffIcon, LockIcon, PlusIcon, ShieldAlertIcon, ShieldIcon, TrashIcon, UserIcon, XCircleIcon } from '../components/icons'
 
 const ROLE_META: Record<
   string,
@@ -75,13 +61,13 @@ const ROLE_META: Record<
 type Section = 'role' | 'password' | 'admin-domains' | 'admin-users'
 
 const ACCOUNT_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: 'role', label: 'My Role', icon: <Shield size={16} /> },
-  { id: 'password', label: 'Change Password', icon: <Lock size={16} /> },
+  { id: 'role', label: 'My Role', icon: <ShieldIcon size={16} /> },
+  { id: 'password', label: 'Change Password', icon: <LockIcon size={16} /> },
 ]
 
 const ADMIN_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: 'admin-domains', label: 'Domains', icon: <Building2 size={16} /> },
-  { id: 'admin-users', label: 'Users', icon: <ShieldAlert size={16} /> },
+  { id: 'admin-domains', label: 'Domains', icon: <DomainIcon size={16} /> },
+  { id: 'admin-users', label: 'Users', icon: <ShieldAlertIcon size={16} /> },
 ]
 
 function validatePassword(v: string): string | null {
@@ -111,7 +97,7 @@ function RoleSection({ userId }: { userId: string | undefined }) {
     <div className="space-y-6">
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Shield size={16} className="text-slate-500 dark:text-slate-400" />
+          <ShieldIcon size={16} className="text-slate-500 dark:text-slate-400" />
           <h2 className="font-semibold text-slate-900 dark:text-white">Permissions</h2>
         </div>
         {role.description && (
@@ -120,7 +106,7 @@ function RoleSection({ userId }: { userId: string | undefined }) {
         <ul className="space-y-2">
           {role.permissions.map((p) => (
             <li key={p} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <ChevronRight size={14} className="mt-0.5 shrink-0 text-accent-fg dark:text-accent-fg" />
+              <ChevronRightIcon size={14} className="mt-0.5 shrink-0 text-accent-fg dark:text-accent-fg" />
               {p}
             </li>
           ))}
@@ -129,7 +115,7 @@ function RoleSection({ userId }: { userId: string | undefined }) {
 
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Building2 size={16} className="text-slate-500 dark:text-slate-400" />
+          <DomainIcon size={16} className="text-slate-500 dark:text-slate-400" />
           <h2 className="font-semibold text-slate-900 dark:text-white">Domain Memberships</h2>
         </div>
         {isLoading ? (
@@ -185,7 +171,7 @@ function ShowablePasswordInput({
         className="absolute right-3 top-8 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
         tabIndex={-1}
       >
-        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+        {show ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
       </button>
     </div>
   )
@@ -220,20 +206,20 @@ function PasswordSection({ userId }: { userId: string }) {
   return (
     <div className="card p-6 space-y-5">
       <div className="flex items-center gap-2">
-        <Lock size={16} className="text-slate-500 dark:text-slate-400" />
+        <LockIcon size={16} className="text-slate-500 dark:text-slate-400" />
         <h2 className="font-semibold text-slate-900 dark:text-white">Change Password</h2>
       </div>
 
       {success && (
         <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
-          <CheckCircle2 size={15} />
+          <CheckCircleIcon size={15} />
           Password updated successfully.
         </div>
       )}
 
       {mutation.error && (
         <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
-          <XCircle size={15} />
+          <XCircleIcon size={15} />
           {(mutation.error as Error).message}
         </div>
       )}
@@ -526,7 +512,7 @@ function AdminDomainsSection() {
             onClick={() => { setEditTarget(d); setFormOpen(true) }}
             className="flex items-center gap-1"
           >
-            <Pencil size={12} /> Edit
+            <EditIcon size={12} /> Edit
           </Button>
           <Button
             variant="danger"
@@ -534,7 +520,7 @@ function AdminDomainsSection() {
             onClick={() => setDeleteTarget(d)}
             className="flex items-center gap-1"
           >
-            <Trash2 size={12} /> Delete
+            <TrashIcon size={12} /> Delete
           </Button>
         </div>
       ),
@@ -555,7 +541,7 @@ function AdminDomainsSection() {
           onClick={() => { setEditTarget(null); setFormOpen(true) }}
           className="flex items-center gap-1.5"
         >
-          <Plus size={13} /> New Domain
+          <PlusIcon size={13} /> New Domain
         </Button>
       </div>
 
@@ -588,7 +574,7 @@ function AdminDomainsSection() {
 function AdminUsersSection() {
   return (
     <div className="card p-6 text-center">
-      <ShieldAlert size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+      <ShieldAlertIcon size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
       <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
         User management coming soon.
       </p>
@@ -617,7 +603,7 @@ export default function Profile() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">My Profile</h1>
+      <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-tx">My Profile</h1>
 
       {/* Identity card — always visible */}
       <div className="card p-6 flex items-center gap-5">
@@ -646,8 +632,8 @@ export default function Profile() {
                 onClick={() => setSection(item.id)}
                 className={`shrink-0 flex flex-col items-center gap-1 py-2 px-2 rounded-md text-xs font-medium transition-colors ${
                   section === item.id
-                    ? 'bg-accent text-accent-ink'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                    : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                 }`}
               >
                 {item.icon}
@@ -661,29 +647,27 @@ export default function Profile() {
                   onClick={() => setSection(item.id)}
                   className={`shrink-0 flex flex-col items-center gap-1 py-2 px-2 rounded-md text-xs font-medium transition-colors ${
                     section === item.id
-                      ? 'bg-red-600 text-white'
-                      : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                      : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                   }`}
                 >
                   {item.icon}
-                  <span className="leading-none">🛡 {item.label}</span>
+                  <span className="leading-none">{item.label}</span>
                 </button>
               ))}
           </div>
 
           {/* Desktop: vertical list with sections */}
           <div className="hidden md:flex flex-col card p-2 gap-0.5">
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Account
-            </p>
+            <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-medium text-tx3">Account</p>
             {ACCOUNT_NAV.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setSection(item.id)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left ${
+                className={`flex h-[30px] w-full items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
                   section === item.id
-                    ? 'bg-accent text-accent-ink'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                    : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                 }`}
               >
                 {item.icon}
@@ -692,17 +676,15 @@ export default function Profile() {
             ))}
             {isAdmin && (
               <>
-                <p className="px-3 py-1 mt-2 text-[10px] font-semibold uppercase tracking-wider text-red-500">
-                  🛡 Admin
-                </p>
+                <p className="px-2.5 pb-1.5 pt-4 text-[11px] font-medium text-tx3">Admin</p>
                 {ADMIN_NAV.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => setSection(item.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left ${
+                    className={`flex h-[30px] w-full items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
                       section === item.id
-                        ? 'bg-red-600 text-white'
-                        : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                        : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                     }`}
                   >
                     {item.icon}

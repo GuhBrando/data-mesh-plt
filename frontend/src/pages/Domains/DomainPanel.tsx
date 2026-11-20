@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Input, Textarea } from '../../components/ui/Input'
 import AddMemberModal from './AddMemberModal'
+import { Avatar } from '../../components/ui/Glyphs'
 
 const MEMBER_ROLE_VARIANT = {
   maintainer: 'yellow',
@@ -149,11 +150,7 @@ function PanelContent({
           Owner
         </p>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-raised flex items-center justify-center shrink-0">
-            <span className="text-white text-[9px] font-bold">
-              {domain.owner_username.charAt(0).toUpperCase()}
-            </span>
-          </div>
+          <Avatar name={domain.owner_username} size={20} />
           <span className="text-xs text-slate-700 dark:text-slate-300">
             {domain.owner_username}
           </span>
@@ -185,11 +182,7 @@ function PanelContent({
               domain.members.map((m) => (
                 <div key={m.user_id} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-5 h-5 rounded-full bg-slate-400 flex items-center justify-center shrink-0">
-                      <span className="text-white text-[9px] font-bold">
-                        {m.username.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <Avatar name={m.username} size={20} />
                     <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
                       {m.username}
                     </span>

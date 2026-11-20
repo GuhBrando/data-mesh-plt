@@ -208,3 +208,41 @@ export const TrashIcon = icon(
   </>,
   'TrashIcon',
 )
+
+export const SchemaIcon = icon(
+  <>
+    <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.75" />
+    <path d="M2.25 6.25h11.5M6.25 6.25v7" />
+  </>,
+  'SchemaIcon',
+)
+
+export const ServerIcon = icon(
+  <>
+    <path d="M8 1.75 14 5 8 8.25 2 5z" />
+    <path d="m2 8 6 3.25L14 8" />
+    <path d="m2 11 6 3.25L14 11" />
+  </>,
+  'ServerIcon',
+)
+
+export const ClockIcon = icon(
+  <>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="M8 4.75V8l2.25 1.5" />
+  </>,
+  'ClockIcon',
+)
+
+export const EditIcon = icon(<path d="M10.5 2.5 13.5 5.5 6 13H3v-3z" />, 'EditIcon')
+
+export const CodeFileIcon = icon(
+  <>
+    <path d="M4 1.75h5.5l3 3v9.5H4z" />
+    <path d="M9.5 1.75v3h3" />
+    <path d="m7 8.25-1.5 1.5L7 11.25M9 8.25l1.5 1.5L9 11.25" />
+  </>,
+  'CodeFileIcon',
+)
+
+export const SupportIcon = icon(<path d="M2.5 3.5h11v7.5H7l-3 2.5v-2.5H2.5z" />, 'SupportIcon')

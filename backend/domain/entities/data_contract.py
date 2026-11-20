@@ -2,6 +2,24 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from backend.domain.contract_metadata import empty_description
+
+# The values a contract file and an update both carry; identity, domain and
+# timestamps are not among them.
+CONTRACT_VALUE_FIELDS = (
+    "title",
+    "version",
+    "owner",
+    "tier",
+    "status",
+    "models",
+    "servicelevels",
+    "description",
+    "team_members",
+    "support",
+    "servers",
+)
+
 
 class DataContract:
     def __init__(
@@ -18,6 +36,10 @@ class DataContract:
         created_at: datetime,
         updated_at: datetime,
         domain_id: uuid.UUID | None = None,
+        description: dict[str, str] | None = None,
+        team_members: list[dict[str, Any]] | None = None,
+        support: list[dict[str, Any]] | None = None,
+        servers: list[dict[str, Any]] | None = None,
     ):
         self.id = id
         self.title = title
@@ -31,3 +53,9 @@ class DataContract:
         self.created_at = created_at
         self.updated_at = updated_at
         self.domain_id = domain_id
+        self.description = (
+            description if description is not None else empty_description()
+        )
+        self.team_members = team_members if team_members is not None else []
+        self.support = support if support is not None else []
+        self.servers = servers if servers is not None else []

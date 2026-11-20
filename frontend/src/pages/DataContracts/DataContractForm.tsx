@@ -14,33 +14,53 @@ import type { UseFormRegister, FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Button from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { Input, Textarea } from '../../components/ui/Input'
 import TierWizard from './TierWizard'
-import ContractFields from './ContractFields'
+import ContractFields, { withFieldDefaults } from './ContractFields'
 import QualityRules from './QualityRules'
+import TeamMembers from './TeamMembers'
+import SupportChannels from './SupportChannels'
+import ContractServers from './ContractServers'
+import { metadataError } from './contractMetadata'
+import { qualityProblem } from '../../lib/qualityRules'
+import { SLA_KEYS, UNITS, readSlaInputs, slaInputProblem, toServiceLevels } from '../../lib/serviceLevels'
+import type { SlaInput, SlaKey } from '../../lib/serviceLevels'
 import { useAllDomains } from '../../hooks/useDomains'
 import { useAuth } from '../../contexts/AuthContext'
 import { getDomainAccess } from '../../lib/domains'
-import type { DataContract, DataContractInput, SchemaField, QualityRule } from '../../types'
+import type {
+  ContractServer,
+  DataContract,
+  DataContractInput,
+  QualityRule,
+  SchemaField,
+  SupportChannel,
+  TeamMember,
+} from '../../types'
 
-const tierRequiresAllSLAs = (t: number) => t === 1
-const tierRequiresFreshnessAvailability = (t: number) => t === 2
 const tierShowsSLAs = (t: number) => t <= 3
 const tierShowsQuality = (t: number) => t <= 3
 const tierRequiresQuality = (t: number) => t === 1
 const tierRequiresFields = (t: number) => t <= 2
 
-const DURATION_UNITS = new Set(['s', 'm', 'h', 'd', 'w', 'y'])
-function isValidDuration(v: string): boolean {
-  if (!v) return true
-  const unit = v.at(-1) ?? ''
-  if (!DURATION_UNITS.has(unit)) return false
-  return Number.isFinite(Number(v.slice(0, -1)))
+const SLA_LABELS: Record<SlaKey, string> = {
+  freshness: 'Freshness',
+  availability: 'Availability',
+  retention: 'Retention',
+  latency: 'Latency',
 }
-function isValidAvailability(v: string): boolean {
-  if (!v) return true
-  if (!v.endsWith('%')) return false
-  return Number.isFinite(Number(v.slice(0, -1)))
+const SLA_PLACEHOLDERS: Record<SlaKey, string> = {
+  freshness: 'e.g. 24',
+  availability: 'e.g. 99.9',
+  retention: 'e.g. 365',
+  latency: 'e.g. 1',
+}
+const unitKey = (key: SlaKey) => `${key}Unit` as const
+
+function requiredSlaKeys(tier: number): SlaKey[] {
+  if (tier === 1) return [...SLA_KEYS]
+  if (tier === 2) return ['freshness', 'availability']
+  return []
 }
 
 const schema = z
@@ -50,22 +70,29 @@ const schema = z
     owner: z.string().min(1, 'Owner is required'),
     domain_id: z.string().min(1, 'Domain is required'),
     tier: z.number().int().min(1).max(4),
-    status: z.enum(['draft', 'in_review', 'active', 'deprecated']),
-    freshness: z.string().refine(isValidDuration, { message: 'Use a duration like 24h, 7d, 30m' }),
-    availability: z.string().refine(isValidAvailability, { message: 'Use a percentage like 99.9%' }),
-    retention: z.string().refine(isValidDuration, { message: 'Use a duration like 365d, 1y' }),
-    latency: z.string().refine(isValidDuration, { message: 'Use a duration like 1h, 30m' }),
+    status: z.enum(['draft', 'in_review', 'active', 'deprecated', 'retired']),
+    freshness: z.string(),
+    freshnessUnit: z.string(),
+    availability: z.string(),
+    availabilityUnit: z.string(),
+    retention: z.string(),
+    retentionUnit: z.string(),
+    latency: z.string(),
+    latencyUnit: z.string(),
+    purpose: z.string(),
+    usage: z.string(),
+    limitations: z.string(),
   })
   .superRefine((data, ctx) => {
-    if (data.tier === 1) {
-      if (!data.freshness) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['freshness'] })
-      if (!data.availability) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['availability'] })
-      if (!data.retention) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['retention'] })
-      if (!data.latency) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 1', path: ['latency'] })
-    }
-    if (data.tier === 2) {
-      if (!data.freshness) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 2', path: ['freshness'] })
-      if (!data.availability) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Required for Tier 2', path: ['availability'] })
+    // A hidden section must not block the save with an error nobody can see.
+    if (!tierShowsSLAs(data.tier)) return
+    const required = requiredSlaKeys(data.tier)
+    for (const key of SLA_KEYS) {
+      const input = { value: data[key], unit: data[unitKey(key)] }
+      const message = !input.value.trim() && required.includes(key)
+        ? `Required for Tier ${data.tier}`
+        : slaInputProblem(input)
+      if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [key] })
     }
   })
 
@@ -79,30 +106,62 @@ interface DataContractFormProps {
   showWizard?: boolean
 }
 
+function slaDefaults(v?: DataContract) {
+  const sla = readSlaInputs(v?.servicelevels)
+  return {
+    freshness: sla.freshness.value, freshnessUnit: sla.freshness.unit,
+    availability: sla.availability.value, availabilityUnit: sla.availability.unit,
+    retention: sla.retention.value, retentionUnit: sla.retention.unit,
+    latency: sla.latency.value, latencyUnit: sla.latency.unit,
+  }
+}
+
+function slaInputsFrom(values: FormValues): Record<SlaKey, SlaInput> {
+  const inputs = {} as Record<SlaKey, SlaInput>
+  for (const key of SLA_KEYS) {
+    // Tier 4 hides service levels: the four shown ones are cleared.
+    inputs[key] = tierShowsSLAs(values.tier)
+      ? { value: values[key], unit: values[unitKey(key)] }
+      : { value: '', unit: '' }
+  }
+  return inputs
+}
+
 function normalizeDefaults(v?: DataContract): FormValues {
   if (!v) {
     return {
       title: '', version: '1.0.0', owner: '', domain_id: '',
       tier: 4, status: 'draft',
-      freshness: '', availability: '', retention: '', latency: '',
+      ...slaDefaults(),
+      purpose: '', usage: '', limitations: '',
     }
   }
   return {
     title: v.title, version: v.version, owner: v.owner, domain_id: v.domain_id,
     tier: v.tier, status: v.status,
-    freshness: v.servicelevels.freshness, availability: v.servicelevels.availability,
-    retention: v.servicelevels.retention, latency: v.servicelevels.latency,
+    ...slaDefaults(v),
+    purpose: v.description?.purpose ?? '',
+    usage: v.description?.usage ?? '',
+    limitations: v.description?.limitations ?? '',
   }
 }
 
 function getInitialFields(v?: DataContract): SchemaField[] {
   if (!v) return []
-  return v.models.fields
+  return v.models.fields.map(withFieldDefaults)
 }
 
 function getInitialQuality(v?: DataContract): QualityRule[] {
   if (!v) return []
   return v.models.quality ?? []
+}
+
+function qualityErrorFor(tier: number, fields: SchemaField[], quality: QualityRule[]): string | null {
+  if (tierRequiresQuality(tier) && quality.length === 0) {
+    return 'At least one quality rule is required for Tier 1'
+  }
+  if (!tierShowsQuality(tier)) return null
+  return qualityProblem(quality, fields.map((f) => f.name))
 }
 
 function validateFormArrays(
@@ -119,13 +178,9 @@ function validateFormArrays(
   } else {
     setFieldsError(null)
   }
-  if (tierRequiresQuality(tier) && quality.length === 0) {
-    setQualityError('At least one quality rule is required for Tier 1')
-    valid = false
-  } else {
-    setQualityError(null)
-  }
-  return valid
+  const qualityError = qualityErrorFor(tier, fields, quality)
+  setQualityError(qualityError)
+  return valid && qualityError === null
 }
 
 function SectionHeader({
@@ -139,14 +194,14 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-200">{label}</h3>
+      <h3 className="text-[13px] font-semibold text-tx">{label}</h3>
       {required && (
-        <span className="text-xs px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">
+        <span className="rounded border border-warn/30 bg-warn/10 px-1.5 text-[11px] font-medium leading-[18px] text-warn">
           Required
         </span>
       )}
       {optional && (
-        <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 border border-gray-200 rounded dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600">
+        <span className="rounded border border-line bg-raised px-1.5 text-[11px] font-medium leading-[18px] text-tx3">
           Optional
         </span>
       )}
@@ -158,46 +213,73 @@ function ServiceLevelsSection({
   tier,
   register,
   errors,
+  currentUnits,
 }: {
   tier: number
   register: UseFormRegister<FormValues>
   errors: FieldErrors<FormValues>
+  currentUnits: Record<SlaKey, string>
 }) {
-  const needsAll = tierRequiresAllSLAs(tier)
-  const needsFreshAvail = needsAll || tierRequiresFreshnessAvailability(tier)
+  const required = requiredSlaKeys(tier)
   return (
     <div className="space-y-3">
       <SectionHeader
         label="Service Levels"
-        required={needsFreshAvail}
-        optional={!needsFreshAvail}
+        required={required.length > 0}
+        optional={required.length === 0}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <Input
-          label={`Freshness${needsFreshAvail ? ' *' : ''}`}
-          placeholder="e.g. 24h"
-          error={errors.freshness?.message}
-          {...register('freshness')}
-        />
-        <Input
-          label={`Availability${needsFreshAvail ? ' *' : ''}`}
-          placeholder="e.g. 99.9%"
-          error={errors.availability?.message}
-          {...register('availability')}
-        />
-        <Input
-          label={`Retention${needsAll ? ' *' : ''}`}
-          placeholder="e.g. 365d"
-          error={errors.retention?.message}
-          {...register('retention')}
-        />
-        <Input
-          label={`Latency${needsAll ? ' *' : ''}`}
-          placeholder="e.g. 1h"
-          error={errors.latency?.message}
-          {...register('latency')}
-        />
+      <p className="text-xs text-tx3">
+        A number with a unit, or text with no unit.
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {SLA_KEYS.map((key) => (
+          <SlaInputRow
+            key={key}
+            slaKey={key}
+            required={required.includes(key)}
+            register={register}
+            error={errors[key]?.message}
+            unit={currentUnits[key]}
+          />
+        ))}
       </div>
+    </div>
+  )
+}
+
+function SlaInputRow({
+  slaKey,
+  required,
+  register,
+  error,
+  unit,
+}: {
+  slaKey: SlaKey
+  required: boolean
+  register: UseFormRegister<FormValues>
+  error?: string
+  unit: string
+}) {
+  // A stored unit outside the list (written by another tool) stays selectable.
+  const units = unit && !UNITS[slaKey].includes(unit) ? [...UNITS[slaKey], unit] : UNITS[slaKey]
+  return (
+    <div className="flex items-start gap-2">
+      <Input
+        label={`${SLA_LABELS[slaKey]}${required ? ' *' : ''}`}
+        placeholder={SLA_PLACEHOLDERS[slaKey]}
+        error={error}
+        {...register(slaKey)}
+      />
+      <select
+        aria-label={`${SLA_LABELS[slaKey]} unit`}
+        className="form-input mt-[22px] !w-auto shrink-0 !px-2"
+        {...register(unitKey(slaKey))}
+      >
+        <option value="">—</option>
+        {units.map((u) => (
+          <option key={u} value={u}>{u}</option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -205,11 +287,13 @@ function ServiceLevelsSection({
 function QualitySection({
   tier,
   quality,
+  fieldNames,
   onChange,
   error,
 }: {
   tier: number
   quality: QualityRule[]
+  fieldNames: string[]
   onChange: (rules: QualityRule[]) => void
   error: string | null
 }) {
@@ -220,11 +304,87 @@ function QualitySection({
         required={tierRequiresQuality(tier)}
         optional={!tierRequiresQuality(tier)}
       />
-      <p className="text-xs text-gray-400 dark:text-slate-500">
-        dimension · column (opt.) · operator · threshold · description
+      <p className="text-xs text-tx3">
+        A library rule is a check datacontract-cli runs on the data. A text rule documents a
+        check no tool runs.
       </p>
-      <QualityRules rules={quality} onChange={onChange} />
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      <QualityRules rules={quality} fieldNames={fieldNames} onChange={onChange} />
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  )
+}
+
+function useMetadataRows(v?: DataContract) {
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(v?.team_members ?? [])
+  const [support, setSupport] = useState<SupportChannel[]>(v?.support ?? [])
+  const [servers, setServers] = useState<ContractServer[]>(v?.servers ?? [])
+  const [error, setError] = useState<string | null>(null)
+  const validate = (): boolean => {
+    const problem = metadataError(teamMembers, support, servers)
+    setError(problem)
+    return problem === null
+  }
+  return { teamMembers, setTeamMembers, support, setSupport, servers, setServers, error, validate }
+}
+
+function MetadataSections({
+  register,
+  metadata,
+}: {
+  register: UseFormRegister<FormValues>
+  metadata: ReturnType<typeof useMetadataRows>
+}) {
+  return (
+    <>
+      <div className="space-y-3">
+        <SectionHeader label="Description" optional />
+        <Textarea label="Purpose" rows={2} {...register('purpose')} />
+        <Textarea label="Usage" rows={2} {...register('usage')} />
+        <Textarea label="Limitations" rows={2} {...register('limitations')} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Team Members" optional />
+        <TeamMembers rows={metadata.teamMembers} onChange={metadata.setTeamMembers} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Support" optional />
+        <SupportChannels rows={metadata.support} onChange={metadata.setSupport} />
+      </div>
+      <div className="space-y-3">
+        <SectionHeader label="Servers" optional />
+        <p className="text-xs text-tx3">
+          Where the data lives. Coordinates only: never a password, token or connection string.
+        </p>
+        <ContractServers rows={metadata.servers} onChange={metadata.setServers} />
+      </div>
+      {metadata.error && <p className="form-error">{metadata.error}</p>}
+    </>
+  )
+}
+
+function StatusSelect({
+  register,
+  editing,
+}: {
+  register: UseFormRegister<FormValues>
+  editing: boolean
+}) {
+  return (
+    <div>
+      <label className="form-label">
+        Status
+      </label>
+      <select
+        className="form-input"
+        {...register('status')}
+      >
+        <option value="draft">Draft</option>
+        <option value="in_review">In Review</option>
+        <option value="active">Active</option>
+        <option value="deprecated">Deprecated</option>
+        {/* A contract is not born retired; retiring is an edit. */}
+        {editing && <option value="retired">Retired</option>}
+      </select>
     </div>
   )
 }
@@ -242,11 +402,11 @@ function DomainSelect({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+      <label className="form-label">
         Domain
       </label>
       <select
-        className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200 disabled:opacity-50"
+        className="form-input disabled:opacity-50"
         disabled={loading}
         {...register('domain_id')}
       >
@@ -255,7 +415,7 @@ function DomainSelect({
           <option key={d.id} value={d.id}>{d.name}</option>
         ))}
       </select>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="form-error">{error}</p>}
     </div>
   )
 }
@@ -272,6 +432,7 @@ export default function DataContractForm({
   const [quality, setQuality] = useState<QualityRule[]>(getInitialQuality(defaultValues))
   const [fieldsError, setFieldsError] = useState<string | null>(null)
   const [qualityError, setQualityError] = useState<string | null>(null)
+  const metadata = useMetadataRows(defaultValues)
 
   const { domains: accessibleDomains, isLoading: domainsLoading } = useAccessibleDomains()
 
@@ -287,9 +448,15 @@ export default function DataContractForm({
   })
 
   const tier = watch('tier')
+  const currentUnits = Object.fromEntries(
+    SLA_KEYS.map((key) => [key, watch(unitKey(key))]),
+  ) as Record<SlaKey, string>
 
   const handleFormSubmit = (values: FormValues) => {
-    if (!validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)) return
+    // Both run, so a message the user has since fixed never lingers on screen.
+    const arraysValid = validateFormArrays(values.tier, fields, quality, setFieldsError, setQualityError)
+    const metadataValid = metadata.validate()
+    if (!arraysValid || !metadataValid) return
 
     onSubmit({
       title: values.title,
@@ -302,19 +469,24 @@ export default function DataContractForm({
         fields,
         quality: tierShowsQuality(values.tier) ? quality : [],
       },
-      servicelevels: tierShowsSLAs(values.tier)
-        ? {
-            freshness: values.freshness,
-            availability: values.availability,
-            retention: values.retention,
-            latency: values.latency,
-          }
-        : { freshness: '', availability: '', retention: '', latency: '' },
+      // Properties the form does not show, such as frequency, are kept.
+      servicelevels: toServiceLevels(slaInputsFrom(values), defaultValues?.servicelevels),
+      description: {
+        purpose: values.purpose,
+        usage: values.usage,
+        limitations: values.limitations,
+      },
+      team_members: metadata.teamMembers,
+      support: metadata.support,
+      servers: metadata.servers,
     })
   }
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+    <form
+      onSubmit={handleSubmit(handleFormSubmit)}
+      className="space-y-6 [&>div+div]:border-t [&>div+div]:border-line [&>div+div]:pt-6"
+    >
       {showWizard && (
         <Controller
           name="tier"
@@ -335,7 +507,7 @@ export default function DataContractForm({
         <>
           <div className="space-y-3">
             <SectionHeader label="Contract Info" />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input label="Title" error={errors.title?.message} {...register('title')} />
               <Input label="Version" error={errors.version?.message} {...register('version')} />
               <Input label="Owner" error={errors.owner?.message} {...register('owner')} />
@@ -346,14 +518,14 @@ export default function DataContractForm({
                 error={errors.domain_id?.message}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {!showWizard && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
+                  <label className="form-label">
                     Tier
                   </label>
                   <select
-                    className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
+                    className="form-input"
                     {...register('tier', { valueAsNumber: true })}
                   >
                     <option value={1}>Tier 1 — Critical / Regulated</option>
@@ -363,20 +535,7 @@ export default function DataContractForm({
                   </select>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">
-                  Status
-                </label>
-                <select
-                  className="w-full text-sm border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200"
-                  {...register('status')}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="in_review">In Review</option>
-                  <option value="active">Active</option>
-                  <option value="deprecated">Deprecated</option>
-                </select>
-              </div>
+              <StatusSelect register={register} editing={!!defaultValues} />
             </div>
           </div>
 
@@ -387,23 +546,31 @@ export default function DataContractForm({
               optional={!tierRequiresFields(tier)}
             />
             <ContractFields fields={fields} onChange={setFields} />
-            {fieldsError && <p className="text-xs text-red-500 mt-1">{fieldsError}</p>}
+            {fieldsError && <p className="form-error">{fieldsError}</p>}
           </div>
 
           {tierShowsSLAs(tier) && (
-            <ServiceLevelsSection tier={tier} register={register} errors={errors} />
+            <ServiceLevelsSection
+              tier={tier}
+              register={register}
+              errors={errors}
+              currentUnits={currentUnits}
+            />
           )}
 
           {tierShowsQuality(tier) && (
             <QualitySection
               tier={tier}
               quality={quality}
+              fieldNames={fields.map((f) => f.name)}
               onChange={setQuality}
               error={qualityError}
             />
           )}
 
-          <div className="flex justify-end gap-3 pt-2 border-t border-gray-200 dark:border-slate-700">
+          <MetadataSections register={register} metadata={metadata} />
+
+          <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={onCancel}>
               Cancel
             </Button>

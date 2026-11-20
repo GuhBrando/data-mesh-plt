@@ -68,14 +68,14 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
         <div
           role="listbox"
           aria-label="Available users"
-          className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-100 dark:divide-slate-700"
+          className="max-h-40 overflow-y-auto border border-line rounded-lg divide-y divide-line"
         >
           {usersLoading ? (
-            <p className="text-sm text-slate-500 text-center py-6">Loading users…</p>
+            <p className="text-sm text-tx3 text-center py-6">Loading users…</p>
           ) : usersError ? (
-            <p className="text-sm text-red-500 text-center py-6">Failed to load users.</p>
+            <p className="text-sm text-bad text-center py-6">Failed to load users.</p>
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-6">No users found.</p>
+            <p className="text-sm text-tx3 text-center py-6">No users found.</p>
           ) : (
             filtered.map((u) => (
               <button
@@ -86,8 +86,8 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
                 onClick={() => setSelectedUserId(u.id)}
                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                   selectedUserId === u.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    ? 'bg-accent text-accent-ink'
+                    : 'text-tx2 hover:bg-hover'
                 }`}
               >
                 {u.username}
@@ -97,7 +97,7 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
         </div>
 
         <div>
-          <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">Role</p>
+          <p className="text-xs font-medium text-tx2 mb-1.5">Role</p>
           <div className="flex gap-2">
             {(['member', 'maintainer'] as const).map((r) => (
               <button
@@ -107,8 +107,8 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
                 onClick={() => setRole(r)}
                 className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${
                   role === r
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    ? 'bg-accent text-accent-ink border-accent'
+                    : 'border-line text-tx2 hover:bg-hover'
                 }`}
               >
                 {r.charAt(0).toUpperCase() + r.slice(1)}
@@ -118,7 +118,7 @@ export default function AddMemberModal({ domain, open, onClose }: AddMemberModal
         </div>
 
         {addMember.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {addMember.error.message}
           </p>
         )}

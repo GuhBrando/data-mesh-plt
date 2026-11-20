@@ -14,6 +14,11 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
+// The detail page joins the product to its contract; these tests cover the product only.
+vi.mock('../../hooks/useDataContracts', () => ({
+  useDataContract: () => ({ data: undefined, isLoading: false, error: null }),
+}))
+
 const baseProduct = {
   id: 'prod-123',
   name: 'My Product',

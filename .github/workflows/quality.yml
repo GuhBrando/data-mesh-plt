@@ -128,7 +128,9 @@ jobs:
   mutation-python:
     name: Python Mutation Score (>=70%)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A cold run of every mutant takes well over 15 minutes. The cache is saved
+    # even when the job is cancelled, so a re-run resumes instead of starting over.
+    timeout-minutes: 60
     needs: coverage-python
     if: github.event_name == 'pull_request'
     steps:
@@ -143,9 +145,12 @@ jobs:
           enable-cache: true
 
       - name: Restore mutmut cache
-        uses: actions/cache@v4
+        id: mutmut-cache
+        uses: actions/cache/restore@v4
         with:
           path: .mutmut-cache
+          # One entry per version of the mutated code; an older entry still
+          # gives a partial head start.
           key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}
           restore-keys: mutmut-
 
@@ -156,6 +161,15 @@ jobs:
 
       - name: Run mutmut
         run: uv run mutmut run --use-coverage || true
+
+      - name: Save mutmut cache
+        # always(): a run cut by the timeout still keeps its progress. Saved once
+        # per key, so entries do not pile up run after run.
+        if: always() && steps.mutmut-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .mutmut-cache
+          key: mutmut-${{ hashFiles('backend/domain/entities/**', 'backend/domain/value_objects/**', 'backend/use_cases/**') }}
 
       - name: Check mutation score threshold
         run: |

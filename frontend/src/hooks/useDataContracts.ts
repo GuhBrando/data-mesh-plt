@@ -1,11 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del, getText } from '../lib/api'
-import type { DataContract, DataContractInput } from '../types'
+import type { ContractVersion, DataContract, DataContractInput } from '../types'
 
 const KEYS = {
   all: ['data-contracts'] as const,
   one: (id: string) => ['data-contracts', id] as const,
   yaml: (id: string) => ['data-contracts', id, 'yaml'] as const,
+  // Under KEYS.one(id), so an update's invalidation refreshes the history too.
+  versions: (id: string) => ['data-contracts', id, 'versions'] as const,
+  // Outside KEYS.all on purpose: a snapshot never changes, so no update refetches it.
+  versionYaml: (id: string, version: string | null) =>
+    ['contract-version-yaml', id, version] as const,
 }
 
 export function useDataContracts() {
@@ -28,6 +33,23 @@ export function useDataContractYaml(id: string, enabled: boolean) {
     queryKey: KEYS.yaml(id),
     queryFn: () => getText(`/data-contracts/${id}/yaml`),
     enabled: !!id && enabled,
+  })
+}
+
+export function useContractVersions(id: string) {
+  return useQuery<ContractVersion[]>({
+    queryKey: KEYS.versions(id),
+    queryFn: () => get<ContractVersion[]>(`/data-contracts/${id}/versions`),
+    enabled: !!id,
+  })
+}
+
+export function useContractVersionYaml(id: string, version: string | null) {
+  return useQuery<string>({
+    queryKey: KEYS.versionYaml(id, version),
+    queryFn: () => getText(`/data-contracts/${id}/versions/${encodeURIComponent(version ?? '')}/yaml`),
+    enabled: !!id && !!version,
+    staleTime: Infinity,
   })
 }
 

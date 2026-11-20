@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Plus, Users as UsersIcon, Trash2, Edit2 } from 'lucide-react'
 import {
   useUsers,
   useCreateUser,
@@ -14,6 +13,8 @@ import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import UserForm from './UserForm'
 import type { User, UserFormData } from '../../types'
+import { Avatar } from '../../components/ui/Glyphs'
+import { EditIcon, PlusIcon, TrashIcon, UsersIcon } from '../../components/icons'
 
 export default function UsersList() {
   const [createOpen, setCreateOpen] = useState(false)
@@ -42,44 +43,26 @@ export default function UsersList() {
     setDeleteTarget(null)
   }
 
-  // Generate initials avatar color from name
-  function avatarColor(name: string): string {
-    const colors = [
-      'bg-blue-500',
-      'bg-indigo-500',
-      'bg-violet-500',
-      'bg-green-500',
-      'bg-amber-500',
-      'bg-rose-500',
-      'bg-teal-500',
-    ]
-    const idx = name.charCodeAt(0) % colors.length
-    return colors[idx]
-  }
-
-  function initials(name: string) {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase()
-  }
-
   const columns = [
     {
       key: 'name',
       header: 'Name',
       render: (row: User) => (
         <div className="flex items-center gap-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${avatarColor(row.username)}`}
-          >
-            {initials(row.username)}
-          </div>
-          <span className="font-medium text-gray-900 dark:text-slate-100">{row.username}</span>
+          <Avatar name={row.username} size={28} />
+          <span className="font-medium text-tx">{row.username}</span>
         </div>
       ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (row: User) => (
+        <Badge variant={row.role === 'admin' ? 'blue' : 'gray'} className="capitalize">
+          {row.role}
+        </Badge>
+      ),
+      className: 'w-28',
     },
     {
       key: 'email',
@@ -87,7 +70,7 @@ export default function UsersList() {
       render: (row: User) => (
         <a
           href={`mailto:${row.email}`}
-          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          className="text-[13px] text-tx2 hover:text-accent-fg hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
           {row.email}
@@ -98,9 +81,7 @@ export default function UsersList() {
       key: 'id',
       header: 'ID',
       render: (row: User) => (
-        <Badge variant="gray">
-          <span className="font-mono">{row.id.slice(0, 8)}…</span>
-        </Badge>
+        <span className="font-mono text-[11.5px] text-tx3" title={row.id}>{row.id.slice(0, 8)}…</span>
       ),
     },
     {
@@ -113,10 +94,10 @@ export default function UsersList() {
               e.stopPropagation()
               setEditTarget(row)
             }}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors dark:text-slate-500 dark:hover:text-blue-400 dark:hover:bg-blue-900/20"
+            className="grid h-7 w-7 place-items-center rounded-md text-tx3 transition-colors hover:bg-hover hover:text-tx"
             title="Edit"
           >
-            <Edit2 size={14} />
+            <EditIcon size={14} />
           </button>
           <button
             onClick={(e) => {
@@ -126,7 +107,7 @@ export default function UsersList() {
             className="btn-danger"
             title="Delete"
           >
-            <Trash2 size={13} />
+            <TrashIcon size={13} />
             Delete
           </button>
         </div>
@@ -137,16 +118,18 @@ export default function UsersList() {
 
   return (
     <div>
+      <div className="animate-enter">
       <PageHeader
         title="Users"
         subtitle={`${users.length} user${users.length !== 1 ? 's' : ''}`}
         actions={
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />
+            <PlusIcon size={15} />
             New User
           </Button>
         }
       />
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-20">
@@ -154,28 +137,30 @@ export default function UsersList() {
         </div>
       ) : error ? (
         <div className="text-center py-16">
-          <p className="text-red-500">{error.message}</p>
+          <p className="text-bad">{error.message}</p>
         </div>
       ) : users.length === 0 ? (
-        <div className="text-center py-20">
-          <UsersIcon size={48} className="text-gray-200 dark:text-slate-700 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-slate-400 font-medium mb-1">No users yet</p>
-          <p className="text-sm text-gray-400 dark:text-slate-500 mb-4">
-            Add your first user to get started.
-          </p>
+        <div className="flex animate-enter flex-col items-center rounded-[10px] border border-dashed border-line2 px-6 py-16 text-center">
+          <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl border border-line bg-raised text-tx3">
+            <UsersIcon size={20} />
+          </span>
+          <p className="mb-1 font-medium text-tx">No users yet</p>
+          <p className="mb-5 text-[13px] text-tx3">Add your first user to get started.</p>
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />
+            <PlusIcon size={15} />
             New User
           </Button>
         </div>
       ) : (
+        <div className="animate-enter [animation-delay:0.06s]">
         <Table
           columns={columns}
           data={users}
           keyExtractor={(u) => u.id}
           emptyMessage="No users found."
-          mobileCardConfig={{ titleKey: 'name' }}
+          mobileCardConfig={{ titleKey: 'name', badgeKey: 'role' }}
         />
+        </div>
       )}
 
       {/* Create Modal */}

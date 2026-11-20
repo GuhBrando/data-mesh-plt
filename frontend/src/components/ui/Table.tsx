@@ -31,27 +31,27 @@ export default function Table<T>({
   mobileCardConfig,
 }: TableProps<T>) {
   const tableNode = (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700">
-      <table className="min-w-full divide-y divide-gray-100 dark:divide-slate-700">
+    <div className="overflow-x-auto rounded-[10px] border border-line bg-panel">
+      <table className="min-w-full">
         <thead>
-          <tr className="bg-gray-50 dark:bg-slate-700/50">
+          <tr className="border-b border-line">
             {columns.map((col) => (
               <th
                 key={col.key}
                 scope="col"
-                className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider ${col.className ?? ''}`}
+                className={`whitespace-nowrap px-4 py-2.5 text-left text-[11.5px] font-medium text-tx3 ${col.className ?? ''}`}
               >
                 {col.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">
+        <tbody className="divide-y divide-line">
           {data.length === 0 ? (
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-4 py-12 text-center text-sm text-gray-400 dark:text-slate-500"
+                className="px-4 py-12 text-center text-[13px] text-tx3"
               >
                 {emptyMessage}
               </td>
@@ -63,14 +63,14 @@ export default function Table<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={`transition-colors ${
                   onRowClick
-                    ? 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20'
-                    : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                    ? 'cursor-pointer hover:bg-hover'
+                    : 'hover:bg-hover'
                 }`}
               >
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`px-4 py-3 text-sm text-gray-700 dark:text-slate-300 ${col.className ?? ''}`}
+                    className={`h-11 px-4 py-2 text-[13px] text-tx2 ${col.className ?? ''}`}
                   >
                     {col.render(row)}
                   </td>
@@ -106,7 +106,7 @@ export default function Table<T>({
   const cardListNode = (
     <div className="md:hidden space-y-3">
       {data.length === 0 ? (
-        <p className="py-12 text-center text-sm text-gray-400 dark:text-slate-500">
+        <p className="py-12 text-center text-[13px] text-tx3">
           {emptyMessage}
         </p>
       ) : (
@@ -123,14 +123,14 @@ export default function Table<T>({
                 onRowClick(row)
               }
             } : undefined}
-            className={`bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 transition-colors ${
+            className={`bg-panel border border-line rounded-[10px] p-4 transition-colors ${
               onRowClick
-                ? 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                ? 'cursor-pointer hover:bg-hover'
                 : ''
             }`}
           >
             <div className="flex items-start justify-between gap-2 mb-3">
-              <div className="font-medium text-gray-900 dark:text-slate-100 min-w-0">
+              <div className="font-medium text-tx min-w-0">
                 {titleCol?.render(row)}
               </div>
               {badgeCol && <div className="shrink-0">{badgeCol.render(row)}</div>}
@@ -139,10 +139,10 @@ export default function Table<T>({
               <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                 {bodyColumns.map((col) => (
                   <div key={col.key}>
-                    <div className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">
+                    <div className="text-[11.5px] font-medium text-tx3 mb-0.5">
                       {col.header}
                     </div>
-                    <div className="text-sm text-gray-700 dark:text-slate-300">
+                    <div className="text-[13px] text-tx2">
                       {col.render(row)}
                     </div>
                   </div>
@@ -152,7 +152,7 @@ export default function Table<T>({
             {actionColumns.map((col) => (
               <div
                 key={col.key}
-                className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700 flex justify-end"
+                className="mt-3 pt-3 border-t border-line flex justify-end"
               >
                 {col.render(row)}
               </div>

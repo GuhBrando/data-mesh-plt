@@ -29,7 +29,7 @@ export function CardHeader({
   className?: string
 }) {
   return (
-    <div className={`flex items-center justify-between mb-5 ${className}`}>
+    <div className={`flex items-center justify-between mb-4 ${className}`}>
       {children}
     </div>
   )
@@ -43,7 +43,7 @@ export function CardTitle({
   className?: string
 }) {
   return (
-    <h3 className={`text-base font-semibold text-gray-900 dark:text-slate-100 ${className}`}>
+    <h3 className={`text-[13px] font-semibold text-tx ${className}`}>
       {children}
     </h3>
   )

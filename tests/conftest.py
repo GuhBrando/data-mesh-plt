@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,6 +13,11 @@ import pytest
 os.environ.setdefault(
     "JWT_SECRET_KEY", "test-jwt-secret-key-not-for-production-use-only"
 )
+
+# Keep the suite away from the real contracts repository. Router tests that do not
+# override get_github_client would otherwise push to and delete from GITHUB_REPO
+# with the token in .env.
+os.environ["GITHUB_TOKEN"] = ""
 
 
 class _QueryGuard:
@@ -35,3 +40,11 @@ def n1_guard() -> Callable[[AsyncMock], _QueryGuard]:
         return _QueryGuard(mock)
 
     return _make
+
+
+@pytest.fixture
+def contract_repo() -> AsyncMock:
+    """Repository double whose transaction() works in `async with`."""
+    repo = AsyncMock()
+    repo.transaction = MagicMock()
+    return repo

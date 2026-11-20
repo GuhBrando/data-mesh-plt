@@ -9,7 +9,7 @@ from backend.domain.entities.data_product import DataProduct
 from backend.domain.entities.user import User
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.domain.interfaces.data_product_repository import IDataProductRepository
-from backend.infra.github_client import GitHubClient
+from backend.infra.github_client import GitHubClient, RepoNameUnavailable
 from backend.interface.dependencies import (
     get_create_data_product_use_case,
     get_data_contract_repository,
@@ -69,6 +69,24 @@ async def _resolve_domain_name(
     return contract.domain if contract else None
 
 
+async def _create_repo_with_fallback(
+    github: GitHubClient, product: DataProduct, name: str
+) -> dict:
+    """Create the product repo, falling back to a product-unique name when the
+    preferred one is held by a repo we must not touch (archived or foreign)."""
+    try:
+        return await github.create_product_repo(name, product.description)
+    except RepoNameUnavailable:
+        logger.info(
+            "Repo name %s unavailable for product %s; using suffixed name",
+            name,
+            product.id,
+        )
+        return await github.create_product_repo(
+            f"{name}-{product.id.hex[:8]}", product.description
+        )
+
+
 async def _ensure_product_repo(
     github: GitHubClient | None,
     product: DataProduct,
@@ -82,12 +100,14 @@ async def _ensure_product_repo(
         if not domain_name:
             return
         name = f"dp-{_slugify(domain_name)}-{_slugify(product.name)}"
-        created = await github.create_product_repo(name, product.description)
+        created = await _create_repo_with_fallback(github, product, name)
+        # Persist the link before scaffolding: a scaffold failure must not
+        # leave a repo on GitHub that no product points at.
+        await product_repo.update_repo_url(product.id, created["html_url"])
+        product.repo_url = created["html_url"]
         await github.push_scaffold(
             created["full_name"], _build_scaffold(product, domain_name)
         )
-        await product_repo.update_repo_url(product.id, created["html_url"])
-        product.repo_url = created["html_url"]
     except Exception as exc:
         logger.warning(
             "GitHub repo provision failed for product %s: %s",

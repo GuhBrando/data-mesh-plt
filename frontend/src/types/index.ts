@@ -1,10 +1,44 @@
+export interface ServiceLevelProperty {
+  property: string
+  value: number | string
+  unit: string | null
+}
+// ODCS slaProperties. Numbers carry a unit; text carries none.
+export interface ServiceLevels {
+  properties: ServiceLevelProperty[]
+}
+
+export type QualityDimension =
+  | 'accuracy'
+  | 'completeness'
+  | 'conformity'
+  | 'consistency'
+  | 'coverage'
+  | 'timeliness'
+  | 'uniqueness'
+export type QualityMetric = 'nullValues' | 'missingValues' | 'invalidValues' | 'duplicateValues' | 'rowCount'
+export type QualityOperator =
+  | 'mustBe'
+  | 'mustNotBe'
+  | 'mustBeGreaterThan'
+  | 'mustBeGreaterOrEqualTo'
+  | 'mustBeLessThan'
+  | 'mustBeLessOrEqualTo'
+
+// An ODCS quality rule: a library metric datacontract-cli can run, or free text.
 export interface QualityRule {
-  dimension: 'completeness' | 'freshness' | 'uniqueness' | 'validity' | 'integrity'
+  type: 'library' | 'text'
+  dimension: QualityDimension | null
   column: string
-  operator: '>=' | '<=' | '='
-  threshold: string
+  metric: QualityMetric | null
+  operator: QualityOperator | null
+  value: number | null
+  unit: 'rows' | 'percent' | null
+  valid_values: string[]
   description: string
 }
+
+export type FieldClassification = '' | 'public' | 'internal' | 'confidential' | 'restricted'
 
 export interface SchemaField {
   name: string
@@ -12,6 +46,34 @@ export interface SchemaField {
   description: string
   nullable: boolean
   primary_key: boolean
+  classification: FieldClassification
+  unique: boolean
+  physical_type: string
+}
+
+export interface ContractDescription { purpose: string; usage: string; limitations: string }
+export interface TeamMember { username: string; name: string; role: string }
+export interface SupportChannel { channel: string; url: string; tool: string; scope: string }
+export type ServerType = 'databricks' | 'postgres' | 'azure' | 'local'
+export interface ContractServer {
+  server: string
+  type: ServerType
+  environment: string
+  host: string
+  catalog: string
+  schema_name: string   // written as `schema` in ODCS; the API uses schema_name
+  port: number | null
+  database: string
+  location: string
+  format: string
+  path: string
+}
+
+// One immutable history row; its ODCS YAML is fetched on demand.
+export interface ContractVersion {
+  version: string
+  created_by: string | null
+  created_at: string
 }
 
 export interface DataContract {
@@ -22,14 +84,13 @@ export interface DataContract {
   domain: string        // read-only joined name from API — do not send to server
   domain_id: string
   tier: 1 | 2 | 3 | 4
-  status: 'draft' | 'in_review' | 'active' | 'deprecated'
+  status: 'draft' | 'in_review' | 'active' | 'deprecated' | 'retired'
   models: { fields: SchemaField[]; quality?: QualityRule[] }
-  servicelevels: {
-    freshness: string
-    availability: string
-    retention: string
-    latency: string
-  }
+  servicelevels: ServiceLevels
+  description: ContractDescription
+  team_members: TeamMember[]
+  support: SupportChannel[]
+  servers: ContractServer[]
   created_at: string
   updated_at: string
 }
@@ -42,12 +103,11 @@ export interface DataContractInput {
   tier: number
   status: string
   models: { fields: SchemaField[]; quality?: QualityRule[] }
-  servicelevels: {
-    freshness: string
-    availability: string
-    retention: string
-    latency: string
-  }
+  servicelevels: ServiceLevels
+  description: ContractDescription
+  team_members: TeamMember[]
+  support: SupportChannel[]
+  servers: ContractServer[]
 }
 
 export interface DataProduct {

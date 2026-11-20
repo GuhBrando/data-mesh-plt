@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import Button from '../../components/ui/Button'
+import { TierGlyph } from '../../components/ui/Glyphs'
 
-const TIER_LABELS: Record<number, { name: string; description: string; color: string }> = {
-  1: { name: 'Critical / Regulated', description: 'Errors can cause legal, regulatory, or material financial consequences.', color: 'text-red-600 dark:text-red-400' },
-  2: { name: 'Business Important', description: 'Errors can lead to wrong business decisions with measurable financial impact.', color: 'text-orange-600 dark:text-orange-400' },
-  3: { name: 'Operational / Internal', description: 'Errors are manageable informally with no material damage.', color: 'text-blue-600 dark:text-blue-400' },
-  4: { name: 'Experimental / Sandbox', description: 'Exploration or hypothesis validation. No production consumers allowed.', color: 'text-gray-600 dark:text-gray-400' },
+const TIER_LABELS: Record<number, { name: string; description: string }> = {
+  1: { name: 'Critical / Regulated', description: 'Errors can cause legal, regulatory, or material financial consequences.' },
+  2: { name: 'Business Important', description: 'Errors can lead to wrong business decisions with measurable financial impact.' },
+  3: { name: 'Operational / Internal', description: 'Errors are manageable informally with no material damage.' },
+  4: { name: 'Experimental / Sandbox', description: 'Exploration or hypothesis validation. No production consumers allowed.' },
 }
 
 const QUESTIONS = [
@@ -17,6 +18,24 @@ const QUESTIONS = [
 interface TierWizardProps {
   value: number
   onChange: (tier: number) => void
+}
+
+function Progress({ step }: { step: number }) {
+  return (
+    <span className="flex items-center gap-2 text-xs text-tx3">
+      Question {step + 1} of {QUESTIONS.length}
+      <span className="flex gap-1" aria-hidden="true">
+        {QUESTIONS.map((q, i) => (
+          <span
+            key={q}
+            className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${
+              i === step ? 'w-4 bg-accent-fg' : i < step ? 'w-1.5 bg-tx3' : 'w-1.5 bg-line2'
+            }`}
+          />
+        ))}
+      </span>
+    </span>
+  )
 }
 
 export default function TierWizard({ value, onChange }: TierWizardProps) {
@@ -46,35 +65,40 @@ export default function TierWizard({ value, onChange }: TierWizardProps) {
   const tier = TIER_LABELS[value]
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-4 space-y-4">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-200">
-        Classify the Tier
-      </h3>
+    <div className="rounded-[10px] border border-line bg-raised/60 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-[13px] font-semibold text-tx">Classify the Tier</h3>
+        {!done && <Progress step={step} />}
+      </div>
 
       {!done ? (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600 dark:text-slate-300">
-            {QUESTIONS[step]}
-          </p>
+        <div key={step} className="mt-3 animate-swap space-y-3">
+          <p className="text-[13px] text-tx2">{QUESTIONS[step]}</p>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => handleAnswer(true)}>Yes</Button>
             <Button size="sm" variant="secondary" onClick={() => handleAnswer(false)}>No</Button>
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          <div>
-            <span className={`text-sm font-semibold ${tier.color}`}>
-              Tier {value} — {tier.name}
+        <div className="mt-3 animate-swap space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="grid h-8 w-10 shrink-0 place-items-center rounded-lg border border-line bg-panel">
+              <TierGlyph tier={value} />
             </span>
-            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">{tier.description}</p>
+            <div>
+              <span className="text-[13px] font-semibold text-tx">
+                Tier {value} — {tier.name}
+              </span>
+              <p className="mt-0.5 text-xs text-tx2">{tier.description}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-gray-500 dark:text-slate-400">Override:</label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label htmlFor="tier-override" className="text-xs text-tx3">Override</label>
             <select
+              id="tier-override"
               value={value}
               onChange={(e) => onChange(Number(e.target.value))}
-              className="text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200"
+              className="form-input !w-auto !py-1.5"
             >
               {[1, 2, 3, 4].map((t) => (
                 <option key={t} value={t}>

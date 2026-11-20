@@ -2,89 +2,280 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Channels only ("r g b"), so Tailwind's opacity modifiers work:
+ * `bg-accent/10`, `border-bad/30`. Light is the default; `.dark` on <html> flips them.
+ */
 @layer base {
+  :root {
+    --bg: 246 246 244;
+    --side: 238 238 235;
+    --panel: 255 255 255;
+    --raised: 242 242 239;
+    --hover: 234 234 230;
+    --line: 226 226 222;
+    --line-2: 210 210 204;
+    --tx: 21 22 25;
+    --tx-2: 82 85 93;
+    --tx-3: 106 109 117;
+
+    --accent: 198 243 107;
+    --accent-ink: 18 22 8;
+    --accent-fg: 74 122 11;
+
+    --ok: 30 138 87;
+    --warn: 154 106 0;
+    --dep: 180 82 30;
+    --mute: 106 109 117;
+    --bad: 201 60 60;
+
+    --shadow: 0 1px 2px rgb(20 20 20 / 0.05), 0 12px 32px rgb(20 20 20 / 0.08);
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg: 12 13 15;
+    --side: 16 17 20;
+    --panel: 20 21 25;
+    --raised: 27 29 34;
+    --hover: 31 33 38;
+    --line: 35 37 43;
+    --line-2: 48 51 58;
+    --tx: 236 237 239;
+    --tx-2: 164 167 175;
+    --tx-3: 128 132 141;
+
+    --accent-fg: 198 243 107;
+
+    --ok: 76 203 138;
+    --warn: 232 180 76;
+    --dep: 229 132 90;
+    --mute: 127 131 140;
+    --bad: 239 107 107;
+
+    --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+
   * {
     box-sizing: border-box;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 antialiased dark:bg-slate-900 dark:text-slate-100;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    @apply bg-bg text-tx font-sans antialiased;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.35);
   }
 }
 
 @layer components {
-  .sidebar-link {
-    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-all duration-150 text-sm font-medium;
-  }
-
-  .sidebar-link.active {
-    @apply bg-blue-600 text-white;
-  }
-
-  .bottom-nav-link {
-    @apply flex flex-col items-center justify-center gap-1 flex-1 py-2 text-slate-400 hover:text-white transition-colors text-xs;
-  }
-
-  .bottom-nav-link.active {
-    @apply text-blue-400;
-  }
-
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700;
+    @apply bg-panel rounded-[10px] border border-line;
   }
 
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-slate-900;
+    @apply inline-flex items-center gap-2 h-8 px-3 bg-accent text-accent-ink text-[13px] font-medium rounded-lg whitespace-nowrap transition-[filter,transform] duration-150 hover:brightness-105 active:translate-y-px focus:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-600 dark:focus:ring-offset-slate-900;
+    @apply inline-flex items-center gap-2 h-8 px-3 bg-panel text-tx text-[13px] font-medium rounded-lg border border-line2 whitespace-nowrap transition-colors duration-150 hover:bg-hover active:translate-y-px focus:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/30 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-danger {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:bg-red-900/20 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/40 dark:focus:ring-offset-slate-900;
+    @apply inline-flex items-center gap-1.5 h-7 px-2.5 bg-bad/10 text-bad text-xs font-medium rounded-md border border-bad/25 transition-colors duration-150 hover:bg-bad/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-bad/40 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .form-input {
-    @apply block w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-400 dark:focus:ring-blue-500;
+    @apply block w-full px-3 py-2 text-[13px] rounded-lg border border-line2 bg-panel text-tx placeholder:text-tx3 transition-shadow duration-150 focus:outline-none focus:border-accent-fg focus:ring-[3px] focus:ring-accent/20;
   }
 
   .form-input.error {
-    @apply border-red-400 focus:ring-red-500;
+    @apply border-bad focus:border-bad focus:ring-bad/20;
   }
 
   .form-label {
-    @apply block text-sm font-medium text-gray-700 mb-1 dark:text-slate-300;
+    @apply block text-xs font-medium text-tx2 mb-1.5;
   }
 
   .form-error {
-    @apply text-xs text-red-500 mt-1 dark:text-red-400;
+    @apply text-xs text-bad mt-1;
+  }
+
+  .kbd {
+    @apply inline-flex items-center rounded border border-line2 px-1.5 font-mono text-[10.5px] font-medium leading-[17px] text-tx3;
+  }
+
+  /* The mark: a penguin that blinks now and then and waddles on hover. */
+  .mark-eyes {
+    transform-box: view-box;
+    transform-origin: 12px 8.75px;
+    animation: mark-blink 6s ease-in-out infinite;
+  }
+  .mark-body {
+    transform-box: view-box;
+    transform-origin: 12px 21.5px;
+  }
+  .mark:hover > .mark-body {
+    animation: mark-waddle 0.7s ease-in-out;
   }
 }
 
-/* Custom scrollbar */
+/*
+ * Glyphs. Kept outside @layer on purpose: their modifier classes are built from data
+ * (`st-${status}`, `tier-${tier}`), which Tailwind's content scan cannot see.
+ */
+/* Contract status: the shape carries the meaning, colour reinforces it. */
+.st {
+  @apply inline-flex items-center gap-[7px] whitespace-nowrap text-[12.5px] text-tx2;
+}
+.st::before {
+  content: '';
+  @apply h-2 w-2 shrink-0 rounded-full;
+}
+.st-active::before {
+  background: rgb(var(--ok));
+}
+.st-in_review::before {
+  border: 1.5px solid rgb(var(--warn));
+  background: linear-gradient(90deg, rgb(var(--warn)) 50%, transparent 50%);
+}
+.st-draft::before {
+  border: 1.5px dashed rgb(var(--mute));
+}
+.st-deprecated::before {
+  border: 1.5px solid rgb(var(--dep));
+  background: linear-gradient(135deg, transparent 40%, rgb(var(--dep)) 40% 60%, transparent 60%);
+}
+.st-retired::before {
+  height: 2px;
+  border-radius: 1px;
+  background: rgb(var(--mute));
+}
+
+/* Tier: more bars, more critical. */
+.tier {
+  @apply inline-flex h-2.5 items-end gap-0.5;
+}
+.tier > i {
+  @apply block w-[3px] rounded-[1px] bg-line2;
+}
+.tier > i:nth-child(1) { height: 4px; }
+.tier > i:nth-child(2) { height: 6px; }
+.tier > i:nth-child(3) { height: 8px; }
+.tier > i:nth-child(4) { height: 10px; }
+.tier-1 > i,
+.tier-2 > i:nth-child(-n + 3),
+.tier-3 > i:nth-child(-n + 2),
+.tier-4 > i:nth-child(1) {
+  @apply bg-tx2;
+}
+
+/* Domain marker: an 8px square, colour set inline per domain. */
+.dom {
+  @apply inline-flex items-center gap-[7px] whitespace-nowrap text-[12.5px] text-tx2;
+}
+.dom::before {
+  content: '';
+  @apply h-2 w-2 shrink-0 rounded-sm;
+  background: var(--dc, rgb(var(--mute)));
+}
+
+@layer utilities {
+  /* Sections below the fold rise as they scroll into view (where supported). */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 65%;
+    }
+  }
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(18px); }
+}
+
+@keyframes mark-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+
+@keyframes mark-waddle {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  background: rgb(var(--line-2));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background: rgb(var(--tx-3));
+  background-clip: padding-box;
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  @apply bg-slate-600;
+/* Login illustration: domains drawn as a graph, data flowing along contracts. */
+.mesh-edge {
+  fill: none;
+  stroke: rgb(var(--line-2));
+  stroke-width: 1.25;
+  stroke-dasharray: 100;
+  animation: mesh-draw 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+.mesh-flow {
+  fill: none;
+  stroke: rgb(var(--accent-fg));
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 18;
+  animation: mesh-fade 0.5s ease 1.6s both, mesh-flow 2.4s linear 1.6s infinite;
+}
+.mesh-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mesh-pop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.15) both;
+}
+.mesh-dots {
+  background-image: radial-gradient(circle at 1px 1px, rgb(var(--tx) / 0.07) 1px, transparent 1.5px);
+  background-size: 22px 22px;
 }
 
-.dark ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500;
+@keyframes mesh-draw {
+  from { stroke-dashoffset: 100; }
+}
+@keyframes mesh-pop {
+  from { opacity: 0; transform: scale(0.86); }
+}
+@keyframes mesh-fade {
+  from { opacity: 0; }
+}
+@keyframes mesh-flow {
+  to { stroke-dashoffset: -36.2; }
 }

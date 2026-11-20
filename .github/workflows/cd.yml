@@ -55,6 +55,9 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
+    # The backend migrates the data before it serves. A new frontend talking to an
+    # old backend would send service levels the old backend silently drops.
+    needs: deploy-backend
     steps:
       - uses: actions/checkout@v4
 

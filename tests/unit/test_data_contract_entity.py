@@ -23,3 +23,16 @@ def test_data_contract_has_required_fields():
     assert contract.tier == 2
     assert contract.status == "draft"
     assert contract.models == {"fields": []}
+
+
+def test_metadata_defaults_are_empty_and_not_shared():
+    now = datetime.now(tz=timezone.utc)
+    build = lambda: DataContract(
+        id=uuid.uuid4(), title="x", version="1.0.0", owner="o", domain="d", tier=4, status="draft",
+        models={}, servicelevels={}, created_at=now, updated_at=now,
+    )
+    first, second = build(), build()
+    assert first.description == {"purpose": "", "usage": "", "limitations": ""}
+    assert (first.team_members, first.support, first.servers) == ([], [], [])
+    first.team_members.append({"username": "a"})
+    assert second.team_members == []

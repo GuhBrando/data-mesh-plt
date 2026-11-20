@@ -3,10 +3,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2 } from 'lucide-react'
 import { post, get } from '../lib/api'
 import { setTokens, isSafeRedirect, decodeJwtPayload } from '../lib/auth'
 import { useAuth } from '../contexts/AuthContext'
+import Mark from '../components/brand/Mark'
+import { ArrowRightIcon, PendingIcon } from '../components/icons'
 import type { User } from '../types'
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -50,27 +51,19 @@ async function performLogin(email: string, password: string): Promise<User> {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const GlassInput = React.forwardRef<
+const AuthInput = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement> & { hasError?: boolean }
 >(({ hasError, className, ...props }, ref) => (
   <input
     ref={ref}
     {...props}
-    className={`w-full bg-transparent outline-none text-sm text-white ${className ?? ''}`}
-    style={{
-      padding: '10px 14px',
-      border: hasError
-        ? '1px solid rgba(239,68,68,0.5)'
-        : '1px solid rgba(255,255,255,0.1)',
-      borderRadius: '10px',
-      background: 'rgba(255,255,255,0.07)',
-    }}
+    className={`form-input h-10 text-[13.5px] ${hasError ? 'error' : ''} ${className ?? ''}`}
   />
 ))
-GlassInput.displayName = 'GlassInput'
+AuthInput.displayName = 'AuthInput'
 
-function GlassField({
+function AuthField({
   label,
   htmlFor,
   error,
@@ -82,25 +75,17 @@ function GlassField({
   children: React.ReactNode
 }) {
   return (
-    <div className="mb-4">
-      <label
-        htmlFor={htmlFor}
-        className="block text-xs font-medium mb-1.5"
-        style={{ color: 'rgba(255,255,255,0.6)' }}
-      >
+    <div className="mb-3.5">
+      <label htmlFor={htmlFor} className="form-label">
         {label}
       </label>
       {children}
-      {error && (
-        <p className="mt-1 text-xs" style={{ color: '#f87171' }}>
-          {error}
-        </p>
-      )}
+      {error && <p className="form-error">{error}</p>}
     </div>
   )
 }
 
-function GlassButton({
+function SubmitButton({
   children,
   loading,
 }: {
@@ -111,24 +96,122 @@ function GlassButton({
     <button
       type="submit"
       disabled={loading}
-      className="w-full flex items-center justify-center gap-2 py-2.5 mt-2 text-sm font-semibold text-white transition-opacity disabled:opacity-70"
-      style={{
-        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-        borderRadius: '10px',
-        border: 'none',
-        cursor: loading ? 'not-allowed' : 'pointer',
-      }}
+      className="btn-primary group mt-2 h-[42px] w-full justify-center text-[14px]"
     >
-      {loading && <Loader2 size={15} className="animate-spin" />}
+      {loading && <PendingIcon size={15} className="animate-spin" />}
       {children}
+      {!loading && (
+        <ArrowRightIcon className="transition-transform duration-200 group-hover:translate-x-[3px]" />
+      )}
     </button>
+  )
+}
+
+// Domains as a graph, data products on the edges, data flowing along contracts.
+const EDGES = [
+  'M172 70C240 70 310 110 310 182',
+  'M438 60C370 60 310 110 310 182',
+  'M310 218C310 290 240 330 182 330',
+  'M310 218C310 290 380 330 438 330',
+  'M500 78C560 140 560 270 500 312',
+  'M110 88C50 150 60 260 120 312',
+]
+const FLOWS = [0, 1, 3, 4]
+const PRODUCTS: [number, number][] = [
+  [266.5, 99], [348.5, 94], [267.75, 301], [352.25, 301], [545, 202.5], [70, 203.75],
+]
+const DOMAINS: { label: string; x: number; y: number; color: string }[] = [
+  { label: 'Risk', x: 48, y: 52, color: '#F08A6C' },
+  { label: 'Credit', x: 438, y: 42, color: '#6FA8F2' },
+  { label: 'Payments', x: 248, y: 182, color: '#E2B556' },
+  { label: 'Customers', x: 58, y: 312, color: '#4FC4BD' },
+  { label: 'Collections', x: 438, y: 312, color: '#B591F2' },
+]
+
+function MeshIllustration() {
+  return (
+    <svg
+      viewBox="0 0 620 400"
+      className="h-auto w-full max-w-[620px] self-center overflow-visible"
+      aria-hidden="true"
+    >
+      {EDGES.map((d, i) => (
+        <path key={d} d={d} pathLength={100} className="mesh-edge" style={{ animationDelay: `${0.26 + i * 0.1}s` }} />
+      ))}
+      {FLOWS.map((i) => (
+        <path key={`flow-${i}`} d={EDGES[i]} className="mesh-flow" />
+      ))}
+      {PRODUCTS.map(([cx, cy], i) => (
+        <circle
+          key={`${cx}-${cy}`}
+          cx={cx}
+          cy={cy}
+          r={4.5}
+          className="mesh-node fill-bg stroke-tx2"
+          strokeWidth={1.5}
+          style={{ animationDelay: `${0.85 + Math.floor(i / 2) * 0.1}s` }}
+        />
+      ))}
+      {DOMAINS.map((d, i) => (
+        <g key={d.label} className="mesh-node" style={{ animationDelay: `${0.05 + i * 0.07}s` }}>
+          <rect x={d.x} y={d.y} width={124} height={36} rx={8} className="fill-panel stroke-line2" />
+          <rect x={d.x + 14} y={d.y + 14} width={8} height={8} rx={2} fill={d.color} />
+          <text x={d.x + 30} y={d.y + 22.5} className="fill-tx text-[12px] font-medium">
+            {d.label}
+          </text>
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+type Mode = 'signin' | 'register'
+
+const HEADINGS: Record<Mode, [string, string]> = {
+  signin: ['Sign in to DataMesh', 'Find, trust and govern data products across every domain.'],
+  register: ['Create your account', 'You join as a member. A domain owner can grant you more access later.'],
+}
+
+function AuthHeading({ mode }: { mode: Mode }) {
+  const [title, lead] = HEADINGS[mode]
+  return (
+    <div key={mode} className="animate-swap">
+      <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-tx">{title}</h1>
+      <p className="mt-2 text-[13.5px] text-tx2">{lead}</p>
+    </div>
+  )
+}
+
+// Mode tabs — the underline slides between them.
+function ModeTabs({ mode, onSwitch }: { mode: Mode; onSwitch: (m: Mode) => void }) {
+  return (
+    <div className="relative mb-6 mt-7 flex border-b border-line">
+      {(['signin', 'register'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onSwitch(m)}
+          aria-pressed={mode === m}
+          className={`h-[38px] flex-1 text-[13px] font-medium transition-colors duration-150 ${
+            mode === m ? 'text-tx' : 'text-tx3 hover:text-tx2'
+          }`}
+        >
+          {m === 'signin' ? 'Sign In' : 'Register'}
+        </button>
+      ))}
+      <span
+        aria-hidden="true"
+        className="absolute -bottom-px left-0 h-0.5 w-1/2 rounded-full bg-accent-fg transition-transform duration-300 ease-[cubic-bezier(0.3,0.7,0.2,1)]"
+        style={{ transform: mode === 'register' ? 'translateX(100%)' : 'translateX(0)' }}
+      />
+    </div>
   )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Login() {
-  const [mode, setMode] = useState<'signin' | 'register'>('signin')
+  const [mode, setMode] = useState<Mode>('signin')
   const [error, setError] = useState<string | null>(null)
   const { user, isLoading, setUser } = useAuth()
   const navigate = useNavigate()
@@ -177,7 +260,7 @@ export default function Login() {
   const rawRedirect = searchParams.get('redirect') ?? ''
   const redirectTo = isSafeRedirect(rawRedirect) ? rawRedirect : '/dashboard'
 
-  function switchMode(next: 'signin' | 'register') {
+  function switchMode(next: Mode) {
     // Lock current height before content changes so the transition has a start value
     const el = formContainerRef.current
     if (el) el.style.height = `${el.scrollHeight}px`
@@ -227,238 +310,162 @@ export default function Login() {
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{
-        background: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 40%, #0d1a2e 100%)',
-      }}
-    >
-      {/* Glow orbs */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          top: '-100px',
-          right: '-80px',
-          width: '400px',
-          height: '400px',
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 70%)',
-        }}
-      />
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          bottom: '-60px',
-          left: '-60px',
-          width: '300px',
-          height: '300px',
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(168,85,247,0.15) 0%, transparent 70%)',
-        }}
-      />
+    <div className="flex min-h-screen flex-wrap items-stretch bg-bg">
+      {/* Form side */}
+      <section className="flex min-w-0 flex-[1_1_440px] flex-col justify-between gap-12 px-6 py-7 sm:px-12">
+        <div className="flex animate-enter items-center gap-2.5">
+          <Mark size={26} />
+          <span className="text-[15px] font-semibold tracking-[-0.01em] text-tx">DataMesh</span>
+        </div>
 
-      {/* Glass card */}
-      <div
-        className="relative z-10 w-full mx-4 p-5 sm:px-9 sm:py-10"
-        style={{
-          maxWidth: '400px',
-          background: 'rgba(255,255,255,0.05)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '20px',
-        }}
+        <div className="w-full max-w-[360px] animate-enter self-center [animation-delay:0.12s]">
+          <AuthHeading mode={mode} />
+          <ModeTabs mode={mode} onSwitch={switchMode} />
+
+          {/* Dynamic area — height animates smoothly when switching modes */}
+          <div ref={formContainerRef} style={{ overflow: 'hidden', transition: 'height 0.3s ease' }}>
+            {error && (
+              <div
+                role="alert"
+                className="mb-4 rounded-lg border border-bad/30 bg-bad/10 px-3.5 py-3 text-[13px] text-bad"
+              >
+                {error}
+              </div>
+            )}
+
+            {mode === 'signin' && (
+              <form onSubmit={signInForm.handleSubmit(handleSignIn)} noValidate className="animate-swap">
+                <AuthField
+                  label="Email"
+                  htmlFor="signin-email"
+                  error={signInForm.formState.errors.email?.message}
+                >
+                  <AuthInput
+                    {...signInForm.register('email')}
+                    id="signin-email"
+                    type="email"
+                    placeholder="you@company.com"
+                    autoComplete="email"
+                    hasError={!!signInForm.formState.errors.email}
+                  />
+                </AuthField>
+                <AuthField
+                  label="Password"
+                  htmlFor="signin-password"
+                  error={signInForm.formState.errors.password?.message}
+                >
+                  <AuthInput
+                    {...signInForm.register('password')}
+                    id="signin-password"
+                    type="password"
+                    placeholder="At least 8 characters"
+                    autoComplete="current-password"
+                    hasError={!!signInForm.formState.errors.password}
+                  />
+                </AuthField>
+                <SubmitButton loading={signInForm.formState.isSubmitting}>Sign In</SubmitButton>
+              </form>
+            )}
+
+            {mode === 'register' && (
+              <form onSubmit={registerForm.handleSubmit(handleRegister)} noValidate className="animate-swap">
+                <AuthField
+                  label="Username"
+                  htmlFor="reg-username"
+                  error={registerForm.formState.errors.username?.message}
+                >
+                  <AuthInput
+                    {...registerForm.register('username')}
+                    id="reg-username"
+                    type="text"
+                    placeholder="johndoe"
+                    autoComplete="username"
+                    hasError={!!registerForm.formState.errors.username}
+                  />
+                </AuthField>
+                <AuthField
+                  label="Email"
+                  htmlFor="reg-email"
+                  error={registerForm.formState.errors.email?.message}
+                >
+                  <AuthInput
+                    {...registerForm.register('email')}
+                    id="reg-email"
+                    type="email"
+                    placeholder="you@company.com"
+                    autoComplete="email"
+                    hasError={!!registerForm.formState.errors.email}
+                  />
+                </AuthField>
+                <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+                  <AuthField
+                    label="Password"
+                    htmlFor="reg-password"
+                    error={registerForm.formState.errors.password?.message}
+                  >
+                    <AuthInput
+                      {...registerForm.register('password')}
+                      id="reg-password"
+                      type="password"
+                      placeholder="8+ characters"
+                      autoComplete="new-password"
+                      hasError={!!registerForm.formState.errors.password}
+                    />
+                  </AuthField>
+                  <AuthField
+                    label="Confirm Password"
+                    htmlFor="reg-confirm"
+                    error={registerForm.formState.errors.confirmPassword?.message}
+                  >
+                    <AuthInput
+                      {...registerForm.register('confirmPassword')}
+                      id="reg-confirm"
+                      type="password"
+                      placeholder="Repeat it"
+                      autoComplete="new-password"
+                      hasError={!!registerForm.formState.errors.confirmPassword}
+                    />
+                  </AuthField>
+                </div>
+                <SubmitButton loading={registerForm.formState.isSubmitting}>Create Account</SubmitButton>
+              </form>
+            )}
+          </div>
+        </div>
+
+        <footer className="flex animate-enter items-center justify-between gap-4 text-xs text-tx3 [animation-delay:0.2s]">
+          <span>Access is managed by your workspace admin.</span>
+        </footer>
+      </section>
+
+      {/* Illustration side */}
+      <section
+        aria-hidden="true"
+        className="mesh-dots hidden min-w-0 flex-[1_1_560px] flex-col justify-center gap-8 border-l border-line bg-side px-14 py-12 lg:flex"
       >
-        {/* Logo row */}
-        <div className="flex items-center gap-3 mb-8">
-          <div
-            className="shrink-0"
-            style={{
-              width: '32px',
-              height: '32px',
-              background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-              borderRadius: '8px',
-            }}
-          />
-          <span className="text-white font-bold text-lg tracking-tight">
-            DataMesh
-          </span>
+        <MeshIllustration />
+        <div className="w-full max-w-[620px] animate-enter self-center [animation-delay:1.25s]">
+          <p className="max-w-[340px] text-[17px] font-semibold leading-snug tracking-[-0.01em] text-tx">
+            Domains publish data products. Contracts make them dependable.
+          </p>
+          <div className="mt-3.5 flex flex-wrap gap-4 text-xs text-tx3">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-tx3" />
+              Domain
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full border-[1.5px] border-tx2" />
+              Data product
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="relative h-px w-5 bg-line2">
+                <span className="absolute left-1/2 top-1/2 h-[3px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-fg" />
+              </span>
+              Contracted flow
+            </span>
+          </div>
         </div>
-
-        {/* Pill toggle — sliding indicator moves left/right on click */}
-        <div
-          className="flex mb-7"
-          style={{
-            position: 'relative',
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '999px',
-            padding: '3px',
-          }}
-        >
-          {/* Sliding active pill */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              top: '3px',
-              bottom: '3px',
-              left: '3px',
-              width: 'calc(50% - 3px)',
-              background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-              borderRadius: '999px',
-              transform: mode === 'signin' ? 'translateX(0)' : 'translateX(100%)',
-              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          />
-          {(['signin', 'register'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => switchMode(m)}
-              className="flex-1 py-2 text-sm font-semibold"
-              style={{
-                position: 'relative',
-                zIndex: 1,
-                borderRadius: '999px',
-                border: 'none',
-                cursor: 'pointer',
-                background: 'transparent',
-                color: mode === m ? '#fff' : 'rgba(255,255,255,0.4)',
-                transition: 'color 0.25s ease',
-              }}
-            >
-              {m === 'signin' ? 'Sign In' : 'Register'}
-            </button>
-          ))}
-        </div>
-
-        {/* Dynamic area — height animates smoothly when switching modes */}
-        <div
-          ref={formContainerRef}
-          style={{ overflow: 'hidden', transition: 'height 0.3s ease' }}
-        >
-          {/* Error banner */}
-          {error && (
-            <div
-              className="mb-5 text-sm"
-              style={{
-                background: 'rgba(239,68,68,0.15)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: '10px',
-                padding: '12px 14px',
-                color: '#fca5a5',
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {/* Sign In form */}
-          {mode === 'signin' && (
-            <form onSubmit={signInForm.handleSubmit(handleSignIn)} noValidate>
-              <GlassField
-                label="Email"
-                htmlFor="signin-email"
-                error={signInForm.formState.errors.email?.message}
-              >
-                <GlassInput
-                  {...signInForm.register('email')}
-                  id="signin-email"
-                  type="email"
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                  hasError={!!signInForm.formState.errors.email}
-                />
-              </GlassField>
-              <GlassField
-                label="Password"
-                htmlFor="signin-password"
-                error={signInForm.formState.errors.password?.message}
-              >
-                <GlassInput
-                  {...signInForm.register('password')}
-                  id="signin-password"
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  hasError={!!signInForm.formState.errors.password}
-                />
-              </GlassField>
-              <GlassButton loading={signInForm.formState.isSubmitting}>
-                Sign In
-              </GlassButton>
-            </form>
-          )}
-
-          {/* Register form */}
-          {mode === 'register' && (
-            <form onSubmit={registerForm.handleSubmit(handleRegister)} noValidate>
-              <GlassField
-                label="Username"
-                htmlFor="reg-username"
-                error={registerForm.formState.errors.username?.message}
-              >
-                <GlassInput
-                  {...registerForm.register('username')}
-                  id="reg-username"
-                  type="text"
-                  placeholder="johndoe"
-                  autoComplete="username"
-                  hasError={!!registerForm.formState.errors.username}
-                />
-              </GlassField>
-              <GlassField
-                label="Email"
-                htmlFor="reg-email"
-                error={registerForm.formState.errors.email?.message}
-              >
-                <GlassInput
-                  {...registerForm.register('email')}
-                  id="reg-email"
-                  type="email"
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                  hasError={!!registerForm.formState.errors.email}
-                />
-              </GlassField>
-              <GlassField
-                label="Password"
-                htmlFor="reg-password"
-                error={registerForm.formState.errors.password?.message}
-              >
-                <GlassInput
-                  {...registerForm.register('password')}
-                  id="reg-password"
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  hasError={!!registerForm.formState.errors.password}
-                />
-              </GlassField>
-              <GlassField
-                label="Confirm Password"
-                htmlFor="reg-confirm"
-                error={registerForm.formState.errors.confirmPassword?.message}
-              >
-                <GlassInput
-                  {...registerForm.register('confirmPassword')}
-                  id="reg-confirm"
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  hasError={!!registerForm.formState.errors.confirmPassword}
-                />
-              </GlassField>
-              <GlassButton loading={registerForm.formState.isSubmitting}>
-                Create Account
-              </GlassButton>
-            </form>
-          )}
-        </div>
-      </div>
+      </section>
     </div>
   )
 }

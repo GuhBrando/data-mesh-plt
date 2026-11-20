@@ -251,16 +251,16 @@ Cada tier define progressivamente menos requisitos:
 
 A classificação não é decidida por preferência técnica, mas pelo impacto de erros. A plataforma guia o usuário com perguntas de negócio durante a criação:
 
-1. **Um erro neste dado pode resultar em consequência regulatória, multa ou processo legal?**  
+1. **Um erro neste dado pode resultar em consequência regulatória, multa ou processo legal?**\
    Se sim → **Tier 1**
 
-2. **Um erro neste dado pode levar a uma decisão de negócio errada com impacto financeiro mensurável?**  
+2. **Um erro neste dado pode levar a uma decisão de negócio errada com impacto financeiro mensurável?**\
    Se sim → **Tier 2**
 
-3. **Um erro neste dado é detectável e corrigível com processo informal, sem dano material?**  
+3. **Um erro neste dado é detectável e corrigível com processo informal, sem dano material?**\
    Se sim → **Tier 3**
 
-4. **Este dado existe para exploração ou validação de hipótese, sem dependentes em produção?**  
+4. **Este dado existe para exploração ou validação de hipótese, sem dependentes em produção?**\
    Se sim → **Tier 4**
 
 Um produto sobe de tier conforme ganha consumidores críticos, e essa transição deve ser explícita — não silenciosa. A plataforma registra mudanças de classificação e exige re-aprovação quando relevante.
@@ -271,33 +271,33 @@ Um produto sobe de tier conforme ganha consumidores críticos, e essa transiçã
 
 O fluxo abaixo descreve como um usuário de uma área (por exemplo, Marketing) cria um novo Data Product na plataforma. Note que o usuário **não interage diretamente com Git** na maior parte do fluxo — a plataforma abstrai a complexidade.
 
-**1. Iniciação**  
+**1. Iniciação**\
 O usuário acessa a plataforma e seleciona "Criar novo Data Product". Preenche metadados básicos (nome, propósito, contexto de negócio) e identifica o domínio (Marketing).
 
-**2. Classificação por tier**  
+**2. Classificação por tier**\
 A plataforma faz perguntas de negócio que classificam o tier automaticamente. O usuário pode questionar a classificação, mas a sugestão é baseada em impacto, não preferência.
 
-**3. Definição do contrato (output ports)**  
+**3. Definição do contrato (output ports)**\
 A UI guia o usuário pela definição de schema, regras de qualidade, SLA e demais campos exigidos pelo tier. Para cada output port (forma de exposição — tabela Delta, API, evento), um contrato específico é gerado. O YAML é renderizado em tempo real.
 
-**4. Declaração de input ports**  
+**4. Declaração de input ports**\
 O usuário busca, no catálogo da plataforma, contratos de outros produtos que serão consumidos. A plataforma registra essas dependências formalmente — o que automaticamente inclui o novo produto na lista de consumidores notificados de futuras mudanças nos produtos upstream.
 
-**5. Submissão**  
+**5. Submissão**\
 Ao submeter, a plataforma realiza duas operações coordenadas:
 - Cria um **PR no repositório central de contratos** (`data-contracts/domains/marketing/`) com os YAMLs gerados
 - Cria (ou prepara) **estrutura no repositório de produtos do domínio** (`marketing-data-products/`) para receber o código
 
-**6. Aprovação**  
+**6. Aprovação**\
 O PR no repositório central segue o fluxo de aprovação correspondente ao tier. Para Tier 1, owners do domínio + governance + compliance precisam aprovar. Para Tier 3, apenas o owner do produto. A plataforma gerencia notificações e SLA de aprovação.
 
-**7. Implementação**  
+**7. Implementação**\
 Após aprovação do contrato, um engenheiro do domínio implementa o pipeline no repositório de produtos do domínio. O código declara qual contrato e qual versão cumpre. A plataforma valida em CI que o pipeline efetivamente cumpre o contrato declarado.
 
-**8. Publicação e descoberta**  
+**8. Publicação e descoberta**\
 Quando o pipeline está funcional e validações passam, o produto é publicado. A partir desse momento, **outros times veem o produto no catálogo** da plataforma — podem ler o contrato (estrutura, semântica, SLA), podem se registrar como consumidores, mas **não veem o código**.
 
-**9. Operação contínua**  
+**9. Operação contínua**\
 Em produção, dados são validados continuamente contra as regras de qualidade do contrato. Violações geram alertas conforme severidade e tier. Mudanças no contrato seguem a política de evolução do tier correspondente.
 
 ---
@@ -331,16 +331,24 @@ Os contratos e produtos vivem em **repositórios separados**, gerenciados pela p
 
 Toda mudança em um contrato cai em uma de três categorias:
 
-**Mudanças não-breaking (aditivas)**  
+**Mudanças não-breaking (aditivas)**\
 Adicionar coluna com default, adicionar valor a enum opcional, relaxar constraint, aumentar tamanho de campo. Incrementam a versão **MINOR**.
 
-**Mudanças breaking (incompatíveis)**  
+**Mudanças breaking (incompatíveis)**\
 Renomear ou remover coluna, mudar tipo, tornar campo opcional em obrigatório, mudar significado semântico. Incrementam a versão **MAJOR**.
 
-**Mudanças semânticas silenciosas**  
+**Mudanças semânticas silenciosas**\
 Schema igual, significado diferente. Tecnicamente o contrato não é violado, mas o comportamento esperado mudou. **Proibido** em qualquer tier — toda mudança semântica deve ser refletida no contrato.
 
 A política específica de cada tier (janelas de notificação, deprecation, aprovações) é aplicada automaticamente pela plataforma com base no atributo `tier` do produto.
+
+**Limitações conhecidas**\
+A plataforma aplica esta política com quatro limitações, aceitas e documentadas em vez de corrigidas:
+
+- As regras valem apenas para contratos `active` ou `deprecated`. Mover um contrato `active` para `draft`, editá-lo e devolvê-lo a `active` contorna a política.
+- O histórico grava um snapshot só quando a versão muda. Edições feitas depois, na mesma versão, podem divergir do snapshot dessa versão.
+- A lista de mudanças MAJOR é fechada: remover ou renomear uma propriedade, mudar seu `logicalType` ou torná-la obrigatória. A plataforma não detecta mudança de significado semântico, e qualquer outra alteração conta como MINOR ou PATCH.
+- `GET /data-contracts` devolve os contratos completos também para consumidores.
 
 ---
 
@@ -348,22 +356,22 @@ A política específica de cada tier (janelas de notificação, deprecation, apr
 
 Algumas escolhas merecem registro explícito porque envolvem trade-offs reais:
 
-**Por que armazenamento híbrido (Git central de contratos + Git por domínio para código + Postgres como cache)?**  
+**Por que armazenamento híbrido (Git central de contratos + Git por domínio para código + Postgres como cache)?**\
 Cada elemento serve um propósito distinto. Git central permite descoberta e versionamento auditável dos contratos enquanto interfaces públicas. Git por domínio garante isolamento e autonomia do código. Postgres viabiliza queries ricas e UI performática que Git sozinho não oferece. Tentar usar uma única ferramenta para os três papéis sacrifica algo importante.
 
-**Por que tiers como atributos e não como pastas?**  
+**Por que tiers como atributos e não como pastas?**\
 Tiers governam comportamento (regras, aprovações, SLAs), não localização física. Implementar como atributo permite mudança de classificação sem mover arquivos, queries por tier no Postgres, e aplicação consistente das regras independentemente da estrutura de pastas.
 
-**Por que ODCS e não um formato customizado?**  
+**Por que ODCS e não um formato customizado?**\
 Padrões abertos têm ecossistema (ferramentas, validadores, exemplos) que economiza meses de trabalho. Customização incremental é viável; reinvenção total raramente compensa.
 
-**Por que YAML e não JSON Schema puro?**  
+**Por que YAML e não JSON Schema puro?**\
 YAML é mais legível para humanos e suporta comentários. Como contratos são lidos por humanos durante revisões, YAML ganha. Validação interna ainda usa JSON Schema sob o capô.
 
-**Por que contratos são públicos mas código é privado?**  
+**Por que contratos são públicos mas código é privado?**\
 Contratos são interfaces — sua proposta de valor é serem descobríveis. Esconder contratos derrota o propósito do Data Mesh. Código é implementação — sua proposta de valor é autonomia do time dono. Misturar os dois é o erro mais comum em arquiteturas de dados distribuídos.
 
-**Por que a plataforma como camada de orquestração e não como source of truth?**  
+**Por que a plataforma como camada de orquestração e não como source of truth?**\
 A plataforma facilita, mas não deve ser indispensável. Engenheiros avançados precisam poder operar via Git diretamente quando faz sentido (CI/CD de pipelines, automações). Tornar a plataforma o único caminho cria atrito desnecessário e leva a workarounds que ela não consegue governar.
 
 ---
@@ -372,7 +380,7 @@ A plataforma facilita, mas não deve ser indispensável. Engenheiros avançados 
 
 Conceitos, padrões e implementações que informaram este projeto:
 
-- **Open Data Contract Standard (ODCS)** — [datacontract.com](https://datacontract.com/)
+- **Open Data Contract Standard (ODCS)** — [bitol-io.github.io/open-data-contract-standard](https://bitol-io.github.io/open-data-contract-standard/)
 - **Data Mesh: Delivering Data-Driven Value at Scale** — Zhamak Dehghani (O'Reilly, 2022)
 - **Data Contracts: Developing Production-Grade Data Pipelines** — Chad Sanderson, Mark Freeman, B.E. Schmidt (O'Reilly, 2025)
 - **Driving Data Quality with Data Contracts** — Andrew Jones (Packt)

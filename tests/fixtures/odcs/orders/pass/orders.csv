@@ -1,0 +1,11 @@
+order_id,customer_id,status,amount
+1,c1,open,10.5
+2,c2,paid,20.0
+3,c3,open,30.0
+4,c4,paid,40.0
+5,c5,shipped,50.0
+6,c6,paid,60.0
+7,c7,open,70.0
+8,c8,paid,80.0
+9,c9,shipped,90.0
+10,c10,open,100.0

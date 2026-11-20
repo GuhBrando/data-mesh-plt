@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { X, UserPlus, Pencil } from 'lucide-react'
 import { useRemoveDomainMember } from '../../hooks/useDomainMembers'
 import { useUpdateDomain } from '../../hooks/useDomains'
 import type { DomainWithMembers, DomainAccess } from '../../types'
@@ -8,6 +7,8 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Input, Textarea } from '../../components/ui/Input'
 import AddMemberModal from './AddMemberModal'
+import { Avatar } from '../../components/ui/Glyphs'
+import { CloseIcon, EditIcon, UserPlusIcon } from '../../components/icons'
 
 const MEMBER_ROLE_VARIANT = {
   maintainer: 'yellow',
@@ -66,7 +67,7 @@ function EditDomainModal({
           required
         />
         {update.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {update.error.message}
           </p>
         )}
@@ -100,7 +101,7 @@ function PanelContent({
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="min-w-0">
-          <h2 className="font-bold text-base text-slate-900 dark:text-white truncate">
+          <h2 className="font-bold text-base text-tx truncate">
             {domain.name}
           </h2>
           <Badge
@@ -131,30 +132,26 @@ function PanelContent({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
+          className="p-1 rounded-lg text-tx3 hover:text-tx hover:bg-hover transition-colors shrink-0"
           aria-label="Close panel"
         >
-          <X size={15} />
+          <CloseIcon size={15} />
         </button>
       </div>
 
       {/* Description */}
-      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+      <p className="text-xs text-tx3 leading-relaxed">
         {domain.description}
       </p>
 
       {/* Owner */}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-tx3 mb-2">
           Owner
         </p>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shrink-0">
-            <span className="text-white text-[9px] font-bold">
-              {domain.owner_username.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <span className="text-xs text-slate-700 dark:text-slate-300">
+          <Avatar name={domain.owner_username} size={20} />
+          <span className="text-xs text-tx2">
             {domain.owner_username}
           </span>
         </div>
@@ -164,33 +161,29 @@ function PanelContent({
       {canSeeMembers && (
         <div className="flex-1 min-h-0">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-tx3">
               Members ({domain.members.length})
             </p>
             {isOwner && (
               <button
                 type="button"
                 onClick={() => setAddOpen(true)}
-                className="flex items-center gap-1 text-[10px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                className="flex items-center gap-1 text-[10px] font-medium text-accent-fg hover:text-tx dark:text-accent-fg"
               >
-                <UserPlus size={11} />
+                <UserPlusIcon size={11} />
                 Add
               </button>
             )}
           </div>
           <div className="space-y-2 overflow-y-auto max-h-48">
             {domain.members.length === 0 ? (
-              <p className="text-xs text-slate-400">No members yet.</p>
+              <p className="text-xs text-tx3">No members yet.</p>
             ) : (
               domain.members.map((m) => (
                 <div key={m.user_id} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-5 h-5 rounded-full bg-slate-400 flex items-center justify-center shrink-0">
-                      <span className="text-white text-[9px] font-bold">
-                        {m.username.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                    <Avatar name={m.username} size={20} />
+                    <span className="text-xs text-tx2 truncate">
                       {m.username}
                     </span>
                   </div>
@@ -202,10 +195,10 @@ function PanelContent({
                       <button
                         type="button"
                         onClick={() => removeMember.mutate(m.user_id)}
-                        className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors text-xs leading-none"
+                        className="text-tx3 hover:text-bad transition-colors text-xs leading-none"
                         aria-label={`Remove ${m.username}`}
                       >
-                        <X size={12} />
+                        <CloseIcon size={12} />
                       </button>
                     )}
                   </div>
@@ -218,14 +211,14 @@ function PanelContent({
 
       {/* Owner: edit button */}
       {isOwner && (
-        <div className="border-t border-slate-100 dark:border-slate-700 pt-3 mt-auto">
+        <div className="border-t border-line pt-3 mt-auto">
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setEditOpen(true)}
             className="w-full flex items-center justify-center gap-1.5"
           >
-            <Pencil size={12} />
+            <EditIcon size={12} />
             Edit Domain Info
           </Button>
         </div>
@@ -241,7 +234,7 @@ export default function DomainPanel(props: DomainPanelProps) {
   return (
     <>
       {/* Desktop: side panel */}
-      <div className="hidden md:flex flex-col w-72 shrink-0 border-l border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 overflow-y-auto">
+      <div className="hidden md:flex flex-col w-72 shrink-0 border-l border-line bg-panel p-4 overflow-y-auto">
         <PanelContent {...props} />
       </div>
 
@@ -252,8 +245,8 @@ export default function DomainPanel(props: DomainPanelProps) {
           onClick={props.onClose}
           aria-hidden="true"
         />
-        <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 rounded-t-2xl max-h-[75vh] flex flex-col p-4 pb-8">
-          <div className="w-8 h-1 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto mb-4 shrink-0" />
+        <div className="absolute bottom-0 left-0 right-0 bg-panel rounded-t-2xl max-h-[75vh] flex flex-col p-4 pb-8">
+          <div className="w-8 h-1 bg-line2 rounded-full mx-auto mb-4 shrink-0" />
           <div className="flex-1 overflow-y-auto">
             <PanelContent {...props} />
           </div>

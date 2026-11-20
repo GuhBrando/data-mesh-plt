@@ -1,19 +1,4 @@
 import { useState } from 'react'
-import {
-  Shield,
-  ShieldAlert,
-  Building2,
-  User as UserIcon,
-  Lock,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  XCircle,
-  Trash2,
-  Pencil,
-  Plus,
-} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useUserDomains, useChangePassword } from '../hooks/useProfile'
 import Button from '../components/ui/Button'
@@ -23,6 +8,8 @@ import Table, { Column } from '../components/ui/Table'
 import { useAllDomains, useCreateDomain, useUpdateDomain, useDeleteDomain } from '../hooks/useDomains'
 import { useUsers } from '../hooks/useUsers'
 import type { DomainWithMembers, DomainInput, User } from '../types'
+import { Avatar } from '../components/ui/Glyphs'
+import { CheckCircleIcon, ChevronRightIcon, DomainIcon, EditIcon, EyeIcon, EyeOffIcon, LockIcon, PlusIcon, ShieldAlertIcon, ShieldIcon, TrashIcon, UserIcon, XCircleIcon } from '../components/icons'
 
 const ROLE_META: Record<
   string,
@@ -30,7 +17,7 @@ const ROLE_META: Record<
 > = {
   PLATFORM_ADMIN: {
     label: 'Platform Admin',
-    color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    color: 'bg-bad/15 text-bad',
     description: 'Full control over all platform resources.',
     permissions: [
       'Create and delete users',
@@ -42,7 +29,7 @@ const ROLE_META: Record<
   },
   DATA_OWNER: {
     label: 'Data Owner',
-    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+    color: 'bg-accent/15 text-accent-fg dark:bg-accent/10 dark:text-accent-fg',
     description: 'Governs your domain and its data contracts.',
     permissions: [
       'Add and remove members within your domain',
@@ -52,7 +39,7 @@ const ROLE_META: Record<
   },
   DATA_STEWARD: {
     label: 'Data Steward',
-    color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    color: 'bg-accent/15 text-accent-fg dark:bg-accent/10 dark:text-accent-fg',
     description: 'Creates and manages data contracts in your domain.',
     permissions: [
       'Create and edit data contracts within your domain',
@@ -62,7 +49,7 @@ const ROLE_META: Record<
   },
   DATA_CONSUMER: {
     label: 'Data Consumer',
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: 'Read-only access to contracts where you are a stakeholder.',
     permissions: [
       'View data contracts where assigned as stakeholder',
@@ -74,13 +61,13 @@ const ROLE_META: Record<
 type Section = 'role' | 'password' | 'admin-domains' | 'admin-users'
 
 const ACCOUNT_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: 'role', label: 'My Role', icon: <Shield size={16} /> },
-  { id: 'password', label: 'Change Password', icon: <Lock size={16} /> },
+  { id: 'role', label: 'My Role', icon: <ShieldIcon size={16} /> },
+  { id: 'password', label: 'Change Password', icon: <LockIcon size={16} /> },
 ]
 
 const ADMIN_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: 'admin-domains', label: 'Domains', icon: <Building2 size={16} /> },
-  { id: 'admin-users', label: 'Users', icon: <ShieldAlert size={16} /> },
+  { id: 'admin-domains', label: 'Domains', icon: <DomainIcon size={16} /> },
+  { id: 'admin-users', label: 'Users', icon: <ShieldAlertIcon size={16} /> },
 ]
 
 function validatePassword(v: string): string | null {
@@ -101,7 +88,7 @@ function RoleSection({ userId }: { userId: string | undefined }) {
   if (!user) return null
   const role = ROLE_META[user.role] ?? {
     label: user.role,
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: '',
     permissions: [],
   }
@@ -110,16 +97,16 @@ function RoleSection({ userId }: { userId: string | undefined }) {
     <div className="space-y-6">
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Shield size={16} className="text-slate-500 dark:text-slate-400" />
-          <h2 className="font-semibold text-slate-900 dark:text-white">Permissions</h2>
+          <ShieldIcon size={16} className="text-tx3" />
+          <h2 className="font-semibold text-tx">Permissions</h2>
         </div>
         {role.description && (
-          <p className="text-sm text-slate-600 dark:text-slate-400">{role.description}</p>
+          <p className="text-sm text-tx2">{role.description}</p>
         )}
         <ul className="space-y-2">
           {role.permissions.map((p) => (
-            <li key={p} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <ChevronRight size={14} className="mt-0.5 shrink-0 text-blue-500 dark:text-blue-400" />
+            <li key={p} className="flex items-start gap-2 text-sm text-tx2">
+              <ChevronRightIcon size={14} className="mt-0.5 shrink-0 text-accent-fg dark:text-accent-fg" />
               {p}
             </li>
           ))}
@@ -128,24 +115,24 @@ function RoleSection({ userId }: { userId: string | undefined }) {
 
       <div className="card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Building2 size={16} className="text-slate-500 dark:text-slate-400" />
-          <h2 className="font-semibold text-slate-900 dark:text-white">Domain Memberships</h2>
+          <DomainIcon size={16} className="text-tx3" />
+          <h2 className="font-semibold text-tx">Domain Memberships</h2>
         </div>
         {isLoading ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+          <p className="text-sm text-tx3">Loading…</p>
         ) : domains && domains.length > 0 ? (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+          <ul className="divide-y divide-line">
             {domains.map((d) => (
               <li key={d.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                <div className="w-7 h-7 rounded-md bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                  <UserIcon size={13} className="text-blue-600 dark:text-blue-400" />
+                <div className="w-7 h-7 rounded-md bg-accent/15 dark:bg-accent/10 flex items-center justify-center shrink-0">
+                  <UserIcon size={13} className="text-accent-fg dark:text-accent-fg" />
                 </div>
-                <span className="text-sm text-slate-800 dark:text-slate-200 font-medium">{d.name}</span>
+                <span className="text-sm text-tx font-medium">{d.name}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-tx3">
             You are not a member of any domain yet.
           </p>
         )}
@@ -181,10 +168,10 @@ function ShowablePasswordInput({
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
-        className="absolute right-3 top-8 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+        className="absolute right-3 top-8 text-tx3 hover:text-tx"
         tabIndex={-1}
       >
-        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+        {show ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
       </button>
     </div>
   )
@@ -219,20 +206,20 @@ function PasswordSection({ userId }: { userId: string }) {
   return (
     <div className="card p-6 space-y-5">
       <div className="flex items-center gap-2">
-        <Lock size={16} className="text-slate-500 dark:text-slate-400" />
-        <h2 className="font-semibold text-slate-900 dark:text-white">Change Password</h2>
+        <LockIcon size={16} className="text-tx3" />
+        <h2 className="font-semibold text-tx">Change Password</h2>
       </div>
 
       {success && (
-        <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
-          <CheckCircle2 size={15} />
+        <div className="flex items-center gap-2 text-sm text-ok bg-ok/10 rounded-lg px-3 py-2">
+          <CheckCircleIcon size={15} />
           Password updated successfully.
         </div>
       )}
 
       {mutation.error && (
-        <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
-          <XCircle size={15} />
+        <div className="flex items-center gap-2 text-sm text-bad bg-bad/10 rounded-lg px-3 py-2">
+          <XCircleIcon size={15} />
           {(mutation.error as Error).message}
         </div>
       )}
@@ -262,7 +249,7 @@ function PasswordSection({ userId }: { userId: string }) {
           autoComplete="new-password"
         />
 
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-tx3">
           Min 8 chars · uppercase · lowercase · number · special char (!@#$%^&*)
         </p>
 
@@ -304,13 +291,13 @@ function OwnerSearch({
         placeholder="Search by username…"
       />
       {showList && (
-        <div className="mt-1 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+        <div className="mt-1 border border-line rounded-lg overflow-hidden max-h-32 overflow-y-auto">
           {filtered.map((u) => (
             <button
               key={u.id}
               type="button"
               onClick={() => onSelect(u.id, u.username)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-hover text-tx2"
             >
               {u.username}
             </button>
@@ -318,7 +305,7 @@ function OwnerSearch({
         </div>
       )}
       {showEmpty && (
-        <p className="text-xs text-slate-400 mt-1">No users found.</p>
+        <p className="text-xs text-tx3 mt-1">No users found.</p>
       )}
     </div>
   )
@@ -400,7 +387,7 @@ function DomainFormModal({
         />
 
         {mutation.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {mutation.error.message}
           </p>
         )}
@@ -452,12 +439,12 @@ function DeleteDomainModal({
   return (
     <Modal open={open} onClose={handleClose} title="Delete Domain" size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-slate-700 dark:text-slate-300">
+        <p className="text-sm text-tx2">
           Delete <strong>{domain?.name}</strong>? This will not delete associated data contracts.
           All members will lose domain access.
         </p>
         {deleteDomain.error && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-bad">
             {deleteDomain.error.message}
           </p>
         )}
@@ -490,28 +477,28 @@ function AdminDomainsSection() {
       key: 'name',
       header: 'Name',
       render: (d: DomainWithMembers) => (
-        <span className="font-medium text-slate-900 dark:text-white">{d.name}</span>
+        <span className="font-medium text-tx">{d.name}</span>
       ),
     },
     {
       key: 'owner',
       header: 'Owner',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.owner_username}</span>
+        <span className="text-tx3">{d.owner_username}</span>
       ),
     },
     {
       key: 'members',
       header: 'Members',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.members.length}</span>
+        <span className="text-tx3">{d.members.length}</span>
       ),
     },
     {
       key: 'contracts',
       header: 'Contracts',
       render: (d: DomainWithMembers) => (
-        <span className="text-slate-500 dark:text-slate-400">{d.contract_count}</span>
+        <span className="text-tx3">{d.contract_count}</span>
       ),
     },
     {
@@ -525,7 +512,7 @@ function AdminDomainsSection() {
             onClick={() => { setEditTarget(d); setFormOpen(true) }}
             className="flex items-center gap-1"
           >
-            <Pencil size={12} /> Edit
+            <EditIcon size={12} /> Edit
           </Button>
           <Button
             variant="danger"
@@ -533,7 +520,7 @@ function AdminDomainsSection() {
             onClick={() => setDeleteTarget(d)}
             className="flex items-center gap-1"
           >
-            <Trash2 size={12} /> Delete
+            <TrashIcon size={12} /> Delete
           </Button>
         </div>
       ),
@@ -544,8 +531,8 @@ function AdminDomainsSection() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-semibold text-slate-900 dark:text-white">Manage Domains</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <h2 className="font-semibold text-tx">Manage Domains</h2>
+          <p className="text-xs text-tx3 mt-0.5">
             Create, edit, and delete platform domains
           </p>
         </div>
@@ -554,12 +541,12 @@ function AdminDomainsSection() {
           onClick={() => { setEditTarget(null); setFormOpen(true) }}
           className="flex items-center gap-1.5"
         >
-          <Plus size={13} /> New Domain
+          <PlusIcon size={13} /> New Domain
         </Button>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+        <p className="text-sm text-tx3">Loading…</p>
       ) : (
         <Table
           columns={columns}
@@ -587,11 +574,11 @@ function AdminDomainsSection() {
 function AdminUsersSection() {
   return (
     <div className="card p-6 text-center">
-      <ShieldAlert size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+      <ShieldAlertIcon size={32} className="mx-auto text-tx3 mb-3" />
+      <p className="text-sm font-medium text-tx2">
         User management coming soon.
       </p>
-      <p className="text-xs text-slate-400 mt-1">
+      <p className="text-xs text-tx3 mt-1">
         Additional admin functions will be added here.
       </p>
     </div>
@@ -609,27 +596,23 @@ export default function Profile() {
 
   const role = ROLE_META[user.role] ?? {
     label: user.role,
-    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300',
+    color: 'bg-raised text-tx2',
     description: '',
     permissions: [],
   }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">My Profile</h1>
+      <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-tx">My Profile</h1>
 
       {/* Identity card — always visible */}
       <div className="card p-6 flex items-center gap-5">
-        <div className="w-14 h-14 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
-          <span className="text-white text-2xl font-bold">
-            {user.username.charAt(0).toUpperCase()}
-          </span>
-        </div>
+        <Avatar name={user.username} size={56} />
         <div className="min-w-0">
-          <p className="text-lg font-semibold text-slate-900 dark:text-white truncate">
+          <p className="text-lg font-semibold text-tx truncate">
             {user.username}
           </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
+          <p className="text-sm text-tx3 truncate">{user.email}</p>
           <span className={`mt-1.5 inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${role.color}`}>
             {role.label}
           </span>
@@ -649,8 +632,8 @@ export default function Profile() {
                 onClick={() => setSection(item.id)}
                 className={`shrink-0 flex flex-col items-center gap-1 py-2 px-2 rounded-md text-xs font-medium transition-colors ${
                   section === item.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                    : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                 }`}
               >
                 {item.icon}
@@ -664,29 +647,27 @@ export default function Profile() {
                   onClick={() => setSection(item.id)}
                   className={`shrink-0 flex flex-col items-center gap-1 py-2 px-2 rounded-md text-xs font-medium transition-colors ${
                     section === item.id
-                      ? 'bg-red-600 text-white'
-                      : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                      : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                   }`}
                 >
                   {item.icon}
-                  <span className="leading-none">🛡 {item.label}</span>
+                  <span className="leading-none">{item.label}</span>
                 </button>
               ))}
           </div>
 
           {/* Desktop: vertical list with sections */}
           <div className="hidden md:flex flex-col card p-2 gap-0.5">
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Account
-            </p>
+            <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-medium text-tx3">Account</p>
             {ACCOUNT_NAV.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setSection(item.id)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left ${
+                className={`flex h-[30px] w-full items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
                   section === item.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                    : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                 }`}
               >
                 {item.icon}
@@ -695,17 +676,15 @@ export default function Profile() {
             ))}
             {isAdmin && (
               <>
-                <p className="px-3 py-1 mt-2 text-[10px] font-semibold uppercase tracking-wider text-red-500">
-                  🛡 Admin
-                </p>
+                <p className="px-2.5 pb-1.5 pt-4 text-[11px] font-medium text-tx3">Admin</p>
                 {ADMIN_NAV.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => setSection(item.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors w-full text-left ${
+                    className={`flex h-[30px] w-full items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
                       section === item.id
-                        ? 'bg-red-600 text-white'
-                        : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        ? 'bg-raised text-tx shadow-[inset_0_0_0_1px_rgb(var(--line))] [&>svg]:text-accent-fg'
+                        : 'text-tx2 hover:bg-hover hover:text-tx [&>svg]:text-tx3'
                     }`}
                   >
                     {item.icon}

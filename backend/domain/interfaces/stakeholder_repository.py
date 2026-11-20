@@ -17,3 +17,6 @@ class IStakeholderRepository(ABC):
     async def is_stakeholder(
         self, contract_id: uuid.UUID, user_id: uuid.UUID
     ) -> bool: ...
+
+    @abstractmethod
+    async def contract_ids_of(self, user_id: uuid.UUID) -> set[uuid.UUID]: ...

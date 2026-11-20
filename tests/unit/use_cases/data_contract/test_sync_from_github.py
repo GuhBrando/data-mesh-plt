@@ -7,7 +7,9 @@ import yaml
 
 from backend.domain.entities.data_contract import DataContract
 from backend.domain.entities.domain import Domain
+from backend.use_cases.data_contract.odcs import to_odcs
 from backend.use_cases.data_contract.sync_from_github import SyncFromGitHubUseCase
+from tests.fixtures.odcs.sample_contract import sample_contract
 
 NOW = datetime.now(tz=timezone.utc)
 DOMAIN_ID = uuid.uuid4()
@@ -28,6 +30,7 @@ def _yaml(
     servicelevels=None,
 ) -> str:
     data: dict = {
+        "dataContractSpecification": "0.9.3",
         "id": str(contract_id or CONTRACT_ID),
         "info": {
             "title": title,
@@ -117,7 +120,13 @@ async def test_updates_existing_contract(use_case, github, repo):
 
 
 async def test_missing_domain_name_adds_error(use_case, github):
-    content = yaml.dump({"id": str(CONTRACT_ID), "info": {"title": "X", "owner": "o"}})
+    content = yaml.dump(
+        {
+            "dataContractSpecification": "0.9.3",
+            "id": str(CONTRACT_ID),
+            "info": {"title": "X", "owner": "o"},
+        }
+    )
     github.list_all_yaml_contents.return_value = [("x.yaml", content)]
     result = await use_case.execute()
     assert len(result["errors"]) == 1
@@ -182,3 +191,78 @@ async def test_multiple_yamls_counted_separately(use_case, github, repo):
     result = await use_case.execute()
     assert result["created"] == 2
     assert result["updated"] == 1
+
+
+def _odcs_yaml(**overrides) -> str:
+    return yaml.dump({**to_odcs(sample_contract()), **overrides})
+
+
+async def test_odcs_file_is_upserted_with_the_contract_values(use_case, github, repo):
+    contract = sample_contract()
+    github.list_all_yaml_contents.return_value = [("c/o.yaml", _odcs_yaml())]
+    result = await use_case.execute()
+    assert result == {"created": 1, "updated": 0, "errors": []}
+    assert repo.upsert.call_args.kwargs == {
+        "contract_id": contract.id,
+        "title": contract.title,
+        "version": contract.version,
+        "owner": contract.owner,
+        "domain_id": DOMAIN_ID,
+        "tier": contract.tier,
+        "status": contract.status,
+        "models": contract.models,
+        "servicelevels": contract.servicelevels,
+    }
+
+
+async def test_odcs_file_without_domain_keeps_the_error_message(use_case, github):
+    doc = to_odcs(sample_contract())
+    del doc["domain"]
+    github.list_all_yaml_contents.return_value = [("x.yaml", yaml.dump(doc))]
+    result = await use_case.execute()
+    assert result["errors"] == [
+        {"path": "x.yaml", "error": "YAML has no domain name; skipped"}
+    ]
+
+
+async def test_unsupported_odcs_key_is_reported_and_nothing_is_written(
+    use_case, github, repo
+):
+    github.list_all_yaml_contents.return_value = [
+        ("c/o.yaml", _odcs_yaml(servers=[{"server": "prod", "type": "postgres"}]))
+    ]
+    result = await use_case.execute()
+    assert "unsupported keys: servers" in result["errors"][0]["error"]
+    repo.upsert.assert_not_called()
+
+
+@pytest.mark.parametrize("content", ["", "- a\n- b\n", "just text"])
+async def test_non_mapping_file_is_reported_and_the_next_file_still_syncs(
+    use_case, github, repo, content
+):
+    github.list_all_yaml_contents.return_value = [
+        ("c/empty.yaml", content),
+        ("c/o.yaml", _odcs_yaml()),
+    ]
+    result = await use_case.execute()
+    assert result["created"] == 1
+    assert result["errors"] == [
+        {"path": "c/empty.yaml", "error": "contract file is not a YAML mapping"}
+    ]
+
+
+async def test_long_error_is_cut_to_a_bounded_size(use_case, github):
+    content = yaml.dump({"apiVersion": "v2" + "x" * 1000, "kind": "DataContract"})
+    github.list_all_yaml_contents.return_value = [("x.yaml", content)]
+    result = await use_case.execute()
+    error = result["errors"][0]["error"]
+    assert len(error) <= 501
+    assert error.endswith("…")
+
+
+async def test_yaml_alias_bomb_is_reported_and_skipped(use_case, github, repo):
+    bomb = "\n".join(['a: &a ["x", "x"]', "b: &b [*a, *a]", "c: [*b, *b]"])
+    github.list_all_yaml_contents.return_value = [("x.yaml", bomb)]
+    result = await use_case.execute()
+    assert "aliases" in result["errors"][0]["error"]
+    repo.upsert.assert_not_called()

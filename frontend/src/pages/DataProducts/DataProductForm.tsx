@@ -1,13 +1,12 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Input } from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
+import { useSelectableContracts } from '../../hooks/useSelectableContracts'
+import ContractPicker from './ContractPicker'
 import type { DataProduct } from '../../types'
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const schema = z.object({
   name: z
@@ -16,9 +15,7 @@ const schema = z.object({
   description: z
     .string()
     .min(10, 'Description must be at least 10 characters'),
-  data_contracts_id: z
-    .string()
-    .regex(UUID_REGEX, 'Must be a valid UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)'),
+  data_contracts_id: z.string().min(1, 'Select a data contract'),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -36,8 +33,13 @@ export default function DataProductForm({
   onCancel,
   isSubmitting,
 }: DataProductFormProps) {
+  const { contracts, isLoading, error: loadError } = useSelectableContracts(
+    defaultValues?.data_contracts_id,
+  )
+
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -78,15 +80,20 @@ export default function DataProductForm({
         {...register('description')}
       />
 
-      <Input
-        label="Data Contract ID"
-        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        error={errors.data_contracts_id?.message}
-        {...register('data_contracts_id')}
+      <Controller
+        name="data_contracts_id"
+        control={control}
+        render={({ field }) => (
+          <ContractPicker
+            contracts={contracts}
+            value={field.value}
+            onChange={field.onChange}
+            loading={isLoading}
+            loadError={loadError?.message}
+            error={errors.data_contracts_id?.message}
+          />
+        )}
       />
-      <p className="text-xs text-gray-400 -mt-3">
-        The UUID of the associated data contract.
-      </p>
 
       <div className="flex justify-end gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>

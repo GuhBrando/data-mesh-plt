@@ -86,6 +86,19 @@ describe('Modal', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('renders on <body>, outside a transformed ancestor that would trap the fixed overlay', () => {
+    const { container } = render(
+      <div style={{ transform: 'translateY(0)' }}>
+        <Modal open onClose={vi.fn()} title="T">
+          body
+        </Modal>
+      </div>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(container).not.toContainElement(dialog)
+    expect(dialog.parentElement).toBe(document.body)
+  })
+
   it('applies the large size class', () => {
     render(
       <Modal open onClose={vi.fn()} title="T" size="lg">

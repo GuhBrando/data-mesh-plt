@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { getDomainAccess } from './domains'
+import { getDomainAccess, selectableContracts } from './domains'
+import { makeContract, makeDomain } from '../test/fixtures'
 import type { DomainWithMembers } from '../types'
 
 const domain: DomainWithMembers = {
@@ -55,5 +56,53 @@ describe('getDomainAccess', () => {
 
   it('returns "owner" without userRole argument (backward-compatible)', () => {
     expect(getDomainAccess(domain, 'user-alice')).toBe('owner')
+  })
+})
+
+describe('selectableContracts', () => {
+  const sales = makeDomain({ id: 'd-sales', name: 'Sales', owner_id: 'u-owner', members: [{ user_id: 'u-member', username: 'm', role: 'member' }] })
+  const risk = makeDomain({ id: 'd-risk', name: 'Risk', owner_id: 'u-other', members: [] })
+  const contracts = [
+    makeContract({ id: 'c-retired', title: 'a_retired', domain_id: 'd-sales', status: 'retired' }),
+    makeContract({ id: 'c-draft', title: 'b_draft', domain_id: 'd-sales', status: 'draft' }),
+    makeContract({ id: 'c-active', title: 'c_active', domain_id: 'd-sales', status: 'active' }),
+    makeContract({ id: 'c-risk', title: 'risk', domain_id: 'd-risk', status: 'active' }),
+  ]
+  const ids = (cs: { id: string }[]) => cs.map((c) => c.id)
+
+  it('returns nothing without a signed-in user', () => {
+    expect(selectableContracts(contracts, [sales, risk], null)).toEqual([])
+  })
+
+  it('keeps only contracts of domains the user owns or belongs to, active first', () => {
+    const owner = { id: 'u-owner', role: 'DATA_OWNER' }
+    const member = { id: 'u-member', role: 'DATA_STEWARD' }
+    expect(ids(selectableContracts(contracts, [sales, risk], owner))).toEqual(['c-active', 'c-draft', 'c-retired'])
+    expect(ids(selectableContracts(contracts, [sales, risk], member))).toEqual(['c-active', 'c-draft', 'c-retired'])
+  })
+
+  it('returns nothing to a user outside every domain', () => {
+    expect(selectableContracts(contracts, [sales, risk], { id: 'u-nobody', role: 'DATA_CONSUMER' })).toEqual([])
+  })
+
+  it('gives a platform admin every contract, even before domains load', () => {
+    const admin = { id: 'u-admin', role: 'PLATFORM_ADMIN' }
+    expect(ids(selectableContracts(contracts, [], admin))).toEqual(['c-active', 'c-risk', 'c-draft', 'c-retired'])
+  })
+
+  it('keeps the current contract, at the top, even outside the user domains', () => {
+    const owner = { id: 'u-owner', role: 'DATA_OWNER' }
+    expect(ids(selectableContracts(contracts, [sales, risk], owner, 'c-risk'))).toEqual([
+      'c-risk',
+      'c-active',
+      'c-draft',
+      'c-retired',
+    ])
+  })
+
+  it('does not mutate its input', () => {
+    const before = ids(contracts)
+    selectableContracts(contracts, [sales, risk], { id: 'u-admin', role: 'PLATFORM_ADMIN' })
+    expect(ids(contracts)).toEqual(before)
   })
 })

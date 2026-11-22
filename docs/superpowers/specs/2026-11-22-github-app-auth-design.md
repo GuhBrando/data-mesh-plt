@@ -100,7 +100,10 @@ GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` n
 - `azurerm_key_vault.main` (`dmplt-kv`): RBAC authorization, purge protection, 7-day soft-delete retention.
 - `azurerm_role_assignment.backend_key_signer`: **Key Vault Crypto User** on the vault for the backend identity. Creating it needs Owner or User Access Administrator (see `infra/terraform/README.md`), so this apply is run by an operator, not CI.
 - The key (`github-app`) is **not** a Terraform resource, so private key material never reaches Terraform state. Step 6 of `platform/grant-ci-permissions.sh` imports it (`az keyvault key import --ops sign`), requiring `GITHUB_APP_PEM` while the vault has no key and skipping once it does. It grants the operator **Key Vault Crypto Officer** only for the import (removed on exit, even on failure), retries while the new role propagates, and prints the key's SHA-256 fingerprint to compare with the one GitHub lists.
-- `lifecycle.ignore_changes` on the Container App now also covers `secret` and the container `env`. `cd.yml` sets both on every release; without the ignore, the apply that adds the identity would strip them.
+- **Drift reconciliation.** The first plan showed live settings Terraform would have reverted. Each is now either codified (matches Azure) or ignored (owned elsewhere), so the plan is clean:
+  - Codified: `workload_profile_name = "Consumption"` and `transport = "http"` on the Container App, its `http-scaler` rule (10 concurrent requests), and the `Consumption` workload profile on `dmplt-cae`.
+  - Ignored on the Container App, owned by `cd.yml`: container `image` and `env`, `secret`, `ingress.cors` (set from the `CORS_ORIGINS` secret). Also ignored: `ingress.traffic_weight` (single revision mode keeps no split) and the scale cooldown/polling (unset in Azure, so KEDA defaults apply).
+  - Ignored on the Static Web App: `repository_url` / `repository_branch`, recorded by the deploy action on every release.
 
 ---
 
@@ -120,7 +123,7 @@ GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` n
 
 1. **GitHub (done).** Organization `data-mesh-platform-org`, App `dmplt` registered and installed on all repositories, private key downloaded.
 2. **Release this code** with the App variables unset. Behaviour is unchanged (token), plus redirects are followed.
-3. **Terraform apply** of `platform/` by an Owner. Expected plan: `dmplt-kv` created, in-place update of `dmplt-ca-backend` (identity only), one role assignment created. No destroy/replace, no change to the app's secrets or env. If `dmplt-kv` was already created by hand, import it first: `terraform import 'module.backend_app.azurerm_key_vault.main' /subscriptions/<sub>/resourceGroups/dmplt-rg/providers/Microsoft.KeyVault/vaults/dmplt-kv`.
+3. **Terraform apply** of `platform/` by an Owner (done 2026-11-22). Adding an identity in place leaves its `principal_id` unknown at plan time, so it takes two applies: first `-target` the Container App and the Key Vault (`dmplt-kv` created, identity added; Azure rolled a new revision with the same image and env), then a full apply (the role assignment). A final `plan -detailed-exitcode` must report no changes. If `dmplt-kv` was already created by hand, import it first: `terraform import 'module.backend_app.azurerm_key_vault.main' /subscriptions/<sub>/resourceGroups/dmplt-rg/providers/Microsoft.KeyVault/vaults/dmplt-kv`.
 4. **Import the key** (Git Bash, from `infra/terraform/platform/`):
    `GITHUB_APP_PEM="C:/Users/<you>/Downloads/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh`.
    Compare the printed fingerprint with the one in the App's Key pairs tab, then delete the `.pem`.

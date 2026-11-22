@@ -17,6 +17,7 @@ resource "azurerm_container_app" "backend" {
   resource_group_name          = var.resource_group_name
   container_app_environment_id = var.container_app_environment_id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
   tags                         = var.tags
 
   # Authenticates the backend to Key Vault (signing the GitHub App JWT) without
@@ -39,6 +40,7 @@ resource "azurerm_container_app" "backend" {
   ingress {
     external_enabled = true
     target_port      = 8000
+    transport        = "http"
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -49,6 +51,11 @@ resource "azurerm_container_app" "backend" {
     min_replicas = 0
     max_replicas = 2
 
+    http_scale_rule {
+      name                = "http-scaler"
+      concurrent_requests = "10"
+    }
+
     container {
       name   = "backend"
       image  = "${var.acr_login_server}/backend:latest"
@@ -58,13 +65,20 @@ resource "azurerm_container_app" "backend" {
   }
 
   lifecycle {
-    # cd.yml owns the release: it rolls out the image and sets the app's
-    # secrets and environment variables (az containerapp secret set / update).
-    # Without ignoring them, an apply would strip what cd.yml configured.
     ignore_changes = [
+      # cd.yml owns the release: it rolls out the image, sets the app's secrets
+      # and environment variables, and configures CORS from the CORS_ORIGINS
+      # secret. Without ignoring them, an apply would strip what cd.yml set.
       template[0].container[0].image,
       template[0].container[0].env,
       secret,
+      ingress[0].cors,
+      # Single revision mode: Azure keeps no traffic split to compare against.
+      ingress[0].traffic_weight,
+      # Unset in Azure, so KEDA's defaults (300 s / 30 s) apply; the provider
+      # would otherwise write its own defaults and roll a new revision.
+      template[0].cooldown_period_in_seconds,
+      template[0].polling_interval_in_seconds,
     ]
   }
 }
@@ -76,7 +90,7 @@ resource "azurerm_key_vault" "main" {
   resource_group_name        = var.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
-  enable_rbac_authorization  = true
+  rbac_authorization_enabled = true
   purge_protection_enabled   = true
   soft_delete_retention_days = 7
   tags                       = var.tags

@@ -14,3 +14,6 @@ output "admin_client_secret" {
   value     = module.identities.admin_client_secret
   sensitive = true
 }
+
+# Backend configuration for GitHub App authentication (GITHUB_APP_KEY_VAULT_KEY_ID).
+output "github_app_key_id" { value = module.backend_app.github_app_key_id }

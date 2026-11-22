@@ -19,16 +19,25 @@
 #   4. dmplt-devops SP -> owner of the dmplt-admin and dmplt-devops apps and SPs
 #   5. GitHub repository variables AZURE_CLIENT_ID / AZURE_TENANT_ID /
 #      AZURE_SUBSCRIPTION_ID (consumed by .github/workflows/infra.yml)
+#   6. GitHub App private key -> Key Vault dmplt-kv, key "github-app", restricted to
+#      the sign operation. Kept out of Terraform so the key never reaches state. The
+#      signed-in user gets "Key Vault Crypto Officer" only for the import.
 #
 # Run ONCE by an Owner + Global Administrator identity (az login). Idempotent: every
 # grant is checked before it is made. If the platform stack has not been applied yet
 # (dmplt-devops missing), only grant 1 is made — re-run after `terraform apply`.
 #
-# Prereqs: az CLI (logged in); gh CLI (logged in) for step 5. Run in Git Bash on
-# Windows.
+# GITHUB_APP_PEM is REQUIRED while the key is not in the vault yet: the path to the
+# .pem downloaded from the GitHub App (Settings > Developer settings > GitHub Apps >
+# <app> > Credentials > Key pairs > New key). Once imported it is no longer needed;
+# delete the local file.
+#
+# Prereqs: az CLI (logged in); gh CLI (logged in) for step 5; openssl (ships with Git
+# Bash) to print the key fingerprint in step 6. Run in Git Bash on Windows.
 #
 # Usage:
-#   bash grant-ci-permissions.sh
+#   GITHUB_APP_PEM="C:/Users/<you>/Downloads/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh
+#   bash grant-ci-permissions.sh                       # once the key is in the vault
 #   AZURE_SUBSCRIPTION_ID=<id> AZURE_TENANT_ID=<id> bash grant-ci-permissions.sh  # override az session
 
 set -euo pipefail
@@ -134,3 +143,98 @@ else
 fi
 
 echo "==> OK: CI (dmplt-devops) can now run the platform stack via OIDC."
+
+# --- 6. GitHub App private key -> Key Vault (sign-only) -----------------------------
+KV_NAME="dmplt-kv"
+KEY_NAME="github-app"
+KV_OFFICER_ROLE="Key Vault Crypto Officer"
+
+KV_ID="$(az keyvault show --name "$KV_NAME" --query id -o tsv 2>/dev/null || true)"
+if [[ -z "$KV_ID" ]]; then
+  echo "ERROR: Key Vault $KV_NAME not found. Run 'terraform apply' in platform/ first." >&2
+  exit 1
+fi
+
+# Management-plane read: works for an Owner without any Key Vault data-plane role.
+KEY_URI="$(az rest --method GET \
+  --uri "https://management.azure.com${KV_ID}/keys/${KEY_NAME}?api-version=2023-07-01" \
+  --query properties.keyUri -o tsv 2>/dev/null || true)"
+
+if [[ -n "$KEY_URI" ]]; then
+  echo "==> GitHub App key already in $KV_NAME ($KEY_URI). Nothing to do."
+else
+  if [[ -z "${GITHUB_APP_PEM:-}" ]]; then
+    echo "ERROR: the GitHub App key is not in $KV_NAME yet. Pass the .pem downloaded from" >&2
+    echo "       the App (Credentials > Key pairs > New key):" >&2
+    echo "  GITHUB_APP_PEM=\"C:/Users/<you>/Downloads/<app>.private-key.pem\" bash $0" >&2
+    exit 1
+  fi
+  if [[ ! -f "$GITHUB_APP_PEM" ]]; then
+    echo "ERROR: GITHUB_APP_PEM file not found: $GITHUB_APP_PEM" >&2
+    exit 1
+  fi
+  # az is a Windows program under Git Bash and MSYS_NO_PATHCONV is on, so hand it a
+  # Windows path (C:/...). cygpath only exists on Git Bash/Cygwin.
+  PEM_PATH="$(cygpath -m "$GITHUB_APP_PEM" 2>/dev/null || printf '%s' "$GITHUB_APP_PEM")"
+
+  # Temporary data-plane right to import. Removed on exit, even on failure, unless the
+  # user already held it before this run.
+  OFFICER_PREEXISTING="$(az role assignment list --assignee "$USER_OBJ_ID" \
+    --role "$KV_OFFICER_ROLE" --scope "$KV_ID" --query "[0].id" -o tsv)"
+  IMPORT_ERR="$(mktemp)"
+  cleanup_key_import() {
+    rm -f "$IMPORT_ERR"
+    if [[ -z "$OFFICER_PREEXISTING" ]]; then
+      echo "==> Removing the temporary '$KV_OFFICER_ROLE' role ..."
+      az role assignment delete --assignee "$USER_OBJ_ID" --role "$KV_OFFICER_ROLE" \
+        --scope "$KV_ID" >/dev/null 2>&1 || \
+        echo "WARNING: remove '$KV_OFFICER_ROLE' on $KV_NAME from yourself by hand." >&2
+    fi
+  }
+  trap cleanup_key_import EXIT
+  if [[ -z "$OFFICER_PREEXISTING" ]]; then
+    echo "==> Granting the signed-in user a temporary '$KV_OFFICER_ROLE' on $KV_NAME ..."
+    az role assignment create --assignee-object-id "$USER_OBJ_ID" \
+      --assignee-principal-type User --role "$KV_OFFICER_ROLE" --scope "$KV_ID" >/dev/null
+  fi
+
+  # A new role assignment takes a few minutes to reach the Key Vault data plane: retry
+  # on Forbidden only; any other error (e.g. a file that is not an RSA key) is final.
+  echo "==> Importing the GitHub App key into $KV_NAME as '$KEY_NAME' (ops: sign) ..."
+  for attempt in $(seq 1 12); do
+    if az keyvault key import --vault-name "$KV_NAME" --name "$KEY_NAME" \
+         --pem-file "$PEM_PATH" --ops sign --protection software \
+         >/dev/null 2>"$IMPORT_ERR"; then
+      break
+    fi
+    if grep -qi "forbidden" "$IMPORT_ERR" && [[ "$attempt" -lt 12 ]]; then
+      echo "    role not effective yet (attempt $attempt/12), retrying in 20s ..."
+      sleep 20
+      continue
+    fi
+    cat "$IMPORT_ERR" >&2
+    echo "ERROR: key import failed." >&2
+    exit 1
+  done
+
+  KEY_URI="$(az keyvault key show --vault-name "$KV_NAME" --name "$KEY_NAME" \
+    --query key.kid -o tsv)"
+  echo "==> Imported $KEY_URI"
+  if command -v openssl >/dev/null 2>&1; then
+    # Same fingerprint GitHub lists next to the key in the App's Key pairs tab.
+    # Informational only: never abort after a successful import (set -e/pipefail).
+    FINGERPRINT="$(openssl rsa -in "$GITHUB_APP_PEM" -pubout -outform DER 2>/dev/null \
+      | openssl sha256 -binary | openssl base64 || true)"
+    if [[ -n "$FINGERPRINT" ]]; then
+      echo "    Fingerprint SHA256:$FINGERPRINT — must match the key shown on GitHub."
+    fi
+  fi
+  echo ""
+  echo "IMPORTANT: the key now lives only in Key Vault. Delete the local file:"
+  echo "  rm \"$GITHUB_APP_PEM\""
+  echo ""
+fi
+
+echo "==> OK: backend setting GITHUB_APP_KEY_VAULT_KEY_ID=https://${KV_NAME}.vault.azure.net/keys/${KEY_NAME}"
+echo "    (repository variable GH_APP_KEY_VAULT_KEY_ID; see"
+echo "    docs/superpowers/specs/2026-11-22-github-app-auth-design.md for the cutover)"

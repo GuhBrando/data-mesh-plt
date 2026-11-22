@@ -6,6 +6,8 @@ from typing import Any, NamedTuple
 
 import httpx
 
+from backend.infra.github_auth import API_HEADERS, BearerTokenAuth
+
 logger = logging.getLogger(__name__)
 
 _API = "https://api.github.com"
@@ -29,15 +31,30 @@ def _slugify(text: str) -> str:
 
 
 class GitHubClient:
-    def __init__(self, token: str, repo: str):
+    def __init__(
+        self,
+        *,
+        repo: str,
+        token: str | None = None,
+        auth: httpx.Auth | None = None,
+    ):
+        """Pass either ``token`` (a static bearer token) or ``auth`` (e.g. a
+        ``GitHubAppAuth`` shared across requests so its token cache survives)."""
+        if (token is None) == (auth is None):
+            raise ValueError("GitHubClient needs exactly one of token or auth")
         self._repo = repo
         self._owner = repo.split("/", 1)[0]
         self._owner_type: str | None = None
-        self._headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        self._auth = auth if auth is not None else BearerTokenAuth(token or "")
+        self._headers = dict(API_HEADERS)
+
+    def _http(self, timeout: float) -> httpx.AsyncClient:
+        # follow_redirects: GitHub answers 301/307 for a renamed or transferred
+        # repository, so URLs stored before a transfer keep working. httpx drops
+        # the Authorization header on a redirect to another origin.
+        return httpx.AsyncClient(
+            timeout=timeout, auth=self._auth, follow_redirects=True
+        )
 
     @property
     def repo(self) -> str:
@@ -67,7 +84,7 @@ class GitHubClient:
         message: str,
         expected_sha: str | None = None,
     ) -> None:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with self._http(10.0) as client:
             # `is not None`: an empty expected_sha must not fall back to the
             # lookup, which would turn the compare-and-swap into last-writer-wins.
             sha = (
@@ -89,7 +106,7 @@ class GitHubClient:
             self._raise_for_status(r)
 
     async def delete(self, path: str, message: str) -> None:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with self._http(10.0) as client:
             sha = await self._get_sha(client, path)
             if sha is None:
                 return
@@ -122,7 +139,7 @@ class GitHubClient:
 
     async def read_contract_files(self) -> list[ContractFile]:
         """Every contract file with its sha. A failed or partial read raises."""
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with self._http(15.0) as client:
             r = await client.get(
                 f"{_API}/repos/{self._repo}/git/trees/HEAD?recursive=1",
                 headers=self._headers,
@@ -169,7 +186,7 @@ class GitHubClient:
         return self._owner_type
 
     async def create_product_repo(self, name: str, description: str) -> dict:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with self._http(15.0) as client:
             owner_type = await self._get_owner_type(client)
             url = (
                 f"{_API}/orgs/{self._owner}/repos"
@@ -228,7 +245,7 @@ class GitHubClient:
             )
 
     async def push_scaffold(self, repo_full_name: str, files: dict[str, str]) -> None:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with self._http(15.0) as client:
             for path, content in files.items():
                 sha_r = await client.get(
                     f"{_API}/repos/{repo_full_name}/contents/{path}",
@@ -248,7 +265,7 @@ class GitHubClient:
                 self._raise_for_status(r)
 
     async def archive_repo(self, repo_full_name: str) -> None:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with self._http(10.0) as client:
             r = await client.patch(
                 f"{_API}/repos/{repo_full_name}",
                 headers=self._headers,

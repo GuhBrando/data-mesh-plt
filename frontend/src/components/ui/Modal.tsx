@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { CloseIcon } from '../icons'
 
 interface ModalProps {
@@ -46,7 +47,9 @@ export default function Modal({
 
   if (!open) return null
 
-  return (
+  // Portalled to <body>: a transformed ancestor (the page enter animation)
+  // would otherwise become the containing block of this fixed overlay.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
@@ -81,6 +84,7 @@ export default function Modal({
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

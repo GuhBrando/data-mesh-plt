@@ -16,8 +16,8 @@ variable "location" {
 
 variable "github_repo" {
   type        = string
-  default     = "GuhBrando/data_mesh_plt"
-  description = "owner/repo used as the OIDC subject for the devops SP."
+  default     = "GuhBrando/data-mesh-plt"
+  description = "owner/repo used as the OIDC subject for the devops SP. Must be the repository's current name: GitHub puts it in the token's subject."
 }
 
 variable "tags" {

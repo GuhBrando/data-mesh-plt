@@ -102,6 +102,23 @@ Contributor) requires **Owner** or **User Access Administrator** — plain
 terraform apply
 ```
 
+### Drift
+
+Each setting has one owner. Terraform owns the shape of the resources; `cd.yml`
+owns what changes per release on `dmplt-ca-backend` (image, env, secrets, CORS)
+and the Static Web Apps deploy action records the repository and branch. Those are
+listed in `lifecycle.ignore_changes`. Change everything else here, not in the portal
+or with `az`, or the next apply reverts it.
+
+`infra.yml` also runs every Monday on `main` with `terraform plan
+-detailed-exitcode`: the run fails, and GitHub emails you, when live Azure no longer
+matches the code. Reconcile by codifying the live value or by reverting the manual
+change, until `plan` reports no changes.
+
+The OIDC subject of the CI federated credentials contains the repository name
+(`github_repo`). After renaming or transferring the repository, update it and apply,
+or CI can no longer log in to Azure.
+
 ## 2. Grant the admin SP account-admin (one-time)
 
 The `dmplt-admin` service principal must be a Databricks **account admin** so the

@@ -1,4 +1,4 @@
 subscription_id = "00000000-0000-0000-0000-000000000000"
 tenant_id       = "00000000-0000-0000-0000-000000000000"
 location        = "westus2"
-github_repo     = "data-mesh-platform-org/data-mesh-plt"
+github_repo     = "data-mesh-platform-org@359737315/data-mesh-plt@1087487046"

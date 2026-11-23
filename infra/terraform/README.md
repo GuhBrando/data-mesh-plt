@@ -115,9 +115,12 @@ or with `az`, or the next apply reverts it.
 matches the code. Reconcile by codifying the live value or by reverting the manual
 change, until `plan` reports no changes.
 
-The OIDC subject of the CI federated credentials contains the repository name
-(`github_repo`). After renaming or transferring the repository, update it and apply,
-or CI can no longer log in to Azure.
+The OIDC subject of the CI federated credentials contains the repository
+(`github_repo`). The organization uses GitHub's immutable subject claims, so it
+carries names and numeric IDs: `repo:<owner>@<owner_id>/<repo>@<repo_id>:...`. After
+renaming or transferring the repository, update it and apply, or CI can no longer
+log in to Azure. The exact subject GitHub sent is in the `azure/login` error
+(`AADSTS700213 ... presented assertion subject '...'`).
 
 ## 2. Grant the admin SP account-admin (one-time)
 

@@ -10,14 +10,40 @@ jobs:
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
+    env:
+      # Same version as the pre-commit hook. The gitleaks CLI is free (MIT); only
+      # gitleaks-action needs a paid license once the repository belongs to an
+      # organization.
+      GITLEAKS_VERSION: "8.27.0"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
+      - name: Install gitleaks (checksum verified)
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "$base/$tarball"
+          curl -sSfL "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            | grep " ${tarball}\$" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          ./gitleaks version
+
+      # Pull requests: only the commits the PR adds. Schedule: the whole history.
+      # .gitleaks.toml and .gitleaksignore at the repository root apply.
+      - name: Scan for secrets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            ./gitleaks git --redact --verbose --exit-code 1 \
+              --log-opts="--no-merges --first-parent ${BASE_SHA}..${HEAD_SHA}" .
+          else
+            ./gitleaks git --redact --verbose --exit-code 1 .
+          fi
 
   security-lint-python:
     name: Python Security Lint (bandit)

@@ -15,5 +15,8 @@ output "admin_client_secret" {
   sensitive = true
 }
 
-# Backend configuration for GitHub App authentication (GITHUB_APP_KEY_VAULT_KEY_ID).
+# Backend configuration for GitHub App authentication: GITHUB_APP_KEY_VAULT_KEY_ID
+# and AZURE_CLIENT_ID (repository variables GH_APP_KEY_VAULT_KEY_ID and
+# BACKEND_IDENTITY_CLIENT_ID, read by cd.yml).
 output "github_app_key_id" { value = module.backend_app.github_app_key_id }
+output "backend_identity_client_id" { value = module.backend_app.identity_client_id }

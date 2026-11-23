@@ -13,7 +13,7 @@ authors = [
     {name = "Gustavo Brandao"}
 ]
 dependencies = [
-    "setuptools==83.0.0",
+    "setuptools==84.1.0",
     "wheel==0.46.2",
     "uvicorn[standard]>=0.23.0",
     "fastapi==0.137.2",

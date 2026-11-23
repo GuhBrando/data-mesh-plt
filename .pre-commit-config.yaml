@@ -26,7 +26,7 @@ repos:
         args: ["-r", "backend/", "-ll", "-c", "pyproject.toml"]
         pass_filenames: false
 
-  # ── Secret scan (mirrors gitleaks-action in security.yml) ──────────────────
+  # ── Secret scan (mirrors the gitleaks CLI job in security.yml) ──────────────────
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.27.0
     hooks:

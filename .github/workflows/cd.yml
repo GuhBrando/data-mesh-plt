@@ -120,7 +120,11 @@ jobs:
               "APP_USER_PASSWORD=secretref:app-user-password" \
               "USER_PASSWORD=secretref:user-password" \
               "JWT_SECRET_KEY=secretref:jwt-secret-key" \
-              "GITHUB_TOKEN=secretref:github-token"
+              "GITHUB_TOKEN=secretref:github-token" \
+              "GITHUB_REPO=${{ vars.GH_CONTRACTS_REPO || 'GuhBrando/dmplt-data-contract' }}" \
+              "GITHUB_APP_CLIENT_ID=${{ vars.GH_APP_CLIENT_ID }}" \
+              "GITHUB_APP_INSTALLATION_ID=${{ vars.GH_APP_INSTALLATION_ID }}" \
+              "GITHUB_APP_KEY_VAULT_KEY_ID=${{ vars.GH_APP_KEY_VAULT_KEY_ID }}"
 
       - name: Configure CORS
         run: |

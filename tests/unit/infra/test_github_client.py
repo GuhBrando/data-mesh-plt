@@ -368,3 +368,45 @@ async def test_push_without_expected_sha_looks_the_sha_up(client, http):
     http.put.return_value = _resp(200, {})
     await client.push("contracts/a/x.yaml", "body", "msg")
     assert http.put.await_args.kwargs["json"]["sha"] == "current"
+
+
+# --- Authentication wiring -------------------------------------------------
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"token": "t", "auth": object()}])
+def test_client_needs_exactly_one_credential(kwargs):
+    with pytest.raises(ValueError, match="exactly one"):
+        GitHubClient(repo="acme/contracts", **kwargs)
+
+
+async def test_archive_follows_a_transferred_repo_with_credentials():
+    """A repo_url stored before the repo moved to another owner still works:
+    GitHub answers 307 and the client follows it, credentials included."""
+    from backend.infra.github_auth import BearerTokenAuth
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (request.method, request.url.path, request.headers.get("Authorization"))
+        )
+        if request.url.path == "/repos/old-owner/dp-x":
+            return httpx.Response(
+                307, headers={"Location": "https://api.github.com/repos/new-org/dp-x"}
+            )
+        return httpx.Response(200, json={"archived": True})
+
+    real_async_client = httpx.AsyncClient
+    with patch(
+        "backend.infra.github_client.httpx.AsyncClient",
+        side_effect=lambda **kw: real_async_client(
+            transport=httpx.MockTransport(handler), **kw
+        ),
+    ):
+        client = GitHubClient(repo="new-org/contracts", auth=BearerTokenAuth("ghs_x"))
+        await client.archive_repo("old-owner/dp-x")
+
+    assert seen == [
+        ("PATCH", "/repos/old-owner/dp-x", "Bearer ghs_x"),
+        ("PATCH", "/repos/new-org/dp-x", "Bearer ghs_x"),
+    ]

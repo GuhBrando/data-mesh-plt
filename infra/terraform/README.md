@@ -102,6 +102,26 @@ Contributor) requires **Owner** or **User Access Administrator** — plain
 terraform apply
 ```
 
+### Drift
+
+Each setting has one owner. Terraform owns the shape of the resources; `cd.yml`
+owns what changes per release on `dmplt-ca-backend` (image, env, secrets, CORS)
+and the Static Web Apps deploy action records the repository and branch. Those are
+listed in `lifecycle.ignore_changes`. Change everything else here, not in the portal
+or with `az`, or the next apply reverts it.
+
+`infra.yml` also runs every Monday on `main` with `terraform plan
+-detailed-exitcode`: the run fails, and GitHub emails you, when live Azure no longer
+matches the code. Reconcile by codifying the live value or by reverting the manual
+change, until `plan` reports no changes.
+
+The OIDC subject of the CI federated credentials contains the repository
+(`github_repo`). The organization uses GitHub's immutable subject claims, so it
+carries names and numeric IDs: `repo:<owner>@<owner_id>/<repo>@<repo_id>:...`. After
+renaming or transferring the repository, update it and apply, or CI can no longer
+log in to Azure. The exact subject GitHub sent is in the `azure/login` error
+(`AADSTS700213 ... presented assertion subject '...'`).
+
 ## 2. Grant the admin SP account-admin (one-time)
 
 The `dmplt-admin` service principal must be a Databricks **account admin** so the

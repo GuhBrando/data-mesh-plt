@@ -10,6 +10,10 @@ on:
     paths:
       - 'infra/terraform/**'
   workflow_dispatch:
+  # Weekly drift check (Mondays 10:23 UTC): plans the default branch against live
+  # Azure and fails when they differ. Never applies.
+  schedule:
+    - cron: "23 10 * * 1"
 
 permissions:
   contents: read
@@ -64,7 +68,10 @@ jobs:
 
       - name: Plan
         working-directory: ${{ env.WORKDIR }}
-        run: terraform plan -input=false -no-color
+        # On the schedule, -detailed-exitcode exits 2 when live Azure no longer
+        # matches the code, failing the run (GitHub emails the failure). PR and
+        # push plans keep exit 0 on changes, which are expected there.
+        run: terraform plan -input=false -no-color ${{ github.event_name == 'schedule' && '-detailed-exitcode' || '' }}
 
   apply:
     name: Apply

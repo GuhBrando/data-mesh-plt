@@ -1,6 +1,16 @@
+from functools import cache
+
+import httpx
 from fastapi import Depends
 
-from backend.infra.config import GITHUB_REPO, GITHUB_TOKEN
+from backend.infra.config import (
+    GITHUB_APP_CLIENT_ID,
+    GITHUB_APP_INSTALLATION_ID,
+    GITHUB_APP_KEY_VAULT_KEY_ID,
+    GITHUB_REPO,
+    GITHUB_TOKEN,
+)
+from backend.infra.github_auth import build_github_auth
 from backend.infra.github_client import GitHubClient
 from backend.infra.postgres import get_db_connection
 from backend.infra.repositories.data_contract_repository import (
@@ -53,10 +63,22 @@ from backend.use_cases.user.update import UpdateUserUseCase
 # --- GitHub client ---
 
 
+@cache
+def _github_auth() -> httpx.Auth | None:
+    # One instance per process: the GitHub App installation token is cached on it.
+    return build_github_auth(
+        token=GITHUB_TOKEN,
+        app_client_id=GITHUB_APP_CLIENT_ID,
+        app_installation_id=GITHUB_APP_INSTALLATION_ID,
+        app_key_vault_key_id=GITHUB_APP_KEY_VAULT_KEY_ID,
+    )
+
+
 def get_github_client() -> GitHubClient | None:
-    if not GITHUB_TOKEN:
+    auth = _github_auth()
+    if auth is None:
         return None
-    return GitHubClient(token=GITHUB_TOKEN, repo=GITHUB_REPO)
+    return GitHubClient(repo=GITHUB_REPO, auth=auth)
 
 
 # --- Repositories ---

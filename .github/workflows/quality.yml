@@ -128,9 +128,10 @@ jobs:
   mutation-python:
     name: Python Mutation Score (>=70%)
     runs-on: ubuntu-latest
-    # A cold run of every mutant takes well over 15 minutes. The cache is saved
-    # even when the job is cancelled, so a re-run resumes instead of starting over.
-    timeout-minutes: 60
+    # A cold run of every mutant (any change under tests/ re-runs them all) takes
+    # 45-60 minutes. The cache is saved even when the job is cancelled, so a
+    # re-run resumes instead of starting over; the limit only stops a runaway job.
+    timeout-minutes: 75
     needs: coverage-python
     if: github.event_name == 'pull_request'
     steps:

@@ -30,8 +30,8 @@ resource "databricks_external_location" "this" {
 }
 
 resource "databricks_catalog" "this" {
-  provider     = databricks.workspace
-  for_each     = var.container_names
+  provider = databricks.workspace
+  for_each = var.container_names
   # Unity Catalog stores catalog names lowercase. Force it so the planned name
   # always matches what the provider returns (avoids "inconsistent final plan").
   name         = lower(each.key)

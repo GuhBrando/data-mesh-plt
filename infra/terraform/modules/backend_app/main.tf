@@ -20,11 +20,11 @@ resource "azurerm_container_app" "backend" {
   workload_profile_name        = "Consumption"
   tags                         = var.tags
 
-  # Authenticates the backend to Key Vault (signing the GitHub App JWT) without
-  # any stored secret.
-  identity {
-    type = "SystemAssigned"
-  }
+  # No managed identity: dmplt-cae is an Express environment (environmentMode
+  # "Express", visible from API 2026-07-01), which rejects system-assigned
+  # identities. Older API versions, like the provider's, still accept the field,
+  # but every later `az containerapp update` in cd.yml then fails with
+  # ExpressSystemAssignedIdentityNotSupported.
 
   registry {
     server               = var.acr_login_server
@@ -94,12 +94,4 @@ resource "azurerm_key_vault" "main" {
   purge_protection_enabled   = true
   soft_delete_retention_days = 7
   tags                       = var.tags
-}
-
-# Lets the backend sign with the vault's keys. The key itself is restricted to
-# the sign operation at import time.
-resource "azurerm_role_assignment" "backend_key_signer" {
-  scope                = azurerm_key_vault.main.id
-  role_definition_name = "Key Vault Crypto User"
-  principal_id         = azurerm_container_app.backend.identity[0].principal_id
 }

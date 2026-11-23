@@ -1,7 +1,9 @@
 # GitHub App Authentication Design
 
 **Date:** 2026-11-22
-**Status:** Implemented (rollout pending)
+**Status:** Implemented; App activation blocked (see *Express environment* below)
+
+> **Express environment (2026-11-23).** `dmplt-cae` runs in `environmentMode: Express` (visible from Microsoft.App API `2026-07-01`), which rejects system-assigned managed identities. The provider's older API accepted the identity, but the next `az containerapp update` in `cd.yml` (release v0.4.0) failed with `ExpressSystemAssignedIdentityNotSupported`. The identity and its *Key Vault Crypto User* assignment were removed; the vault and the key stay. Until the backend has another way to authenticate to Key Vault (a user-assigned identity, if Express supports it, or a non-Express environment), leave the `GH_APP_*` variables empty so the backend keeps using the token.
 
 ---
 

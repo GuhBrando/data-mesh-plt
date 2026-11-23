@@ -6,3 +6,6 @@ output "key_vault_name" { value = azurerm_key_vault.main.name }
 output "github_app_key_id" {
   value = "${azurerm_key_vault.main.vault_uri}keys/${local.github_app_key_name}"
 }
+
+# Goes into the backend's AZURE_CLIENT_ID, so the Azure SDK uses this identity.
+output "identity_client_id" { value = azurerm_user_assigned_identity.backend.client_id }

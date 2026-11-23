@@ -21,7 +21,8 @@
 #      AZURE_SUBSCRIPTION_ID (consumed by .github/workflows/infra.yml)
 #   6. GitHub App private key -> Key Vault dmplt-kv, key "github-app", restricted to
 #      the sign operation. Kept out of Terraform so the key never reaches state. The
-#      signed-in user gets "Key Vault Crypto Officer" only for the import.
+#      signed-in user gets the custom "dmplt Key Vault Key Importer" role (read +
+#      import, defined in the backend_app module) only for the import.
 #
 # Run ONCE by an Owner + Global Administrator identity (az login). Idempotent: every
 # grant is checked before it is made. If the platform stack has not been applied yet
@@ -147,7 +148,7 @@ echo "==> OK: CI (dmplt-devops) can now run the platform stack via OIDC."
 # --- 6. GitHub App private key -> Key Vault (sign-only) -----------------------------
 KV_NAME="dmplt-kv"
 KEY_NAME="github-app"
-KV_OFFICER_ROLE="Key Vault Crypto Officer"
+KV_IMPORTER_ROLE="dmplt Key Vault Key Importer"  # custom role: keys read + import only
 
 KV_ID="$(az keyvault show --name "$KV_NAME" --query id -o tsv 2>/dev/null || true)"
 if [[ -z "$KV_ID" ]]; then
@@ -179,23 +180,23 @@ else
 
   # Temporary data-plane right to import. Removed on exit, even on failure, unless the
   # user already held it before this run.
-  OFFICER_PREEXISTING="$(az role assignment list --assignee "$USER_OBJ_ID" \
-    --role "$KV_OFFICER_ROLE" --scope "$KV_ID" --query "[0].id" -o tsv)"
+  IMPORTER_PREEXISTING="$(az role assignment list --assignee "$USER_OBJ_ID" \
+    --role "$KV_IMPORTER_ROLE" --scope "$KV_ID" --query "[0].id" -o tsv)"
   IMPORT_ERR="$(mktemp)"
   cleanup_key_import() {
     rm -f "$IMPORT_ERR"
-    if [[ -z "$OFFICER_PREEXISTING" ]]; then
-      echo "==> Removing the temporary '$KV_OFFICER_ROLE' role ..."
-      az role assignment delete --assignee "$USER_OBJ_ID" --role "$KV_OFFICER_ROLE" \
+    if [[ -z "$IMPORTER_PREEXISTING" ]]; then
+      echo "==> Removing the temporary '$KV_IMPORTER_ROLE' role ..."
+      az role assignment delete --assignee "$USER_OBJ_ID" --role "$KV_IMPORTER_ROLE" \
         --scope "$KV_ID" >/dev/null 2>&1 || \
-        echo "WARNING: remove '$KV_OFFICER_ROLE' on $KV_NAME from yourself by hand." >&2
+        echo "WARNING: remove '$KV_IMPORTER_ROLE' on $KV_NAME from yourself by hand." >&2
     fi
   }
   trap cleanup_key_import EXIT
-  if [[ -z "$OFFICER_PREEXISTING" ]]; then
-    echo "==> Granting the signed-in user a temporary '$KV_OFFICER_ROLE' on $KV_NAME ..."
+  if [[ -z "$IMPORTER_PREEXISTING" ]]; then
+    echo "==> Granting the signed-in user a temporary '$KV_IMPORTER_ROLE' on $KV_NAME ..."
     az role assignment create --assignee-object-id "$USER_OBJ_ID" \
-      --assignee-principal-type User --role "$KV_OFFICER_ROLE" --scope "$KV_ID" >/dev/null
+      --assignee-principal-type User --role "$KV_IMPORTER_ROLE" --scope "$KV_ID" >/dev/null
   fi
 
   # A new role assignment takes a few minutes to reach the Key Vault data plane: retry

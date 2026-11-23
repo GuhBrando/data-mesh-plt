@@ -89,8 +89,8 @@ def _key_vault_sign_digest(key_id: str, credential: object, digest: bytes) -> by
 
 class KeyVaultSigner:
     """Signs with an RSA key held in Azure Key Vault. The private key never
-    leaves the vault; the caller needs the ``sign`` key permission (the
-    "Key Vault Crypto User" role).
+    leaves the vault; the caller needs the keys ``read`` and ``sign`` data
+    actions (the custom "dmplt Key Vault Signer" role).
 
     ``key_id`` should be versionless (``https://<vault>.vault.azure.net/keys/<name>``)
     so a key rotated by importing a new version is picked up without a restart.
@@ -104,8 +104,10 @@ class KeyVaultSigner:
         if self._credential is None:
             from azure.identity import DefaultAzureCredential
 
-            # Resolves to the managed identity in Azure and to the developer's
-            # `az login` session locally. Created once, so its token is cached.
+            # Resolves to the backend's user-assigned identity in Azure (named by
+            # AZURE_CLIENT_ID; the Express environment rejects system-assigned
+            # ones) and to the developer's `az login` session locally. Created
+            # once, so its token is cached.
             self._credential = DefaultAzureCredential()
         return _key_vault_sign_digest(self._key_id, self._credential, digest)
 

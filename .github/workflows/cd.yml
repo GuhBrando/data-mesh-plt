@@ -127,12 +127,15 @@ jobs:
               "GITHUB_APP_KEY_VAULT_KEY_ID=${{ vars.GH_APP_KEY_VAULT_KEY_ID }}" \
               "AZURE_CLIENT_ID=${{ vars.BACKEND_IDENTITY_CLIENT_ID }}"
 
+      # Methods and headers are listed explicitly: the Container Apps ingress does
+      # not expand "*" here, so every preflight was refused with 403
+      # ("CORS preflight method denied") and the browser could not log in.
       - name: Configure CORS
         run: |
           az containerapp ingress cors update \
             --name "$BACKEND_APP_NAME" \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --allowed-origins "${{ secrets.CORS_ORIGINS }}" \
-            --allowed-methods "*" \
-            --allowed-headers "*" \
+            --allowed-methods GET HEAD POST PUT PATCH DELETE OPTIONS \
+            --allowed-headers authorization content-type \
             --allow-credentials true

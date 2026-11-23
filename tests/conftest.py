@@ -16,8 +16,14 @@ os.environ.setdefault(
 
 # Keep the suite away from the real contracts repository. Router tests that do not
 # override get_github_client would otherwise push to and delete from GITHUB_REPO
-# with the token in .env.
-os.environ["GITHUB_TOKEN"] = ""
+# with the token in .env. The GitHub App settings are blanked for the same reason.
+for _github_setting in (
+    "GITHUB_TOKEN",
+    "GITHUB_APP_CLIENT_ID",
+    "GITHUB_APP_INSTALLATION_ID",
+    "GITHUB_APP_KEY_VAULT_KEY_ID",
+):
+    os.environ[_github_setting] = ""
 
 
 class _QueryGuard:

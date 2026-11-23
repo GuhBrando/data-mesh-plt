@@ -6,4 +6,10 @@ resource "azurerm_static_web_app" "frontend" {
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = var.tags
+
+  lifecycle {
+    # Recorded by the Static Web Apps deploy action in cd.yml on every release
+    # (the branch is the release tag).
+    ignore_changes = [repository_url, repository_branch]
+  }
 }

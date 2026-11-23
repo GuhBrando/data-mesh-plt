@@ -13,6 +13,11 @@ vi.mock('../../hooks/useDataProducts', () => ({
 }))
 vi.mock('../../hooks/useDataContracts', () => ({ useDataContracts: vi.fn() }))
 
+// The product form lists the contracts the user can pick; these tests cover the page only.
+vi.mock('../../hooks/useSelectableContracts', () => ({
+  useSelectableContracts: () => ({ contracts: [], isLoading: false, error: null }),
+}))
+
 const contracts = [
   makeContract({ id: 'c1', title: 'orders_contract', domain: 'Sales', version: '2.0.1', tier: 1 }),
   makeContract({ id: 'c2', title: 'exposure_contract', domain: 'Risk', status: 'in_review', owner: 'carla' }),

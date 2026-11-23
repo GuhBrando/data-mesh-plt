@@ -16,8 +16,8 @@ variable "location" {
 
 variable "github_repo" {
   type        = string
-  default     = "GuhBrando/data_mesh_plt"
-  description = "owner/repo used as the OIDC subject for the devops SP."
+  default     = "data-mesh-platform-org@359737315/data-mesh-plt@1087487046"
+  description = "Repository part of the OIDC subject for the devops SP, exactly as GitHub sends it. The organization uses immutable subject claims: owner@<owner_id>/repo@<repo_id> (gh api repos/<owner>/<repo> --jq '[.owner.id, .id]')."
 }
 
 variable "tags" {

@@ -104,11 +104,18 @@ ownership of the dmplt-admin/dmplt-devops apps (self-ownership is inexpressible 
 HCL), and the repository variables the workflow reads (`AZURE_CLIENT_ID` /
 `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID`, set via `gh`). Locally nothing is
 hardcoded: the script autodetects ids from the `az` session (override with
-`AZURE_SUBSCRIPTION_ID=... AZURE_TENANT_ID=...`). **Re-run it in Git Bash** now that
+`AZURE_SUBSCRIPTION_ID=... AZURE_TENANT_ID=...`). The same run also imports the
+**GitHub App private key** into Key Vault `dmplt-kv` (sign-only, never in Terraform
+state). While the vault has no key, `GITHUB_APP_PEM` is **required** — ask the user
+for the path of the `.pem` downloaded from the App (Credentials → Key pairs → New
+key); never read, print or copy its content. **Re-run it in Git Bash** now that
 `dmplt-devops` exists:
 ```bash
-bash grant-ci-permissions.sh
+GITHUB_APP_PEM="<path-to>/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh
 ```
+Have the user compare the printed fingerprint with the one GitHub lists for the key,
+then delete the `.pem`. Once the key is in the vault, re-runs need no `GITHUB_APP_PEM`.
+See `docs/superpowers/specs/2026-11-22-github-app-auth-design.md` for the cutover.
 
 ## Phase 3 — Register admin SP + account admin ⛔
 
@@ -173,6 +180,8 @@ The bootstrap, import, and both grants are one-time. Ongoing changes are just
 | `init` fails with 403 on blob/state access | Identity lacks `Storage Blob Data Contributor` on `dmplttfstate` (backend uses Azure AD auth). Run `platform/grant-ci-permissions.sh`. |
 | CI plan: `Authorization_RequestDenied` on `azuread_application.*` | `dmplt-devops` lacks Graph role/ownership — `grant-ci-permissions.sh` wasn't (re-)run after the platform apply. |
 | `AuthorizationFailed` on `azurerm_role_assignment` | Identity lacks Owner/UAA (Phase 2 gate). Re-run with a privileged identity. |
+| `grant-ci-permissions.sh`: "GitHub App key is not in dmplt-kv yet" | Pass `GITHUB_APP_PEM` with the path of the App's `.pem`. |
+| `terraform apply`: `dmplt-kv` "already exists" | The vault was created by hand: `terraform import 'module.backend_app.azurerm_key_vault.main' <vault-id>`, then plan again. |
 | `grant-account-admin.sh`: "SP is not registered in the account" | Phase 3 `terraform apply` (databricks_bootstrap) didn't run first. |
 | data_plane provider auth fails | `dmplt-admin` isn't account admin yet (Phase 3 grant) — complete it first. |
 | grant script returns HTML / CRLF errors | Run in Git Bash, not PowerShell; scripts already strip CRLF. |

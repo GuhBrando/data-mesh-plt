@@ -361,7 +361,9 @@ async def sync_data_contracts_from_github(
     if github is None:
         raise HTTPException(
             status_code=503,
-            detail="GitHub integration not configured (GITHUB_TOKEN missing)",
+            detail=(
+                "GitHub integration not configured (no GitHub App or GITHUB_TOKEN)"
+            ),
         )
     use_case = SyncFromGitHubUseCase(
         repository=repo, github=github, domain_repo=domain_repo

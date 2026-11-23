@@ -19,6 +19,7 @@ module "core" {
 module "backend_app" {
   source                       = "../modules/backend_app"
   resource_group_name          = module.core.resource_group_name
+  location                     = var.location
   container_app_environment_id = module.core.container_app_environment_id
   acr_login_server             = module.core.acr_login_server
   acr_name                     = module.core.acr_name

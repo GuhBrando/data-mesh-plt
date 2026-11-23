@@ -125,10 +125,10 @@ GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` n
 2. **Release this code** with the App variables unset. Behaviour is unchanged (token), plus redirects are followed.
 3. **Terraform apply** of `platform/` by an Owner (done 2026-11-22). Adding an identity in place leaves its `principal_id` unknown at plan time, so it takes two applies: first `-target` the Container App and the Key Vault (`dmplt-kv` created, identity added; Azure rolled a new revision with the same image and env), then a full apply (the role assignment). A final `plan -detailed-exitcode` must report no changes. If `dmplt-kv` was already created by hand, import it first: `terraform import 'module.backend_app.azurerm_key_vault.main' /subscriptions/<sub>/resourceGroups/dmplt-rg/providers/Microsoft.KeyVault/vaults/dmplt-kv`.
 4. **Import the key** (Git Bash, from `infra/terraform/platform/`):
-   `GITHUB_APP_PEM="C:/Users/<you>/Downloads/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh`.
+   `GITHUB_APP_PEM="<path-to>/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh`.
    Compare the printed fingerprint with the one in the App's Key pairs tab, then delete the `.pem`.
-5. **Transfer** `dmplt_data_contract` and the existing product repositories (topic `data-mesh-platform`) to `data-mesh-platform-org` (repository Settings → Danger Zone → Transfer). Old URLs keep working through redirects.
-6. **Repository variables** in `data-mesh-plt` (Settings → Secrets and variables → Actions → Variables): `GH_CONTRACTS_REPO=data-mesh-platform-org/dmplt_data_contract`, `GH_APP_CLIENT_ID`, `GH_APP_INSTALLATION_ID`, `GH_APP_KEY_VAULT_KEY_ID` (printed by the script, also `terraform output github_app_key_id`).
+5. **Transfer** `dmplt-data-contract` (renamed from `dmplt_data_contract`) and the existing product repositories (topic `data-mesh-platform`) to `data-mesh-platform-org` (repository Settings → Danger Zone → Transfer). Old URLs keep working through redirects.
+6. **Repository variables** (not secrets: none of the values is sensitive) in `data-mesh-platform-org/data-mesh-plt` (Settings → Secrets and variables → Actions → Variables): `GH_CONTRACTS_REPO=data-mesh-platform-org/dmplt-data-contract`, `GH_APP_CLIENT_ID`, `GH_APP_INSTALLATION_ID`, `GH_APP_KEY_VAULT_KEY_ID` (printed by the script, also `terraform output github_app_key_id`).
 7. **Release** (new tag). Check the backend log for `Obtained a GitHub App installation token`, create a test data product (repo appears in the organization, commits by `dmplt[bot]`), and run a contract sync.
 8. **Cleanup** (follow-up change): drop `GITHUB_TOKEN` from `cd.yml`, remove the `github-token` Container App secret and the `GH_CONTRACT_TOKEN` GitHub secret, revoke the personal access token.
 

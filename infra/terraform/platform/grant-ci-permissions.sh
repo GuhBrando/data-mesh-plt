@@ -36,7 +36,7 @@
 # Bash) to print the key fingerprint in step 6. Run in Git Bash on Windows.
 #
 # Usage:
-#   GITHUB_APP_PEM="C:/Users/<you>/Downloads/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh
+#   GITHUB_APP_PEM="<path-to>/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh
 #   bash grant-ci-permissions.sh                       # once the key is in the vault
 #   AZURE_SUBSCRIPTION_ID=<id> AZURE_TENANT_ID=<id> bash grant-ci-permissions.sh  # override az session
 
@@ -166,7 +166,7 @@ else
   if [[ -z "${GITHUB_APP_PEM:-}" ]]; then
     echo "ERROR: the GitHub App key is not in $KV_NAME yet. Pass the .pem downloaded from" >&2
     echo "       the App (Credentials > Key pairs > New key):" >&2
-    echo "  GITHUB_APP_PEM=\"C:/Users/<you>/Downloads/<app>.private-key.pem\" bash $0" >&2
+    echo "  GITHUB_APP_PEM=\"<path-to>/<app>.<date>.private-key.pem\" bash $0" >&2
     exit 1
   fi
   if [[ ! -f "$GITHUB_APP_PEM" ]]; then

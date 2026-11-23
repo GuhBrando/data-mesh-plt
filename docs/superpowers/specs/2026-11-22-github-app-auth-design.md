@@ -84,7 +84,7 @@ Both modes are `httpx.Auth` implementations, so `GitHubClient` is unaware of whi
 
 | Variable | Where it comes from | Notes |
 |---|---|---|
-| `GITHUB_REPO` | repo variable `GH_CONTRACTS_REPO` (default `GuhBrando/dmplt_data_contract`) | Owner = where product repos are created |
+| `GITHUB_REPO` | repo variable `GH_CONTRACTS_REPO` (default `GuhBrando/dmplt-data-contract`) | Owner = where product repos are created |
 | `GITHUB_APP_CLIENT_ID` | repo variable `GH_APP_CLIENT_ID` | Not a secret |
 | `GITHUB_APP_INSTALLATION_ID` | repo variable `GH_APP_INSTALLATION_ID` | Not a secret |
 | `GITHUB_APP_KEY_VAULT_KEY_ID` | repo variable `GH_APP_KEY_VAULT_KEY_ID` = `terraform output github_app_key_id` | Versionless key ID |

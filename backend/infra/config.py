@@ -21,7 +21,7 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "GuhBrando/dmplt_data_contract")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "GuhBrando/dmplt-data-contract")
 
 # GitHub App (preferred over GITHUB_TOKEN once all three are set). The App's
 # private key stays in Azure Key Vault; only its versionless key identifier is

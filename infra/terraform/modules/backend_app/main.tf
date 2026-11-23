@@ -5,11 +5,25 @@ data "azurerm_container_registry" "acr" {
 
 data "azurerm_client_config" "current" {}
 
+data "azurerm_resource_group" "main" {
+  name = var.resource_group_name
+}
+
 locals {
   # The GitHub App private key is imported into the vault once by an operator
   # (`az keyvault key import --ops sign`) and is not managed here, so it never
   # reaches Terraform state. See docs/superpowers/specs/2026-11-22-github-app-auth-design.md.
   github_app_key_name = "github-app"
+}
+
+# The backend's identity for Key Vault (signing the GitHub App JWT) without any
+# stored secret. The app must name it in AZURE_CLIENT_ID (set by cd.yml) so the
+# Azure SDK picks it.
+resource "azurerm_user_assigned_identity" "backend" {
+  name                = "dmplt-ca-backend-id"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  tags                = var.tags
 }
 
 resource "azurerm_container_app" "backend" {
@@ -20,11 +34,16 @@ resource "azurerm_container_app" "backend" {
   workload_profile_name        = "Consumption"
   tags                         = var.tags
 
-  # No managed identity: dmplt-cae is an Express environment (environmentMode
-  # "Express", visible from API 2026-07-01), which rejects system-assigned
-  # identities. Older API versions, like the provider's, still accept the field,
-  # but every later `az containerapp update` in cd.yml then fails with
-  # ExpressSystemAssignedIdentityNotSupported.
+  # User-assigned, not system-assigned: dmplt-cae is an Express environment
+  # (environmentMode "Express", visible from API 2026-07-01), which rejects
+  # system-assigned identities. The provider's older API still accepted one, but
+  # every later `az containerapp update` in cd.yml then failed with
+  # ExpressSystemAssignedIdentityNotSupported. A user-assigned identity passed
+  # create, update and a Key Vault sign from inside a container (2026-11-23).
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.backend.id]
+  }
 
   registry {
     server               = var.acr_login_server
@@ -94,4 +113,49 @@ resource "azurerm_key_vault" "main" {
   purge_protection_enabled   = true
   soft_delete_retention_days = 7
   tags                       = var.tags
+}
+
+# Least-privilege custom roles for the vault's keys. The built-in alternatives
+# grant far more: Key Vault Crypto User also allows encrypt, decrypt, wrap,
+# unwrap, verify, update and backup; Crypto Officer manages every key. Custom
+# roles cannot list a single resource as assignable scope, so they are defined
+# on the resource group and assigned on the vault only.
+resource "azurerm_role_definition" "key_signer" {
+  name        = "dmplt Key Vault Signer"
+  scope       = data.azurerm_resource_group.main.id
+  description = "Read Key Vault keys and sign with them. Nothing else."
+
+  permissions {
+    data_actions = [
+      "Microsoft.KeyVault/vaults/keys/read",
+      "Microsoft.KeyVault/vaults/keys/sign/action",
+    ]
+  }
+
+  assignable_scopes = [data.azurerm_resource_group.main.id]
+}
+
+# Granted temporarily by grant-ci-permissions.sh (step 6) to the operator who
+# imports the GitHub App key, and removed when the import ends.
+resource "azurerm_role_definition" "key_importer" {
+  name        = "dmplt Key Vault Key Importer"
+  scope       = data.azurerm_resource_group.main.id
+  description = "Read Key Vault keys and import new ones or new versions. Nothing else."
+
+  permissions {
+    data_actions = [
+      "Microsoft.KeyVault/vaults/keys/read",
+      "Microsoft.KeyVault/vaults/keys/import/action",
+    ]
+  }
+
+  assignable_scopes = [data.azurerm_resource_group.main.id]
+}
+
+# Lets the backend sign with the vault's keys. The key itself is also restricted
+# to the sign operation at import time.
+resource "azurerm_role_assignment" "backend_key_signer" {
+  scope              = azurerm_key_vault.main.id
+  role_definition_id = azurerm_role_definition.key_signer.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.backend.principal_id
 }

@@ -124,7 +124,8 @@ jobs:
               "GITHUB_REPO=${{ vars.GH_CONTRACTS_REPO || 'GuhBrando/dmplt-data-contract' }}" \
               "GITHUB_APP_CLIENT_ID=${{ vars.GH_APP_CLIENT_ID }}" \
               "GITHUB_APP_INSTALLATION_ID=${{ vars.GH_APP_INSTALLATION_ID }}" \
-              "GITHUB_APP_KEY_VAULT_KEY_ID=${{ vars.GH_APP_KEY_VAULT_KEY_ID }}"
+              "GITHUB_APP_KEY_VAULT_KEY_ID=${{ vars.GH_APP_KEY_VAULT_KEY_ID }}" \
+              "AZURE_CLIENT_ID=${{ vars.BACKEND_IDENTITY_CLIENT_ID }}"
 
       - name: Configure CORS
         run: |

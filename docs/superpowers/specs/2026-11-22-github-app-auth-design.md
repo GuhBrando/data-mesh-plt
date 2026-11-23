@@ -1,9 +1,9 @@
 # GitHub App Authentication Design
 
 **Date:** 2026-11-22
-**Status:** Implemented; App activation blocked (see *Express environment* below)
+**Status:** Implemented; App activation pending the next release
 
-> **Express environment (2026-11-23).** `dmplt-cae` runs in `environmentMode: Express` (visible from Microsoft.App API `2026-07-01`), which rejects system-assigned managed identities. The provider's older API accepted the identity, but the next `az containerapp update` in `cd.yml` (release v0.4.0) failed with `ExpressSystemAssignedIdentityNotSupported`. The identity and its *Key Vault Crypto User* assignment were removed; the vault and the key stay. Until the backend has another way to authenticate to Key Vault (a user-assigned identity, if Express supports it, or a non-Express environment), leave the `GH_APP_*` variables empty so the backend keeps using the token.
+> **Express environment (2026-11-23).** `dmplt-cae` runs in `environmentMode: Express` (visible from Microsoft.App API `2026-07-01`), which rejects system-assigned managed identities. The provider's older API accepted the identity, but the next `az containerapp update` in `cd.yml` (release v0.4.0) failed with `ExpressSystemAssignedIdentityNotSupported`. The backend now uses a **user-assigned** identity instead, which Express accepts: tested on 2026-11-23 with a throwaway app (create, `az containerapp update`, and a Key Vault sign from inside the container). Access to the key goes through a custom least-privilege role instead of the built-in *Crypto* roles.
 
 ---
 
@@ -14,7 +14,7 @@ The backend calls the GitHub API to push contracts to the central contracts repo
 This change authenticates the backend as a **GitHub App** instead. The App's private key lives in **Azure Key Vault** and never leaves it: the backend, using its **managed identity**, asks Key Vault to sign the App JWT, exchanges the JWT for an **installation token valid for one hour**, and caches it. Nothing long-lived is stored in the app, in Container App secrets, or in GitHub secrets.
 
 ```
-Container App (system-assigned managed identity, no secret)
+Container App (user-assigned managed identity dmplt-ca-backend-id, no secret)
   → Key Vault sign(RS256) with the App private key (key ops: sign only)
   → App JWT (iss = Client ID, 10 min)
   → POST /app/installations/{id}/access_tokens
@@ -90,6 +90,7 @@ Both modes are `httpx.Auth` implementations, so `GitHubClient` is unaware of whi
 | `GITHUB_APP_CLIENT_ID` | repo variable `GH_APP_CLIENT_ID` | Not a secret |
 | `GITHUB_APP_INSTALLATION_ID` | repo variable `GH_APP_INSTALLATION_ID` | Not a secret |
 | `GITHUB_APP_KEY_VAULT_KEY_ID` | repo variable `GH_APP_KEY_VAULT_KEY_ID` = `terraform output github_app_key_id` | Versionless key ID |
+| `AZURE_CLIENT_ID` | repo variable `BACKEND_IDENTITY_CLIENT_ID` = `terraform output backend_identity_client_id` | Which managed identity the Azure SDK uses (a user-assigned one must be named) |
 | `GITHUB_TOKEN` | secret `GH_CONTRACT_TOKEN` | Fallback, removed after cutover |
 
 GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` names. While the App variables are empty, `cd.yml` deploys them empty and the backend keeps using the token.
@@ -98,10 +99,14 @@ GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` n
 
 ## Infrastructure (platform stack)
 
-- `azurerm_container_app.backend` gets a **system-assigned identity**.
+- `azurerm_user_assigned_identity.backend` (`dmplt-ca-backend-id`), attached to `azurerm_container_app.backend` as `UserAssigned`. `dmplt-cae` is an **Express** environment, which rejects system-assigned identities (see the note at the top).
 - `azurerm_key_vault.main` (`dmplt-kv`): RBAC authorization, purge protection, 7-day soft-delete retention.
-- `azurerm_role_assignment.backend_key_signer`: **Key Vault Crypto User** on the vault for the backend identity. Creating it needs Owner or User Access Administrator (see `infra/terraform/README.md`), so this apply is run by an operator, not CI.
-- The key (`github-app`) is **not** a Terraform resource, so private key material never reaches Terraform state. Step 6 of `platform/grant-ci-permissions.sh` imports it (`az keyvault key import --ops sign`), requiring `GITHUB_APP_PEM` while the vault has no key and skipping once it does. It grants the operator **Key Vault Crypto Officer** only for the import (removed on exit, even on failure), retries while the new role propagates, and prints the key's SHA-256 fingerprint to compare with the one GitHub lists.
+- Two custom roles, defined on the resource group (custom roles cannot list a single resource as assignable scope) and assigned on the vault only:
+  - **`dmplt Key Vault Signer`**: `keys/read` + `keys/sign/action`. `azurerm_role_assignment.backend_key_signer` grants it to the backend identity. The built-in *Key Vault Crypto User* would also allow encrypt, decrypt, wrap, unwrap, verify, update and backup; a probe confirmed that encrypt is denied (403) with the custom role.
+  - **`dmplt Key Vault Key Importer`**: `keys/read` + `keys/import/action`, granted temporarily by the setup script.
+
+  Creating role definitions and assignments needs Owner or User Access Administrator (see `infra/terraform/README.md`), so this apply is run by an operator, not CI.
+- The key (`github-app`) is **not** a Terraform resource, so private key material never reaches Terraform state. Step 6 of `platform/grant-ci-permissions.sh` imports it (`az keyvault key import --ops sign`), requiring `GITHUB_APP_PEM` while the vault has no key and skipping once it does. It grants the operator **dmplt Key Vault Key Importer** only for the import (removed on exit, even on failure), retries while the new role propagates, and prints the key's SHA-256 fingerprint to compare with the one GitHub lists.
 - **Drift reconciliation.** The first plan showed live settings Terraform would have reverted. Each is now either codified (matches Azure) or ignored (owned elsewhere), so the plan is clean:
   - Codified: `workload_profile_name = "Consumption"` and `transport = "http"` on the Container App, its `http-scaler` rule (10 concurrent requests), and the `Consumption` workload profile on `dmplt-cae`.
   - Ignored on the Container App, owned by `cd.yml`: container `image` and `env`, `secret`, `ingress.cors` (set from the `CORS_ORIGINS` secret). Also ignored: `ingress.traffic_weight` (single revision mode keeps no split) and the scale cooldown/polling (unset in Azure, so KEDA defaults apply).
@@ -130,13 +135,13 @@ GitHub reserves the `GITHUB_` prefix for repository variables, hence the `GH_` n
    `GITHUB_APP_PEM="<path-to>/<app>.<date>.private-key.pem" bash grant-ci-permissions.sh`.
    Compare the printed fingerprint with the one in the App's Key pairs tab, then delete the `.pem`.
 5. **Transfer** `dmplt-data-contract` (renamed from `dmplt_data_contract`) and the existing product repositories (topic `data-mesh-platform`) to `data-mesh-platform-org` (repository Settings → Danger Zone → Transfer). Old URLs keep working through redirects.
-6. **Repository variables** (not secrets: none of the values is sensitive) in `data-mesh-platform-org/data-mesh-plt` (Settings → Secrets and variables → Actions → Variables): `GH_CONTRACTS_REPO=data-mesh-platform-org/dmplt-data-contract`, `GH_APP_CLIENT_ID`, `GH_APP_INSTALLATION_ID`, `GH_APP_KEY_VAULT_KEY_ID` (printed by the script, also `terraform output github_app_key_id`).
+6. **Repository variables** (not secrets: none of the values is sensitive) in `data-mesh-platform-org/data-mesh-plt` (Settings → Secrets and variables → Actions → Variables): `GH_CONTRACTS_REPO=data-mesh-platform-org/dmplt-data-contract`, `GH_APP_CLIENT_ID`, `GH_APP_INSTALLATION_ID`, `GH_APP_KEY_VAULT_KEY_ID` (printed by the script, also `terraform output github_app_key_id`), `BACKEND_IDENTITY_CLIENT_ID` (`terraform output backend_identity_client_id`).
 7. **Release** (new tag). Check the backend log for `Obtained a GitHub App installation token`, create a test data product (repo appears in the organization, commits by `dmplt[bot]`), and run a contract sync.
 8. **Cleanup** (follow-up change): drop `GITHUB_TOKEN` from `cd.yml`, remove the `github-token` Container App secret and the `GH_CONTRACT_TOKEN` GitHub secret, revoke the personal access token.
 
 ## Key Rotation
 
-Generate a new key in the App (Credentials → Key pairs → New key) and import it under the same name, which creates a new version: `az keyvault key import --vault-name dmplt-kv --name github-app --pem-file <pem> --ops sign --protection software` (with a temporary Key Vault Crypto Officer role, as step 6 of the script does; the script itself skips once a key exists). Delete the local file, then delete the old key in GitHub. The backend signs with the latest version from its next JWT on; no restart or config change.
+Generate a new key in the App (Credentials → Key pairs → New key) and import it under the same name, which creates a new version: `az keyvault key import --vault-name dmplt-kv --name github-app --pem-file <pem> --ops sign --protection software` (with the temporary dmplt Key Vault Key Importer role, as step 6 of the script does; the script itself skips once a key exists). Delete the local file, then delete the old key in GitHub. The backend signs with the latest version from its next JWT on; no restart or config change.
 
 ---
 

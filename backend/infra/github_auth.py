@@ -21,8 +21,10 @@ from datetime import datetime
 from typing import Protocol
 
 import httpx
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.keys.crypto import CryptographyClient, SignatureAlgorithm
+
+# The Azure SDK is imported where it is used, not here: this module is imported
+# by every request path (dependencies.py), the SDK takes about a second to
+# import, and only a GitHub App configuration needs it.
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,16 @@ class JwtSigner(Protocol):
         ...
 
 
+def _key_vault_sign_digest(key_id: str, credential: object, digest: bytes) -> bytes:
+    """RS256 signature of a SHA-256 ``digest`` by the Key Vault key ``key_id``."""
+    from azure.keyvault.keys.crypto import CryptographyClient, SignatureAlgorithm
+
+    # A fresh client per signature: one call per hour, and it resolves the latest
+    # key version every time instead of pinning the first one seen.
+    client = CryptographyClient(key_id, credential=credential)
+    return client.sign(SignatureAlgorithm.rs256, digest).signature
+
+
 class KeyVaultSigner:
     """Signs with an RSA key held in Azure Key Vault. The private key never
     leaves the vault; the caller needs the ``sign`` key permission (the
@@ -86,15 +98,16 @@ class KeyVaultSigner:
 
     def __init__(self, key_id: str, credential: object | None = None) -> None:
         self._key_id = key_id
-        # DefaultAzureCredential resolves to the managed identity in Azure and to
-        # the developer's `az login` session locally.
-        self._credential = credential or DefaultAzureCredential()
+        self._credential = credential
 
     def _sign_sync(self, digest: bytes) -> bytes:
-        # A fresh client per signature: one call per hour, and it resolves the
-        # latest key version every time instead of pinning the first one seen.
-        client = CryptographyClient(self._key_id, credential=self._credential)
-        return client.sign(SignatureAlgorithm.rs256, digest).signature
+        if self._credential is None:
+            from azure.identity import DefaultAzureCredential
+
+            # Resolves to the managed identity in Azure and to the developer's
+            # `az login` session locally. Created once, so its token is cached.
+            self._credential = DefaultAzureCredential()
+        return _key_vault_sign_digest(self._key_id, self._credential, digest)
 
     async def sign_rs256(self, message: bytes) -> bytes:
         digest = hashlib.sha256(message).digest()

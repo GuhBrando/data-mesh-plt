@@ -1,8 +1,9 @@
 import asyncio
 import hashlib
 import logging
+import sys
+import types
 from datetime import UTC, datetime
-from unittest.mock import patch
 
 import httpx
 import jwt
@@ -41,22 +42,41 @@ class FakeKeyVaultCryptographyClient:
         self._credential = credential
 
     def sign(self, algorithm, digest):
-        assert str(algorithm) == "SignatureAlgorithm.rs256" or algorithm == "RS256"
+        assert algorithm == "RS256"
         type(self).calls.append((self._key_id, self._credential, digest))
         signature = self.private_key.sign(
             digest, padding.PKCS1v15(), Prehashed(hashes.SHA256())
         )
-        return type("SignResult", (), {"signature": signature})()
+        return types.SimpleNamespace(signature=signature)
+
+
+class FakeDefaultAzureCredential:
+    created = 0
+
+    def __init__(self):
+        type(self).created += 1
 
 
 @pytest.fixture
-def key_vault(rsa_key):
+def key_vault(rsa_key, monkeypatch):
+    """A fake Azure SDK in sys.modules, which the signer's lazy imports resolve to.
+
+    No test loads the real SDK: importing it takes about a second, and mutmut runs
+    the unit suite once per mutant.
+    """
     FakeKeyVaultCryptographyClient.calls = []
     FakeKeyVaultCryptographyClient.private_key = rsa_key
-    with patch(
-        "backend.infra.github_auth.CryptographyClient", FakeKeyVaultCryptographyClient
-    ):
-        yield FakeKeyVaultCryptographyClient
+    FakeDefaultAzureCredential.created = 0
+    crypto = types.ModuleType("azure.keyvault.keys.crypto")
+    crypto.CryptographyClient = FakeKeyVaultCryptographyClient
+    crypto.SignatureAlgorithm = types.SimpleNamespace(rs256="RS256")
+    identity = types.ModuleType("azure.identity")
+    identity.DefaultAzureCredential = FakeDefaultAzureCredential
+    for name in ("azure", "azure.keyvault", "azure.keyvault.keys"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, "azure.keyvault.keys.crypto", crypto)
+    monkeypatch.setitem(sys.modules, "azure.identity", identity)
+    return FakeKeyVaultCryptographyClient
 
 
 class LocalSigner:
@@ -156,6 +176,24 @@ async def test_app_jwt_is_backdated_and_lives_under_ten_minutes(rsa_key):
     )
     assert claims["iat"] == clock.now - 60
     assert claims["exp"] == clock.now + 540
+
+
+async def test_key_vault_signer_creates_the_default_credential_once(key_vault):
+    signer = KeyVaultSigner(KEY_ID)
+    assert FakeDefaultAzureCredential.created == 0  # nothing loaded until needed
+
+    await signer.sign_rs256(b"a")
+    await signer.sign_rs256(b"b")
+
+    assert FakeDefaultAzureCredential.created == 1
+    assert all(isinstance(c[1], FakeDefaultAzureCredential) for c in key_vault.calls)
+
+
+def test_importing_the_app_does_not_load_the_azure_sdk():
+    # Every pytest run (once per mutant under mutmut) would pay for it.
+    import backend.interface.dependencies  # noqa: F401
+
+    assert [m for m in sys.modules if m == "azure" or m.startswith("azure.")] == []
 
 
 async def test_key_vault_signer_resolves_the_key_on_every_signature(key_vault):

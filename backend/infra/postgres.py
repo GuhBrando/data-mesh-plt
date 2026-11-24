@@ -10,12 +10,9 @@ from backend.infra.config import (
 )
 
 
-async def get_db_connection():
-    """
-    FastAPI dependency that yields a database connection
-    and closes it after the request.
-    """
-    conn = await asyncpg.connect(
+async def connect() -> asyncpg.Connection:
+    """A connection with the application's settings; the caller closes it."""
+    return await asyncpg.connect(
         user=DB_USER,
         password=DB_PASSWORD,
         database=DB_NAME,
@@ -23,6 +20,14 @@ async def get_db_connection():
         port=DB_PORT,
         ssl=DB_SSL_MODE if DB_SSL_MODE != "disable" else False,
     )
+
+
+async def get_db_connection():
+    """
+    FastAPI dependency that yields a database connection
+    and closes it after the request.
+    """
+    conn = await connect()
     try:
         yield conn
     finally:

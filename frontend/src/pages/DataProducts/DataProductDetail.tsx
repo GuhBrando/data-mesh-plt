@@ -5,16 +5,13 @@ import {
   useUpdateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
-import { useDataContract } from '../../hooks/useDataContracts'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
-import { Avatar, DomainChip, StatusGlyph, TierGlyph } from '../../components/ui/Glyphs'
+import { DomainChip, StatusGlyph } from '../../components/ui/Glyphs'
 import {
-  ArrowRightIcon,
   ArrowUpRightIcon,
   ClockIcon,
-  ContractIcon,
   EditIcon,
   PendingIcon,
   ProductIcon,
@@ -24,7 +21,9 @@ import {
 } from '../../components/icons'
 import { relativeTime } from '../../lib/format'
 import DataProductForm from './DataProductForm'
-import type { DataContract, DataProduct, DataProductFormData } from '../../types'
+import ProductLineage from './ProductLineage'
+import SaveWarnings from './SaveWarnings'
+import type { DataProduct, DataProductInput } from '../../types'
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-US', {
@@ -35,8 +34,6 @@ function formatDateTime(iso: string) {
     minute: '2-digit',
   })
 }
-
-const SCHEMA_PREVIEW = 6
 
 function Panel({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
   return (
@@ -52,12 +49,10 @@ function Panel({ title, icon, children }: { title: string; icon?: ReactNode; chi
 
 function Header({
   product,
-  contract,
   onEdit,
   onDelete,
 }: {
   product: DataProduct
-  contract?: DataContract
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -69,9 +64,8 @@ function Header({
       <div className="min-w-0 flex-[1_1_420px]">
         <h1 className="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-tx">{product.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-          {contract && <DomainChip name={contract.domain} />}
-          {contract && <StatusGlyph status={contract.status} />}
-          {contract && <TierGlyph tier={contract.tier} showName />}
+          <DomainChip name={product.domain} />
+          <StatusGlyph status={product.status} />
           <span className="text-xs text-tx3" title={`Created ${formatDateTime(product.created_at)}`}>
             Updated {relativeTime(product.updated_at).toLowerCase()}
           </span>
@@ -104,75 +98,6 @@ function Header({
         </button>
       </div>
     </div>
-  )
-}
-
-function ContractPanel({
-  product,
-  contract,
-  onOpen,
-}: {
-  product: DataProduct
-  contract?: DataContract
-  onOpen: () => void
-}) {
-  const fields = contract?.models.fields ?? []
-  return (
-    <Panel title="Data contract" icon={<ContractIcon size={15} />}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="min-w-0 break-all text-left font-mono text-[13px] font-medium text-tx hover:text-accent-fg hover:underline"
-        >
-          {contract?.title ?? product.data_contracts_id}
-        </button>
-        {contract && (
-          <>
-            <span className="rounded-md border border-line2 px-1.5 font-mono text-[11.5px] leading-5 text-tx">v{contract.version}</span>
-            <StatusGlyph status={contract.status} />
-            {contract.owner && (
-              <span className="inline-flex items-center gap-2 text-[12.5px] text-tx2">
-                <Avatar name={contract.owner} size={20} />
-                {contract.owner}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-      {fields.length > 0 && (
-        <div className="border-t border-line">
-          <p className="flex items-center gap-2 px-4 pb-1 pt-3 text-[11.5px] font-medium text-tx3">
-            <SchemaIcon size={13} />
-            Schema · {fields.length} field{fields.length === 1 ? '' : 's'}
-          </p>
-          <ul className="px-4 pb-2">
-            {fields.slice(0, SCHEMA_PREVIEW).map((f) => (
-              <li key={f.name} className="flex h-8 items-center gap-3 border-b border-line text-xs last:border-0">
-                <span className="min-w-0 flex-1 truncate font-mono text-tx">{f.name}</span>
-                {f.primary_key && (
-                  <span className="rounded border border-accent-fg/40 px-[5px] font-mono text-[10.5px] font-medium leading-[17px] text-accent-fg">
-                    PK
-                  </span>
-                )}
-                <span className="font-mono text-tx2">{f.type}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className="border-t border-line px-4 py-2.5">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="group inline-flex items-center gap-1 text-xs text-tx2 transition-colors hover:text-tx"
-          aria-label="Open the data contract"
-        >
-          {fields.length > SCHEMA_PREVIEW ? `See all ${fields.length} fields in the contract` : 'Open the contract'}
-          <ArrowRightIcon size={12} className="transition-transform duration-150 group-hover:translate-x-0.5" />
-        </button>
-      </div>
-    </Panel>
   )
 }
 
@@ -225,16 +150,32 @@ export default function DataProductDetail() {
   const navigate = useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [lineageError, setLineageError] = useState<string | null>(null)
 
   const { data: product, isLoading, error } = useDataProduct(id ?? '')
-  const { data: contract } = useDataContract(product?.data_contracts_id ?? '')
   const updateMutation = useUpdateDataProduct()
   const deleteMutation = useDeleteDataProduct()
 
-  const handleUpdate = async (values: DataProductFormData) => {
+  const save = async (values: DataProductInput) => {
     if (!id) return
-    await updateMutation.mutateAsync({ id, ...values })
+    const saved = await updateMutation.mutateAsync({ id, ...values })
+    setWarnings(saved.warnings ?? [])
+  }
+
+  const handleUpdate = async (values: DataProductInput) => {
+    await save(values)
     setEditOpen(false)
+  }
+
+  // A version move from the lineage: one save of the whole product.
+  const handleMove = async (values: DataProductInput) => {
+    setLineageError(null)
+    try {
+      await save(values)
+    } catch (e) {
+      setLineageError((e as Error).message)
+    }
   }
 
   const handleDelete = async () => {
@@ -264,24 +205,25 @@ export default function DataProductDetail() {
 
   return (
     <div className="flex flex-col gap-[18px]">
-      <Header product={product} contract={contract} onEdit={() => setEditOpen(true)} onDelete={() => setDeleteConfirm(true)} />
+      <Header product={product} onEdit={() => setEditOpen(true)} onDelete={() => setDeleteConfirm(true)} />
+
+      <SaveWarnings warnings={warnings} onDismiss={() => setWarnings([])} />
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex min-w-0 flex-[999_1_620px] animate-enter flex-col gap-3.5 [animation-delay:0.08s]">
           <Panel title="About">
             <p className="whitespace-pre-wrap px-4 py-3.5 text-[13px] leading-relaxed text-tx2">{product.description}</p>
           </Panel>
-          <ContractPanel
-            product={product}
-            contract={contract}
-            onOpen={() => navigate(`/data-contracts/${product.data_contracts_id}`)}
-          />
+          <Panel title="Lineage" icon={<SchemaIcon size={15} />}>
+            <ProductLineage product={product} onChange={handleMove} saving={updateMutation.isPending} />
+            {lineageError && <p className="border-t border-line px-4 py-2.5 text-[13px] text-bad">{lineageError}</p>}
+          </Panel>
         </div>
         <Rail product={product} />
       </div>
 
       {/* Edit Modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Data Product">
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Data Product" size="lg">
         <DataProductForm
           defaultValues={product}
           onSubmit={handleUpdate}

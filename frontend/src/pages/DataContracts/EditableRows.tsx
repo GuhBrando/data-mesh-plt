@@ -13,6 +13,8 @@ interface EditableRowsProps<T> {
   emptyText: string
   /** Cells of one row, laid out on an 11-column span; the remove button takes the 12th. */
   renderRow: (row: T, index: number, patch: (p: Partial<T>) => void) => ReactNode
+  /** Replaces the single add button when a list offers several ways to add a row. */
+  addActions?: ReactNode
 }
 
 export default function EditableRows<T>({
@@ -22,6 +24,7 @@ export default function EditableRows<T>({
   addLabel,
   emptyText,
   renderRow,
+  addActions,
 }: EditableRowsProps<T>) {
   const idsRef = useRef<string[]>([])
   const getKey = (index: number): string => {
@@ -54,19 +57,22 @@ export default function EditableRows<T>({
             onClick={() => remove(i)}
             className="col-span-1 flex items-center justify-center text-red-400 hover:text-red-600"
             title="Remove"
+            aria-label="Remove"
           >
             <TrashIcon size={14} />
           </button>
         </div>
       ))}
-      <button
-        type="button"
-        onClick={() => onChange([...rows, emptyRow()])}
-        className="flex items-center gap-1 text-sm text-accent-fg dark:text-accent-fg hover:underline"
-      >
-        <PlusIcon size={14} />
-        {addLabel}
-      </button>
+      {addActions ?? (
+        <button
+          type="button"
+          onClick={() => onChange([...rows, emptyRow()])}
+          className="flex items-center gap-1 text-sm text-accent-fg dark:text-accent-fg hover:underline"
+        >
+          <PlusIcon size={14} />
+          {addLabel}
+        </button>
+      )}
     </div>
   )
 }

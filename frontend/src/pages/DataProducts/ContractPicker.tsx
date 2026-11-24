@@ -14,6 +14,10 @@ interface ContractPickerProps {
   loading?: boolean
   loadError?: string | null
   error?: string
+  label?: string
+  /** One more fact per contract, read with its summary (e.g. who produces it). */
+  detail?: (c: DataContract) => ReactNode
+  emptyHint?: string
 }
 
 function matches(c: DataContract, needle: string): boolean {
@@ -32,11 +36,13 @@ function ContractOption({
   name,
   checked,
   onSelect,
+  detail,
 }: {
   contract: DataContract
   name: string
   checked: boolean
   onSelect: () => void
+  detail?: (c: DataContract) => ReactNode
 }) {
   const detailsId = `${name}-${c.id}-details`
   return (
@@ -67,6 +73,7 @@ function ContractOption({
           <span className="font-mono text-[11.5px] text-tx2">v{c.version}</span>
           <StatusGlyph status={c.status} className="!text-xs" />
           {c.owner && <span className="text-xs text-tx3">{c.owner}</span>}
+          {detail && <span className="text-xs text-tx2">{detail(c)}</span>}
         </span>
         {c.description?.purpose && (
           <span className="mt-1 block truncate text-xs text-tx3" title={c.description.purpose}>
@@ -102,6 +109,7 @@ function ContractList({
   value,
   onChange,
   error,
+  detail,
 }: {
   contracts: DataContract[]
   name: string
@@ -110,6 +118,7 @@ function ContractList({
   value: string
   onChange: (id: string) => void
   error?: string
+  detail?: (c: DataContract) => ReactNode
 }) {
   if (contracts.length === 0) return <Notice>No contracts match this filter.</Notice>
   return (
@@ -121,13 +130,13 @@ function ContractList({
       className={`max-h-[264px] divide-y divide-line overflow-y-auto rounded-lg border ${error ? 'border-bad' : 'border-line2'}`}
     >
       {contracts.map((c) => (
-        <ContractOption key={c.id} contract={c} name={name} checked={value === c.id} onSelect={() => onChange(c.id)} />
+        <ContractOption key={c.id} contract={c} name={name} checked={value === c.id} onSelect={() => onChange(c.id)} detail={detail} />
       ))}
     </div>
   )
 }
 
-function Unavailable({ loading, loadError }: { loading: boolean; loadError: string | null }) {
+function Unavailable({ loading, loadError, hint }: { loading: boolean; loadError: string | null; hint: string }) {
   if (loading) {
     return (
       <Notice>
@@ -140,14 +149,14 @@ function Unavailable({ loading, loadError }: { loading: boolean; loadError: stri
     <Notice>
       <ContractIcon size={18} className="mx-auto mb-2 text-tx3" />
       <p className="font-medium text-tx2">No data contracts available to you</p>
-      <p className="mt-1 text-xs">A data product can only use a contract from a domain you belong to.</p>
+      <p className="mt-1 text-xs">{hint}</p>
     </Notice>
   )
 }
 
 /**
- * Pick the data contract a product is built on, from the contracts the user
- * can reach, each with the few facts that tell them apart.
+ * Pick a data contract for a port, each shown with the few facts that tell
+ * contracts apart.
  */
 export default function ContractPicker({
   contracts,
@@ -156,6 +165,9 @@ export default function ContractPicker({
   loading = false,
   loadError = null,
   error,
+  label = 'Data contract',
+  detail,
+  emptyHint = 'A data product can only use a contract from a domain you belong to.',
 }: ContractPickerProps) {
   const name = useId()
   const labelId = `${name}-label`
@@ -169,7 +181,7 @@ export default function ContractPicker({
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span id={labelId} className="form-label !mb-0">
-          Data contract
+          {label}
         </span>
         {ready && (
           <span className="text-[11.5px] tabular-nums text-tx3">
@@ -177,7 +189,7 @@ export default function ContractPicker({
           </span>
         )}
       </div>
-      {!ready && <Unavailable loading={loading} loadError={loadError} />}
+      {!ready && <Unavailable loading={loading} loadError={loadError} hint={emptyHint} />}
       {ready && contracts.length >= FILTER_FROM && <FilterInput value={query} onChange={setQuery} />}
       {ready && (
         <ContractList
@@ -188,6 +200,7 @@ export default function ContractPicker({
           value={value}
           onChange={onChange}
           error={error}
+          detail={detail}
         />
       )}
       {error && (

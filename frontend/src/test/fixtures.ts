@@ -1,4 +1,4 @@
-import type { DataContract, DataProduct, DomainWithMembers, User } from '../types'
+import type { DataContract, DataProduct, DomainWithMembers, InputPort, OutputPort, User } from '../types'
 
 // Small builders for the catalog types; each test overrides only what it cares about.
 
@@ -24,12 +24,48 @@ export function makeContract(over: Partial<DataContract> = {}): DataContract {
   }
 }
 
+export function makeInput(over: Partial<InputPort> = {}): InputPort {
+  return {
+    id: 'i1',
+    name: 'orders',
+    contract_id: 'c1',
+    version: '1.0.0',
+    deprecated: false,
+    authoritative_definitions: [],
+    contract: null,
+    produced_by: [],
+    ...over,
+  }
+}
+
+export function makeOutput(over: Partial<OutputPort> = {}): OutputPort {
+  return {
+    id: 'o1',
+    name: 'orders',
+    contract_id: 'c1',
+    version: '1.0.0',
+    type: 'tables',
+    description: null,
+    deprecated: false,
+    authoritative_definitions: [],
+    input_contracts: [],
+    contract: null,
+    consumed_by: [],
+    ...over,
+  }
+}
+
 export function makeProduct(over: Partial<DataProduct> = {}): DataProduct {
   return {
     id: 'p1',
     name: 'Orders product',
     description: 'Orders, one row per order line.',
-    data_contracts_id: 'c1',
+    domain_id: 'd1',
+    domain: 'Sales',
+    status: 'active',
+    deprecated: false,
+    input_ports: [],
+    output_ports: [makeOutput()],
     repo_url: 'https://github.com/org/orders',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

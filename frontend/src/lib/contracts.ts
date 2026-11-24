@@ -1,10 +1,13 @@
-import type { DataContract } from '../types'
+import type { DataContract, ProductStatus } from '../types'
 
 export type ContractStatus = DataContract['status']
+// The status glyph shows contracts and products; products add `proposed`.
+export type GlyphStatus = ContractStatus | ProductStatus
 
 export const STATUS_ORDER: ContractStatus[] = ['active', 'in_review', 'draft', 'deprecated', 'retired']
 
-export const STATUS_LABELS: Record<ContractStatus, string> = {
+export const STATUS_LABELS: Record<GlyphStatus, string> = {
+  proposed: 'Proposed',
   active: 'Active',
   in_review: 'In review',
   draft: 'Draft',

@@ -35,3 +35,20 @@ export function selectableContracts(
     .filter((c) => isAdmin || c.id === keepId || reachable.has(c.domain_id))
     .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title))
 }
+
+/**
+ * The domains a user may give a data product: those they belong to, or every
+ * one for a platform admin, by name. `keepId` (the product's current domain) is
+ * always kept, first.
+ */
+export function selectableDomains(
+  domains: DomainWithMembers[],
+  user: Pick<User, 'id' | 'role'> | null,
+  keepId?: string,
+): DomainWithMembers[] {
+  if (!user) return []
+  const rank = (d: DomainWithMembers) => (d.id === keepId ? 0 : 1)
+  return domains
+    .filter((d) => d.id === keepId || getDomainAccess(d, user.id, user.role) !== 'none')
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+}

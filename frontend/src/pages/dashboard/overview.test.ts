@@ -81,19 +81,26 @@ describe('buildAttention', () => {
 })
 
 describe('buildRecent', () => {
-  it('merges contracts and products, newest first, joining each product to its contract', () => {
-    const contract = makeContract({ id: 'c1', updated_at: '2026-01-02T00:00:00Z' })
+  it('merges contracts and products, newest first, each with its own domain and status', () => {
+    const contract = makeContract({ id: 'c1', domain: 'Sales', status: 'draft', tier: 1, owner: 'alice', updated_at: '2026-01-02T00:00:00Z' })
     const rows = buildRecent(
       [contract],
       [
-        makeProduct({ id: 'p1', updated_at: '2026-01-03T00:00:00Z' }),
-        makeProduct({ id: 'p2', data_contracts_id: 'missing', updated_at: '2026-01-01T00:00:00Z' }),
+        makeProduct({ id: 'p1', domain: 'Risk', status: 'proposed', updated_at: '2026-01-03T00:00:00Z' }),
+        makeProduct({ id: 'p2', updated_at: '2026-01-01T00:00:00Z' }),
       ],
     )
     expect(rows.map((r) => r.key)).toEqual(['p-p1', 'c-c1', 'p-p2'])
-    expect(rows[0]).toMatchObject({ kind: 'product', to: '/data-products/p1', contract })
-    expect(rows[1]).toMatchObject({ kind: 'contract', to: '/data-contracts/c1' })
-    expect(rows[2].contract).toBeUndefined()
+    expect(rows[0]).toEqual({
+      key: 'p-p1',
+      kind: 'product',
+      name: 'Orders product',
+      to: '/data-products/p1',
+      domain: 'Risk',
+      status: 'proposed',
+      updatedAt: '2026-01-03T00:00:00Z',
+    })
+    expect(rows[1]).toMatchObject({ kind: 'contract', to: '/data-contracts/c1', domain: 'Sales', status: 'draft', tier: 1, owner: 'alice' })
   })
 })
 
@@ -104,7 +111,7 @@ describe('buildDomainCards', () => {
       makeContract({ id: 'c2', domain_id: 'd1', status: 'draft' }),
       makeContract({ id: 'c3', domain_id: 'd2' }),
     ]
-    const products = [makeProduct({ id: 'p1', data_contracts_id: 'c1' }), makeProduct({ id: 'p2', data_contracts_id: 'c3' })]
+    const products = [makeProduct({ id: 'p1', domain_id: 'd1' }), makeProduct({ id: 'p2', domain_id: 'd2' })]
     const [card] = buildDomainCards([makeDomain({ id: 'd1', members: [] })], contracts, products)
     expect(card).toMatchObject({ contracts: 2, products: 1, members: 0, noMaintainer: true })
     expect(card.counts).toMatchObject({ active: 1, draft: 1 })

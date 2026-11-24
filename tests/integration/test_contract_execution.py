@@ -24,7 +24,10 @@ from backend.use_cases.data_contract.odcs import to_odcs
 from tests.quality_rule_builders import library_rule, orders_contract
 
 
-CLI = ["uvx", "--from", "datacontract-cli[csv]==1.2.9", "datacontract"]
+# uvx resolves the tool's dependencies on every run, so freeze them to the date
+# UV_EXCLUDE_NEWER sets in ci.yml: sqlglot 30.34.0 breaks the duplicate check.
+CLI = ["uvx", "--exclude-newer", "2026-11-01T00:00:00Z",
+       "--from", "datacontract-cli[csv]==1.2.9", "datacontract"]
 FIXTURES = Path(__file__).parents[1] / "fixtures/odcs/orders"
 pytestmark = pytest.mark.skipif(shutil.which("uvx") is None, reason="uvx is not installed")
 

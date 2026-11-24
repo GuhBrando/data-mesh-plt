@@ -147,10 +147,9 @@ class PostgresDomainRepository(IDomainRepository):
             return result != "DELETE 0"
         except asyncpg.ForeignKeyViolationError:
             raise ValueError(
-                "Cannot delete this domain because it still has"
-                " data contracts referencing it."
-                " Remove or reassign those contracts first."
-            )
+                "Cannot delete this domain because data contracts or data"
+                " products still use it. Move or remove them first."
+            ) from None
 
     async def add_member(
         self, domain_id: uuid.UUID, user_id: uuid.UUID, role: str

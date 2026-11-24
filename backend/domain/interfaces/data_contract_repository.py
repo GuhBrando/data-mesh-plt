@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import uuid
     from contextlib import AbstractAsyncContextManager
-    from datetime import datetime
 
-    from backend.domain.entities.contract_version import ContractVersion
+    from backend.domain.entities.contract_version import (
+        ContractBaseline,
+        ContractVersion,
+    )
     from backend.domain.entities.data_contract import DataContract
 
 
@@ -31,14 +33,12 @@ class IDataContractRepository(ABC):
     ) -> None: ...
 
     @abstractmethod
-    async def add_baseline_version(
-        self,
-        contract_id: uuid.UUID,
-        version: str,
-        yaml_content: str,
-        created_at: datetime,
-    ) -> None:
-        """Record the version a contract had before its history began, if absent."""
+    async def add_baseline_versions(self, baselines: list[ContractBaseline]) -> None:
+        """Record each version a contract had before its history began, if absent."""
+
+    @abstractmethod
+    async def list_by_ids(self, contract_ids: list[uuid.UUID]) -> list[DataContract]:
+        """The contracts among `contract_ids` that exist, in one query."""
 
     @abstractmethod
     async def list_versions(self, contract_id: uuid.UUID) -> list[ContractVersion]: ...

@@ -6,6 +6,7 @@ import asyncpg
 import pytest
 
 from backend.domain.contract_evolution import ContractVersionConflictError
+from backend.domain.entities.contract_version import ContractBaseline
 from backend.infra.repositories.data_contract_repository import (
     PostgresDataContractRepository,
 )
@@ -34,12 +35,40 @@ async def test_add_version_inserts_the_snapshot():
     assert params == [CONTRACT_ID, "1.1.0", "y", user]
 
 
-async def test_add_baseline_version_keeps_an_existing_row():
+async def test_add_baseline_versions_writes_all_in_one_statement():
     db, at = _db(), datetime.now(tz=timezone.utc)
-    await PostgresDataContractRepository(db).add_baseline_version(CONTRACT_ID, "1.0.0", "y", at)
+    other = uuid.uuid4()
+    await PostgresDataContractRepository(db).add_baseline_versions([
+        ContractBaseline(CONTRACT_ID, "1.0.0", "y", at),
+        ContractBaseline(other, "2.0.0", "z", at),
+    ])
+    db.execute.assert_awaited_once()
     sql, *params = db.execute.call_args.args
+    assert "unnest" in sql
     assert "ON CONFLICT (contract_id, version) DO NOTHING" in sql
-    assert params == [CONTRACT_ID, "1.0.0", "y", at]
+    assert params == [[CONTRACT_ID, other], ["1.0.0", "2.0.0"], ["y", "z"], [at, at]]
+
+
+async def test_add_baseline_versions_skips_an_empty_list():
+    db = _db()
+    await PostgresDataContractRepository(db).add_baseline_versions([])
+    db.execute.assert_not_awaited()
+
+
+async def test_list_by_ids_reads_all_in_one_query():
+    db = _db()
+    db.fetch.return_value = []
+    ids = [CONTRACT_ID, uuid.uuid4()]
+    assert await PostgresDataContractRepository(db).list_by_ids(ids) == []
+    sql, param = db.fetch.call_args.args
+    assert "ANY($1::uuid[])" in sql
+    assert param == ids
+
+
+async def test_list_by_ids_skips_an_empty_list():
+    db = _db()
+    assert await PostgresDataContractRepository(db).list_by_ids([]) == []
+    db.fetch.assert_not_awaited()
 
 
 async def test_get_by_id_for_update_locks_only_the_contract_row():

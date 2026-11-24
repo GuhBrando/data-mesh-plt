@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 PRODUCT_STATUSES = ("proposed", "draft", "active", "deprecated", "retired")
 RETIRED_PRODUCT = "retired"
+STATUS_RULE = f"Status must be one of: {', '.join(PRODUCT_STATUSES)}"
 _DEPRECATED_STATUSES = frozenset({"deprecated", RETIRED_PRODUCT})
 
 
@@ -165,7 +166,7 @@ class DataProduct:
     def _broken_rules(self) -> list[str]:
         broken = []
         if self.status not in PRODUCT_STATUSES:
-            broken.append(f"Status must be one of: {', '.join(PRODUCT_STATUSES)}")
+            broken.append(STATUS_RULE)
         if not self.output_ports:
             broken.append("A data product needs at least one output")
         own_inputs = {

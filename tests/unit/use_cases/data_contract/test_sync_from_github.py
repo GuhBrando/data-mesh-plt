@@ -336,7 +336,7 @@ async def test_new_contract_writes_the_first_snapshot(use_case, github, repo):
     _sync(repo, github, None, _contract(), _yaml())
     await use_case.execute(created_by=USER_ID)
     repo.add_version.assert_called_once_with(CONTRACT_ID, "1.0.0", ANY, USER_ID)
-    repo.add_baseline_version.assert_not_called()
+    repo.add_baseline_versions.assert_not_called()
 
 
 async def test_version_change_writes_a_snapshot(use_case, github, repo):

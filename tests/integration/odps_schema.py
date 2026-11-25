@@ -17,6 +17,7 @@ requires_database = pytest.mark.skipif(
 
 MIGRATIONS = Path(__file__).parents[2] / "database/migrations"
 PLAN_1_SQL = MIGRATIONS / "20261124000001_odps_ports_status_domain.sql"
+PLAN_2_SQL = MIGRATIONS / "20261124000002_odps_product_metadata.sql"
 _HISTORY_SQL = MIGRATIONS / "20261101000005_contract_versions.sql"
 
 BASE_DDL = """
@@ -70,6 +71,17 @@ CREATE TABLE catalog.data_products (
         REFERENCES catalog.data_contracts(id) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
+CREATE TABLE platform.control_port_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    action_url TEXT NOT NULL
+);
+CREATE TABLE platform.control_ports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    control_port_type_id UUID NOT NULL REFERENCES platform.control_port_types(id),
+    data_products_id UUID NOT NULL REFERENCES catalog.data_products(id) ON DELETE CASCADE
+);
+
 CREATE TYPE platform.port_role_type AS ENUM ('INPUT', 'OUTPUT', 'INTERNAL');
 CREATE TYPE platform.binding_status AS ENUM ('ACTIVE', 'DISABLED');
 CREATE TABLE platform.data_ports_type (
@@ -102,6 +114,12 @@ async def run_plan_1(conn) -> None:
     await conn.execute(PLAN_1_SQL.read_text(encoding="utf-8"))
 
 
+async def run_plan_2(conn) -> None:
+    await conn.execute(PLAN_2_SQL.read_text(encoding="utf-8"))
+
+
 async def migrated(conn) -> None:
+    """The schema the code reads today: both ODPS plans applied."""
     await before_plan_1(conn)
     await run_plan_1(conn)
+    await run_plan_2(conn)

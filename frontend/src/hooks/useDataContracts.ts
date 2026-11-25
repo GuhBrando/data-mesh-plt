@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del, getText } from '../lib/api'
-import type { ContractVersion, DataContract, DataContractInput } from '../types'
+import type { ContractVersion, DataContract, DataContractInput, PortUsage } from '../types'
 
 const KEYS = {
   all: ['data-contracts'] as const,
@@ -8,6 +8,8 @@ const KEYS = {
   yaml: (id: string) => ['data-contracts', id, 'yaml'] as const,
   // Under KEYS.one(id), so an update's invalidation refreshes the history too.
   versions: (id: string) => ['data-contracts', id, 'versions'] as const,
+  // Under KEYS.one(id) too; product writes invalidate every contract key.
+  ports: (id: string) => ['data-contracts', id, 'ports'] as const,
   // Outside KEYS.all on purpose: a snapshot never changes, so no update refetches it.
   versionYaml: (id: string, version: string | null) =>
     ['contract-version-yaml', id, version] as const,
@@ -40,6 +42,15 @@ export function useContractVersions(id: string) {
   return useQuery<ContractVersion[]>({
     queryKey: KEYS.versions(id),
     queryFn: () => get<ContractVersion[]>(`/data-contracts/${id}/versions`),
+    enabled: !!id,
+  })
+}
+
+/** Every product port that references the contract: who produces and consumes it. */
+export function useContractPorts(id: string) {
+  return useQuery<PortUsage[]>({
+    queryKey: KEYS.ports(id),
+    queryFn: () => get<PortUsage[]>(`/data-contracts/${id}/ports`),
     enabled: !!id,
   })
 }

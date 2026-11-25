@@ -14,6 +14,7 @@ import type { ContractVersion } from '../../types'
 vi.mock('../../hooks/useDataContracts', () => ({
   useDataContract: vi.fn(), useDataContractYaml: vi.fn(), useDeleteDataContract: vi.fn(), useUpdateDataContract: vi.fn(),
   useContractVersions: vi.fn(), useContractVersionYaml: vi.fn(),
+  useContractPorts: () => ({ data: [], isLoading: false, isError: false }),
 }))
 vi.mock('./DataContractForm', () => ({
   default: ({ onSubmit }: { onSubmit: (input: object) => void }) => (
@@ -214,5 +215,13 @@ describe('DataContractDetail version history', () => {
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
     expect(screen.getAllByText('retired').some((el) => el.className.includes('purple'))).toBe(true)
+  })
+})
+
+describe('DataContractDetail usage', () => {
+  it('shows which data products produce and consume the contract', () => {
+    renderDetail()
+    expect(screen.getByRole('heading', { name: 'Usage' })).toBeInTheDocument()
+    expect(screen.getByText('No data product uses this contract yet.')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-h1:bqsw5putktHgwrXdGKdRJOaRXeeQ9S/BnPGUXJy0gLw=
+h1:UtdHhkOyaUP5tr0DQ9Z/28Qa7orBSU6REni8PwheZ4g=
 20260326000001_create_ddl.sql h1:S+EXRWsbBDU+A9UXQ8G2E8/XlNZ+5CmMwzKxst+s2L4=
 20260326000002_setup_roles.sql h1:dAw0scTDnRs9j4TiI79bvTkZjBEGB6PO48shGvPHVdY=
 20260401000001_fix_admin_schema_grants.sql h1:3oX/BlKhc/oBbhVK7xIxfbuFwe324+kLPPJX9jWHB7w=
@@ -11,3 +11,4 @@ h1:bqsw5putktHgwrXdGKdRJOaRXeeQ9S/BnPGUXJy0gLw=
 20261101000003_data_contract_metadata.sql h1:/j2B6Bu9qLgRVymQapRjZa8KZYAxs50amM0qgVkY4Xc=
 20261101000004_odcs_quality_and_sla.sql h1:CL899XdbY4t2+pv1Y/BGwWH2R5+hTQGm9XCDzZTuzyg=
 20261101000005_contract_versions.sql h1:WpwE09TwIk9sVxsaB9EYdwNhCFSoLs8ONEbd8cLZwDI=
+20261124000001_odps_ports_status_domain.sql h1:j5cNAkyhiehTllfASrw/kNKXvoi8kHq1cKy/hjIzT3k=

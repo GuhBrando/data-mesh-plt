@@ -7,6 +7,7 @@ import {
   useUpdateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
+import { makeProduct } from '../../test/fixtures'
 
 vi.mock('../../hooks/useDataProducts', () => ({
   useDataProduct: vi.fn(),
@@ -14,20 +15,7 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-// The detail page joins the product to its contract; these tests cover the product only.
-vi.mock('../../hooks/useDataContracts', () => ({
-  useDataContract: () => ({ data: undefined, isLoading: false, error: null }),
-}))
-
-const baseProduct = {
-  id: 'prod-123',
-  name: 'My Product',
-  description: 'A test product',
-  data_contracts_id: 'contract-abc',
-  repo_url: null,
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
-}
+const baseProduct = makeProduct({ id: 'prod-123', name: 'My Product', description: 'A test product', repo_url: null })
 
 function renderDetail() {
   return render(

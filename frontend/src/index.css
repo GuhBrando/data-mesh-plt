@@ -128,7 +128,7 @@
  * Glyphs. Kept outside @layer on purpose: their modifier classes are built from data
  * (`st-${status}`, `tier-${tier}`), which Tailwind's content scan cannot see.
  */
-/* Contract status: the shape carries the meaning, colour reinforces it. */
+/* Contract and product status: the shape carries the meaning, colour reinforces it. */
 .st {
   @apply inline-flex items-center gap-[7px] whitespace-nowrap text-[12.5px] text-tx2;
 }
@@ -142,6 +142,9 @@
 .st-in_review::before {
   border: 1.5px solid rgb(var(--warn));
   background: linear-gradient(90deg, rgb(var(--warn)) 50%, transparent 50%);
+}
+.st-proposed::before {
+  border: 1.5px dotted rgb(var(--warn));
 }
 .st-draft::before {
   border: 1.5px dashed rgb(var(--mute));

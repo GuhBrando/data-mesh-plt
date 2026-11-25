@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import NamedTuple
 
 
 class ContractVersion:
@@ -16,3 +17,12 @@ class ContractVersion:
         self.version = version
         self.created_by = created_by
         self.created_at = created_at
+
+
+class ContractBaseline(NamedTuple):
+    """The version a contract had before its history began, to record if absent."""
+
+    contract_id: uuid.UUID
+    version: str
+    yaml_content: str
+    created_at: datetime

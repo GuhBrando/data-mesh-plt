@@ -20,6 +20,7 @@ import {
   CodeFileIcon,
   ContractIcon,
   EditIcon,
+  ProductIcon,
   SchemaIcon,
   ServerIcon,
   ShieldIcon,
@@ -29,6 +30,7 @@ import {
   type IconProps,
 } from '../../components/icons'
 import DataContractForm from './DataContractForm'
+import ContractUsage from './ContractUsage'
 import { safeUrl, serverLocation } from './contractMetadata'
 import { STATUS_COLORS } from './contractStatus'
 import { describeCheck } from '../../lib/qualityRules'
@@ -612,6 +614,9 @@ export default function DataContractDetail() {
       <div className="flex flex-wrap items-start gap-5">
         <ContractTabs contract={contract} onViewVersion={setOpenVersion} />
         <aside aria-label="Contract details" className="flex min-w-0 flex-[1_1_300px] animate-enter flex-col gap-3.5 [animation-delay:0.18s]">
+          <Panel title="Usage" icon={<ProductIcon size={15} />}>
+            <ContractUsage contract={contract} />
+          </Panel>
           <ServiceLevelsPanel sla={contract.servicelevels} />
           <ServersPanel servers={contract.servers} />
           <TeamPanel members={contract.team_members} />

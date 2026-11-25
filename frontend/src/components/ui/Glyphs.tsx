@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
-import { STATUS_LABELS, TIER_NAMES, domainColor, initials, type ContractStatus } from '../../lib/contracts'
+import { STATUS_LABELS, TIER_NAMES, domainColor, initials, type GlyphStatus } from '../../lib/contracts'
 
-export function StatusGlyph({ status, className = '' }: { status: ContractStatus; className?: string }) {
+export function StatusGlyph({ status, className = '' }: { status: GlyphStatus; className?: string }) {
   return <span className={`st st-${status} ${className}`}>{STATUS_LABELS[status] ?? status}</span>
 }
 

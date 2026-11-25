@@ -110,14 +110,67 @@ export interface DataContractInput {
   servers: ContractServer[]
 }
 
+// ODPS product status (Open Data Product Standard v1.1.0).
+export type ProductStatus = 'proposed' | 'draft' | 'active' | 'deprecated' | 'retired'
+
+// ODPS inputContracts entry: a contract version an output is built from.
+export interface ContractRef { contract_id: string; version: string }
+export interface AuthoritativeDefinition { type: string; url: string }
+// Read-only: the referenced contract as it is now.
+export interface ContractSummary { title: string; status: DataContract['status']; version: string; domain: string }
+// Read-only: another product seen from a port (lineage).
+export interface ProductRef { id: string; name: string; status: ProductStatus }
+
+export interface InputPort {
+  id?: string
+  name: string
+  contract_id: string | null
+  version: string | null   // with a contract, the pinned contract version
+  deprecated: boolean
+  authoritative_definitions: AuthoritativeDefinition[]
+  contract?: ContractSummary | null
+  produced_by?: ProductRef[]
+}
+
+export interface OutputPort {
+  id?: string
+  name: string
+  contract_id: string | null
+  version: string | null
+  type: string | null
+  description: string | null
+  deprecated: boolean
+  authoritative_definitions: AuthoritativeDefinition[]
+  input_contracts: ContractRef[]
+  contract?: ContractSummary | null
+  consumed_by?: ProductRef[]
+}
+
 export interface DataProduct {
   id: string
   name: string
   description: string
-  data_contracts_id: string
+  domain_id: string
+  domain: string             // read-only joined name
+  status: ProductStatus
+  deprecated: boolean        // derived from status
+  input_ports: InputPort[]
+  output_ports: OutputPort[]
   repo_url?: string | null   // provisioned GitHub repo URL; null until backend provisions it
   created_at: string
   updated_at: string
+  warnings?: string[]        // only on a successful write
+}
+
+// One port that references a contract, seen from the contract.
+export interface PortUsage {
+  product_id: string
+  product_name: string
+  domain: string
+  status: ProductStatus
+  role: 'input' | 'output'
+  port_name: string
+  version: string
 }
 
 export interface User {
@@ -156,10 +209,14 @@ export interface DomainInput {
   owner_id: string
 }
 
-export interface DataProductFormData {
+// What POST and PUT take: the whole product, ports included.
+export interface DataProductInput {
   name: string
   description: string
-  data_contracts_id: string
+  domain_id: string
+  status: ProductStatus
+  input_ports: InputPort[]
+  output_ports: OutputPort[]
 }
 
 export interface UserFormData {

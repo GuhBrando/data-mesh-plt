@@ -1,159 +1,205 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import DataProductForm from './DataProductForm'
 import { useSelectableContracts } from '../../hooks/useSelectableContracts'
-import { makeContract } from '../../test/fixtures'
-import type { DataContract, DataProduct } from '../../types'
+import { useDataContracts } from '../../hooks/useDataContracts'
+import { useDataProducts } from '../../hooks/useDataProducts'
+import { useAllDomains } from '../../hooks/useDomains'
+import { useAuth } from '../../contexts/AuthContext'
+import { makeContract, makeDomain, makeInput, makeOutput, makeProduct, makeUser } from '../../test/fixtures'
+import type { DomainWithMembers } from '../../types'
 
 vi.mock('../../hooks/useSelectableContracts', () => ({ useSelectableContracts: vi.fn() }))
+vi.mock('../../hooks/useDataContracts', () => ({ useDataContracts: vi.fn() }))
+vi.mock('../../hooks/useDataProducts', () => ({ useDataProducts: vi.fn() }))
+vi.mock('../../hooks/useDomains', () => ({ useAllDomains: vi.fn() }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 
-const existing: DataProduct = {
-  id: 'prod-1',
-  name: 'Existing Product',
-  description: 'An existing data product description',
-  data_contracts_id: 'c2',
-  repo_url: null,
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
+const orders = makeContract({ id: 'c1', title: 'Orders', version: '1.2.0', domain_id: 'd1' })
+const sales = makeDomain({ id: 'd1', name: 'Sales', owner_id: 'u1', members: [] })
+const risk = makeDomain({ id: 'd2', name: 'Risk', owner_id: 'u1', members: [] })
+
+function query(data: unknown) {
+  return { data, isLoading: false, error: null } as never
 }
 
-const contracts = [
-  makeContract({
-    id: 'c1',
-    title: 'orders_contract',
-    domain: 'Sales',
-    version: '2.0.1',
-    tier: 1,
-    owner: 'alice',
-    description: { purpose: 'One row per order line', usage: '', limitations: '' },
-  }),
-  makeContract({ id: 'c2', title: 'exposure_contract', domain: 'Risk', status: 'in_review', owner: 'carla' }),
-]
-
-function selectable(over: Partial<{ contracts: DataContract[]; isLoading: boolean; error: Error | null }> = {}) {
-  vi.mocked(useSelectableContracts).mockReturnValue({ contracts, isLoading: false, error: null, ...over })
+function setup({ domains = [sales] as DomainWithMembers[] } = {}) {
+  vi.mocked(useAuth).mockReturnValue({ user: makeUser({ id: 'u1', role: 'DATA_OWNER' }) } as never)
+  vi.mocked(useAllDomains).mockReturnValue(query(domains))
+  vi.mocked(useSelectableContracts).mockReturnValue({ contracts: [orders], isLoading: false, error: null })
+  vi.mocked(useDataContracts).mockReturnValue(query([orders]))
+  vi.mocked(useDataProducts).mockReturnValue(query([]))
 }
 
 function renderForm(props: Partial<Parameters<typeof DataProductForm>[0]> = {}) {
   const onSubmit = vi.fn()
-  render(<DataProductForm onSubmit={onSubmit} onCancel={vi.fn()} isSubmitting={false} {...props} />)
-  return { onSubmit }
+  const onCancel = vi.fn()
+  render(<DataProductForm onSubmit={onSubmit} onCancel={onCancel} isSubmitting={false} {...props} />)
+  return { onSubmit, onCancel }
 }
 
-function fillNameAndDescription() {
-  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Valid Name' } })
-  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'A sufficiently long description' } })
+function fillAbout() {
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Risk Hub' } })
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Credit exposure by client' } })
 }
 
-beforeEach(() => selectable())
+function outputsSection() {
+  return screen.getByRole('group', { name: /Outputs/ })
+}
 
-describe('DataProductForm', () => {
-  it('renders the create button label without defaultValues', () => {
+beforeEach(() => setup())
+
+describe('DataProductForm — create', () => {
+  it('starts as a draft with one empty output', () => {
     renderForm()
     expect(screen.getByRole('button', { name: 'Create Product' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Status')).toHaveValue('draft')
+    expect(within(outputsSection()).getAllByLabelText('Output name')).toHaveLength(1)
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(
+      expect.arrayContaining(['Proposed', 'Draft', 'Active', 'Deprecated', 'Retired']),
+    )
   })
 
-  it('renders the save label and prefilled values in edit mode', () => {
-    renderForm({ defaultValues: existing })
-    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Name')).toHaveValue('Existing Product')
-    expect(screen.getByRole('radio', { name: 'exposure_contract' })).toBeChecked()
-    expect(useSelectableContracts).toHaveBeenCalledWith('c2')
-  })
-
-  it('calls onCancel when Cancel is clicked', () => {
-    const onCancel = vi.fn()
-    renderForm({ onCancel })
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(onCancel).toHaveBeenCalledOnce()
-  })
-
-  it('lists the selectable contracts with their summary, instead of a UUID field', () => {
+  it('preselects the only domain the user belongs to', () => {
     renderForm()
-    expect(screen.queryByLabelText('Data Contract ID')).not.toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: 'Data contract' })).toBeInTheDocument()
-    const orders = screen.getByRole('radio', { name: 'orders_contract' })
-    expect(orders).toHaveAccessibleDescription(/Sales.*v2\.0\.1.*Active.*alice/)
-    expect(screen.getByText('One row per order line')).toBeInTheDocument()
-    expect(screen.getByText('2 available')).toBeInTheDocument()
+    expect(screen.getByLabelText('Domain')).toHaveValue('d1')
   })
 
-  it('shows validation errors and does not submit invalid data', async () => {
+  it('asks for a domain when the user belongs to several', async () => {
+    setup({ domains: [sales, risk] })
     const { onSubmit } = renderForm()
+    expect(screen.getByLabelText('Domain')).toHaveValue('')
     fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
-    expect(await screen.findByText('Name must be at least 3 characters')).toBeInTheDocument()
-    expect(screen.getByText('Select a data contract')).toBeInTheDocument()
+    expect(await screen.findByText('Choose a domain')).toBeInTheDocument()
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('submits the picked contract id when the form is valid', async () => {
+  it('asks for a port name and shows rule 1 on the Outputs section', async () => {
     const { onSubmit } = renderForm()
-    fillNameAndDescription()
-    fireEvent.click(screen.getByRole('radio', { name: 'orders_contract' }))
+    fillAbout()
+    fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
+    expect(await within(outputsSection()).findByRole('alert')).toHaveTextContent('Every port needs a name')
+    fireEvent.click(within(outputsSection()).getByRole('button', { name: 'Remove' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
+    await waitFor(() =>
+      expect(within(outputsSection()).getByRole('alert')).toHaveTextContent('A data product needs at least one output'),
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses two outputs with the same name and version', async () => {
+    const { onSubmit } = renderForm()
+    fillAbout()
+    fireEvent.change(screen.getByLabelText('Output name'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add output' }))
+    fireEvent.change(screen.getAllByLabelText('Output name')[1], { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
+    expect(await within(outputsSection()).findByRole('alert')).toHaveTextContent(
+      'Two outputs share the name x and version (none)',
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('submits the product with its ports', async () => {
+    const { onSubmit } = renderForm()
+    fillAbout()
+    fireEvent.change(screen.getByLabelText('Output name'), { target: { value: 'alerts' } })
+    fireEvent.click(screen.getByRole('button', { name: 'External source' }))
+    fireEvent.change(screen.getByLabelText('Input name'), { target: { value: 'core' } })
+    fireEvent.change(screen.getByLabelText('Source link'), { target: { value: 'https://wiki/core' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      name: 'Valid Name',
-      description: 'A sufficiently long description',
-      data_contracts_id: 'c1',
+    expect(onSubmit.mock.calls[0][0]).toEqual({
+      name: 'Risk Hub',
+      description: 'Credit exposure by client',
+      domain_id: 'd1',
+      status: 'draft',
+      input_ports: [
+        {
+          name: 'core',
+          contract_id: null,
+          version: null,
+          deprecated: false,
+          authoritative_definitions: [{ type: 'implementation', url: 'https://wiki/core' }],
+        },
+      ],
+      output_ports: [
+        {
+          name: 'alerts',
+          contract_id: null,
+          version: null,
+          type: 'tables',
+          description: null,
+          deprecated: false,
+          authoritative_definitions: [],
+          input_contracts: [],
+        },
+      ],
     })
   })
 
-  it('submits a changed contract in edit mode', async () => {
-    const { onSubmit } = renderForm({ defaultValues: existing })
-    fireEvent.click(screen.getByRole('radio', { name: 'orders_contract' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+  it('submits an output contract picked from the domains of the user', async () => {
+    const { onSubmit } = renderForm()
+    fillAbout()
+    fireEvent.click(screen.getByRole('button', { name: 'Add a contract' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Orders' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Product' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({ data_contracts_id: 'c1' })
+    expect(onSubmit.mock.calls[0][0].output_ports[0]).toMatchObject({ name: 'orders', contract_id: 'c1', version: '1.2.0' })
+    expect(onSubmit.mock.calls[0][0].output_ports[0]).not.toHaveProperty('contract')
+  })
+
+  it('calls onCancel', () => {
+    const { onCancel } = renderForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 })
 
-describe('DataProductForm — contract picker states', () => {
-  it('shows a spinner while the contracts load', () => {
-    selectable({ contracts: [], isLoading: true })
-    renderForm()
-    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+describe('DataProductForm — edit', () => {
+  const existing = makeProduct({
+    name: 'Existing Product',
+    description: 'An existing data product description',
+    domain_id: 'd2',
+    input_ports: [makeInput({ id: 'i1', name: 'cad', version: '1.0.0' })],
+    output_ports: [
+      makeOutput({ id: 'o1', name: 'exp', version: '1.0.0', input_contracts: [{ contract_id: 'c1', version: '1.0.0' }] }),
+      makeOutput({ id: 'o2', name: 'exp', version: '1.1.0' }),
+    ],
   })
 
-  it('shows why the list is empty when no contract is reachable', () => {
-    selectable({ contracts: [] })
-    renderForm()
-    expect(screen.getByText('No data contracts available to you')).toBeInTheDocument()
-    expect(screen.getByText(/only use a contract from a domain you belong to/)).toBeInTheDocument()
+  beforeEach(() => setup({ domains: [sales, risk] }))
+
+  it('keeps the product domain and lists newer versions first', () => {
+    renderForm({ defaultValues: existing })
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Domain')).toHaveValue('d2')
+    expect(screen.getByLabelText('Name')).toHaveValue('Existing Product')
+    expect(screen.getAllByText('older version')).toHaveLength(1)
   })
 
-  it('shows a load error', () => {
-    selectable({ contracts: [], error: new Error('boom') })
-    renderForm()
-    expect(screen.getByText('Could not load data contracts: boom')).toBeInTheDocument()
+  it('shows the product domain once the domain list arrives after the form opens', () => {
+    vi.mocked(useAllDomains).mockReturnValue(query(undefined))
+    const props = { defaultValues: existing, onSubmit: vi.fn(), onCancel: vi.fn(), isSubmitting: false }
+    const { rerender } = render(<DataProductForm {...props} />)
+    vi.mocked(useAllDomains).mockReturnValue(query([sales, risk]))
+    rerender(<DataProductForm {...props} />)
+    expect(screen.getByLabelText('Domain')).toHaveValue('d2')
   })
 
-  it('hides the filter for a short list', () => {
-    renderForm()
-    expect(screen.queryByRole('textbox', { name: 'Filter data contracts' })).not.toBeInTheDocument()
-  })
-
-  it('filters a long list by title, domain, owner or purpose', () => {
-    const many = [
-      ...contracts,
-      ...['a', 'b', 'c', 'd'].map((x) => makeContract({ id: `x${x}`, title: `misc_${x}`, domain: 'Ops', owner: 'zed' })),
-    ]
-    selectable({ contracts: many })
-    renderForm()
-    const filter = screen.getByRole('textbox', { name: 'Filter data contracts' })
-
-    fireEvent.change(filter, { target: { value: 'risk' } })
-    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['exposure_contract'])
-    expect(screen.getByText('1 of 6 available')).toBeInTheDocument()
-
-    fireEvent.change(filter, { target: { value: 'ORDER LINE' } })
-    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['orders_contract'])
-
-    fireEvent.change(filter, { target: { value: 'zed' } })
-    expect(screen.getAllByRole('radio')).toHaveLength(4)
-
-    fireEvent.change(filter, { target: { value: 'nothing' } })
-    expect(screen.getByText('No contracts match this filter.')).toBeInTheDocument()
+  it('submits pinned versions and nothing the API computes', async () => {
+    const { onSubmit } = renderForm({ defaultValues: existing })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    const values = onSubmit.mock.calls[0][0]
+    expect(values.output_ports.map((p: { version: string }) => p.version)).toEqual(['1.1.0', '1.0.0'])
+    expect(values.output_ports[1].input_contracts).toEqual([{ contract_id: 'c1', version: '1.0.0' }])
+    expect(values.input_ports[0]).toEqual({
+      name: 'cad',
+      contract_id: 'c1',
+      version: '1.0.0',
+      deprecated: false,
+      authoritative_definitions: [],
+    })
   })
 })

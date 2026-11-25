@@ -7,6 +7,7 @@ import {
   useCreateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
+import { makeProduct } from '../../test/fixtures'
 
 const mockNavigate = vi.fn()
 
@@ -21,30 +22,24 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-// The marketplace joins each product to its contract for domain, tier and status.
-vi.mock('../../hooks/useDataContracts', () => ({
-  useDataContracts: () => ({ data: [], isLoading: false, error: null }),
+// The form has its own tests; these cover the page only.
+vi.mock('./DataProductForm', () => ({
+  default: () => <button type="button">Create Product</button>,
 }))
 
-const productWithRepo = {
+const productWithRepo = makeProduct({
   id: 'prod-1',
   name: 'Product With Repo',
   description: 'Has a GitHub repo',
-  data_contracts_id: 'contract-1',
   repo_url: 'https://github.com/org/dp-test',
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
-const productWithoutRepo = {
+const productWithoutRepo = makeProduct({
   id: 'prod-2',
   name: 'Product Without Repo',
   description: 'No GitHub repo yet',
-  data_contracts_id: 'contract-2',
   repo_url: null,
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
 function renderList() {
   return render(

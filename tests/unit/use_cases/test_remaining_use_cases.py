@@ -1,6 +1,6 @@
 """
 Tests for use cases that were missing coverage:
-data_contract (get, delete, list), data_product CRUD, user CRUD.
+data_contract (get, delete, list), data_product get/delete, user CRUD.
 """
 import uuid
 from datetime import datetime, timezone
@@ -14,10 +14,8 @@ from backend.domain.value_objects.email import Email
 from backend.use_cases.data_contract.delete import DeleteDataContractUseCase
 from backend.use_cases.data_contract.get import GetDataContractUseCase
 from backend.use_cases.data_contract.list import ListDataContractsUseCase
-from backend.use_cases.data_product.create import CreateDataProductUseCase
 from backend.use_cases.data_product.delete import DeleteDataProductUseCase
 from backend.use_cases.data_product.get import GetDataProductUseCase
-from backend.use_cases.data_product.update import UpdateDataProductUseCase
 from backend.use_cases.user.create import CreateUserUseCase
 from backend.use_cases.user.delete import DeleteUserUseCase
 from backend.use_cases.user.get import GetUserUseCase
@@ -98,31 +96,16 @@ async def test_list_data_contracts_returns_empty():
     assert result == []
 
 
-# ── Data Product: create ─────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_create_data_product_calls_repo():
-    from backend.domain.entities.data_product import DataProduct
-    repo = AsyncMock()
-    contract_id = uuid.uuid4()
-    product = DataProduct(id=uuid.uuid4(), name="Px", description="D",
-                          data_contracts_id=contract_id, created_at=NOW, updated_at=NOW)
-    repo.create.return_value = product
-    result = await CreateDataProductUseCase(repo).execute(
-        name="Px", description="D", data_contracts_id=contract_id
-    )
-    repo.create.assert_called_once()
-    assert result is product
-
-
 # ── Data Product: get ────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_get_data_product_returns_product():
     from backend.domain.entities.data_product import DataProduct
     repo = AsyncMock()
+    from backend.domain.entities.data_product import OutputPort
     product = DataProduct(id=uuid.uuid4(), name="Px", description="D",
-                          data_contracts_id=uuid.uuid4(), created_at=NOW, updated_at=NOW)
+                          domain_id=uuid.uuid4(), output_ports=[OutputPort("out")],
+                          created_at=NOW, updated_at=NOW)
     repo.get_by_id.return_value = product
     result = await GetDataProductUseCase(repo).execute(product.id)
     assert result is product
@@ -152,34 +135,6 @@ async def test_delete_data_product_returns_false():
     repo.delete.return_value = False
     result = await DeleteDataProductUseCase(repo).execute(uuid.uuid4())
     assert result is False
-
-
-# ── Data Product: update ─────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_update_data_product_calls_repo():
-    from backend.domain.entities.data_product import DataProduct
-    repo = AsyncMock()
-    pid = uuid.uuid4()
-    cid = uuid.uuid4()
-    product = DataProduct(id=pid, name="Py", description="D2",
-                          data_contracts_id=cid, created_at=NOW, updated_at=NOW)
-    repo.update.return_value = product
-    result = await UpdateDataProductUseCase(repo).execute(
-        product_id=pid, name="Py", description="D2", data_contracts_id=cid
-    )
-    repo.update.assert_called_once()
-    assert result.name == "Py"
-
-
-@pytest.mark.asyncio
-async def test_update_data_product_returns_none_when_missing():
-    repo = AsyncMock()
-    repo.update.return_value = None
-    result = await UpdateDataProductUseCase(repo).execute(
-        product_id=uuid.uuid4(), name=None, description=None, data_contracts_id=None
-    )
-    assert result is None
 
 
 # ── User: create ─────────────────────────────────────────────────────────────

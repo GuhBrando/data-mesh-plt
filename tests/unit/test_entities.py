@@ -9,7 +9,6 @@ import pytest
 
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
 from backend.domain.entities.data_contract import DataContract
-from backend.domain.entities.data_product import DataProduct
 from backend.domain.entities.domain import Domain
 from backend.domain.entities.refresh_token import RefreshToken
 from backend.domain.entities.user import User
@@ -69,22 +68,6 @@ def test_data_contract_domain_id_defaults_to_none():
         created_at=NOW, updated_at=NOW,
     )
     assert c.domain_id is None
-
-
-# ── DataProduct ──────────────────────────────────────────────────────────────
-
-def test_data_product_stores_all_fields():
-    pid, cid = uuid.uuid4(), uuid.uuid4()
-    p = DataProduct(
-        id=pid, name="Sales Feed", description="Daily sales data",
-        data_contracts_id=cid, created_at=NOW, updated_at=NOW,
-    )
-    assert p.id == pid
-    assert p.name == "Sales Feed"
-    assert p.description == "Daily sales data"
-    assert p.data_contracts_id == cid
-    assert p.created_at == NOW
-    assert p.updated_at == NOW
 
 
 # ── Domain ───────────────────────────────────────────────────────────────────

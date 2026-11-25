@@ -39,11 +39,14 @@ from backend.use_cases.data_contract.get_version_yaml import (
 from backend.use_cases.data_contract.list import ListDataContractsUseCase
 from backend.use_cases.data_contract.list_versions import ListContractVersionsUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
-from backend.use_cases.data_product.create import CreateDataProductUseCase
+from backend.use_cases.data_product.contract_ports import ListContractPortsUseCase
 from backend.use_cases.data_product.delete import DeleteDataProductUseCase
 from backend.use_cases.data_product.get import GetDataProductUseCase
 from backend.use_cases.data_product.list import ListDataProductsUseCase
-from backend.use_cases.data_product.update import UpdateDataProductUseCase
+from backend.use_cases.data_product.save import (
+    CreateDataProductUseCase,
+    UpdateDataProductUseCase,
+)
 from backend.use_cases.domain.add_member import AddDomainMemberUseCase
 from backend.use_cases.domain.create import CreateDomainUseCase
 from backend.use_cases.domain.delete import DeleteDomainUseCase
@@ -183,8 +186,9 @@ def get_delete_data_contract_use_case(
 
 def get_create_data_product_use_case(
     repo=Depends(get_data_product_repository),
+    contracts=Depends(get_data_contract_repository),
 ) -> CreateDataProductUseCase:
-    return CreateDataProductUseCase(repo)
+    return CreateDataProductUseCase(repo, contracts)
 
 
 def get_get_data_product_use_case(
@@ -201,8 +205,16 @@ def get_list_data_products_use_case(
 
 def get_update_data_product_use_case(
     repo=Depends(get_data_product_repository),
+    contracts=Depends(get_data_contract_repository),
 ) -> UpdateDataProductUseCase:
-    return UpdateDataProductUseCase(repo)
+    return UpdateDataProductUseCase(repo, contracts)
+
+
+def get_list_contract_ports_use_case(
+    repo=Depends(get_data_product_repository),
+    contracts=Depends(get_data_contract_repository),
+) -> ListContractPortsUseCase:
+    return ListContractPortsUseCase(repo, contracts)
 
 
 def get_delete_data_product_use_case(

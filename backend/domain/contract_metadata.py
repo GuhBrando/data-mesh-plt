@@ -41,6 +41,9 @@ SERVER_TYPES = tuple(SERVER_RULES)
 _COMMON_KEYS = ("server", "type", "environment")
 _TYPE_KEYS = tuple(key for key in SERVER_KEYS if key not in _COMMON_KEYS)
 _HOST = re.compile(r"[A-Za-z0-9.-]+")
+# An ODPS variable, `${VAR}` or `${VAR:-default}`, kept verbatim for the consuming
+# tool to resolve: a URL that starts with one gets its scheme only then.
+_VARIABLE_FIRST = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}")
 # A URL carrying a password, or a key=value secret as in a connection string.
 _CREDENTIAL = re.compile(
     r"://[^/\s@]*:[^/\s@]*@|\b(?:password|pwd|secret|token|sig|accountkey)\s*=",
@@ -101,8 +104,10 @@ _VALUE_CHECKS = {
 }
 
 
-def support_url_problem(url: Any) -> str | None:
+def support_url_problem(url: Any, allow_variables: bool = False) -> str | None:
     if url == "":
+        return None
+    if allow_variables and isinstance(url, str) and _VARIABLE_FIRST.match(url):
         return None
     try:
         scheme = urlsplit(url).scheme.lower()

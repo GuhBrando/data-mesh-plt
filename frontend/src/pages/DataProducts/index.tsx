@@ -43,7 +43,7 @@ function matches(p: DataProduct, domain: string, status: string, needle: string)
   if (status !== ALL && p.status !== status) return false
   if (!needle) return true
   const ports = [...p.input_ports, ...p.output_ports]
-  return [p.name, p.description, p.domain, ...ports.map((port) => port.name), ...ports.map((port) => port.contract?.title)].some(
+  return [p.name, p.description.purpose, p.domain, ...ports.map((port) => port.name), ...ports.map((port) => port.contract?.title)].some(
     (v) => typeof v === 'string' && v.toLowerCase().includes(needle),
   )
 }
@@ -146,7 +146,7 @@ function ProductCard({
           </button>
         </h3>
       </div>
-      <p className="m-0 line-clamp-2 min-h-[37px] text-[12.5px] leading-normal text-tx2">{p.description}</p>
+      <p className="m-0 line-clamp-2 min-h-[37px] text-[12.5px] leading-normal text-tx2">{p.description.purpose}</p>
       <div className="mt-auto flex items-center justify-between gap-2.5 border-t border-line pt-3 text-xs">
         <span className="font-mono text-[11.5px] text-tx2">{portsSummary(p)}</span>
         <RepoState url={p.repo_url} />

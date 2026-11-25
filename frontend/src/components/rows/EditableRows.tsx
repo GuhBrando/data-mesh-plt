@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
-import { PlusIcon, TrashIcon } from '../../components/icons'
+import { PlusIcon, TrashIcon } from '../icons'
 
 export const ROW_INPUT_CLASS =
   'text-sm border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-200'

@@ -30,14 +30,14 @@ vi.mock('./DataProductForm', () => ({
 const productWithRepo = makeProduct({
   id: 'prod-1',
   name: 'Product With Repo',
-  description: 'Has a GitHub repo',
+  description: { purpose: 'Has a GitHub repo', usage: '', limitations: '' },
   repo_url: 'https://github.com/org/dp-test',
 })
 
 const productWithoutRepo = makeProduct({
   id: 'prod-2',
   name: 'Product Without Repo',
-  description: 'No GitHub repo yet',
+  description: { purpose: 'No GitHub repo yet', usage: '', limitations: '' },
   repo_url: null,
 })
 

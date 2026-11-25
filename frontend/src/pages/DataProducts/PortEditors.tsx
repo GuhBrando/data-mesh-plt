@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react'
-import EditableRows, { ROW_INPUT_CLASS } from '../DataContracts/EditableRows'
+import EditableRows, { ROW_INPUT_CLASS } from '../../components/rows/EditableRows'
 import ContractPicker from './ContractPicker'
 import Badge from '../../components/ui/Badge'
 import { PlusIcon } from '../../components/icons'
@@ -26,11 +26,24 @@ export function emptyOutput(): OutputPort {
     deprecated: false,
     authoritative_definitions: [],
     input_contracts: [],
+    tags: [],
+    custom_properties: [],
+    synonyms: [],
+    context: {},
+    sbom: [],
   }
 }
 
 function emptyInput(): InputPort {
-  return { name: '', contract_id: null, version: null, deprecated: false, authoritative_definitions: [] }
+  return {
+    name: '',
+    contract_id: null,
+    version: null,
+    deprecated: false,
+    authoritative_definitions: [],
+    tags: [],
+    custom_properties: [],
+  }
 }
 
 function summaryOf(c: DataContract): ContractSummary {

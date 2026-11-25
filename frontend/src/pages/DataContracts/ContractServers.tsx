@@ -1,4 +1,4 @@
-import EditableRows, { ROW_INPUT_CLASS } from './EditableRows'
+import EditableRows, { ROW_INPUT_CLASS } from '../../components/rows/EditableRows'
 import {
   SERVER_KEY_LABELS,
   SERVER_TYPE_KEYS,

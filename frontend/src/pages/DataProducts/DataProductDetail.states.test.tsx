@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DataProductDetail from './DataProductDetail'
 import { useDataProduct, useUpdateDataProduct, useDeleteDataProduct } from '../../hooks/useDataProducts'
-import { makeInput, makeProduct } from '../../test/fixtures'
+import { makeInput, makeProduct, makeProductInput } from '../../test/fixtures'
 import type { DataProductInput } from '../../types'
 
 const mockNavigate = vi.fn()
@@ -19,14 +19,11 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-const EDITED: DataProductInput = {
+const EDITED: DataProductInput = makeProductInput({
   name: 'Edited',
-  description: 'Edited description',
-  domain_id: 'd1',
+  description: { purpose: 'Edited description', usage: '', limitations: '' },
   status: 'active',
-  input_ports: [],
-  output_ports: [],
-}
+})
 
 // The form has its own tests; here it only hands the page a value.
 vi.mock('./DataProductForm', () => ({
@@ -40,7 +37,7 @@ vi.mock('./DataProductForm', () => ({
 const product = makeProduct({
   id: 'prod-123',
   name: 'My Product',
-  description: 'A test product',
+  description: { purpose: 'A test product', usage: '', limitations: '' },
   domain: 'Risco',
   status: 'deprecated',
   repo_url: null,

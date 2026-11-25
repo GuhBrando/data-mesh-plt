@@ -111,9 +111,20 @@ describe('DataProductForm — create', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
     expect(onSubmit.mock.calls[0][0]).toEqual({
       name: 'Risk Hub',
-      description: 'Credit exposure by client',
+      description: { purpose: 'Credit exposure by client', usage: '', limitations: '' },
       domain_id: 'd1',
       status: 'draft',
+      version: null,
+      type: null,
+      tenant: null,
+      tags: [],
+      synonyms: [],
+      context: {},
+      team: {},
+      support: [],
+      custom_properties: [],
+      authoritative_definitions: [],
+      management_ports: [],
       input_ports: [
         {
           name: 'core',
@@ -121,6 +132,8 @@ describe('DataProductForm — create', () => {
           version: null,
           deprecated: false,
           authoritative_definitions: [{ type: 'implementation', url: 'https://wiki/core' }],
+          tags: [],
+          custom_properties: [],
         },
       ],
       output_ports: [
@@ -133,6 +146,11 @@ describe('DataProductForm — create', () => {
           deprecated: false,
           authoritative_definitions: [],
           input_contracts: [],
+          tags: [],
+          custom_properties: [],
+          synonyms: [],
+          context: {},
+          sbom: [],
         },
       ],
     })
@@ -159,7 +177,7 @@ describe('DataProductForm — create', () => {
 describe('DataProductForm — edit', () => {
   const existing = makeProduct({
     name: 'Existing Product',
-    description: 'An existing data product description',
+    description: { purpose: 'An existing data product description', usage: 'Daily', limitations: '' },
     domain_id: 'd2',
     input_ports: [makeInput({ id: 'i1', name: 'cad', version: '1.0.0' })],
     output_ports: [
@@ -200,6 +218,25 @@ describe('DataProductForm — edit', () => {
       version: '1.0.0',
       deprecated: false,
       authoritative_definitions: [],
+      tags: [],
+      custom_properties: [],
     })
+    expect(values.description).toEqual({ purpose: 'An existing data product description', usage: 'Daily', limitations: '' })
+  })
+
+  it('sends back the ODPS sections it does not show, unchanged', async () => {
+    const team = { name: 'Risk', members: [{ username: 'ana', name: '', role: 'owner', date_in: '2026-01-01' }] }
+    const support = [{ channel: '#risk', url: '${SUPPORT_URL}', invitation_url: 'https://join' }]
+    const writable = { name: 'metrics', content: 'observability', type: 'rest', deprecated: false, tags: ['ops'] }
+    const metrics = { id: 'm1', ...writable }
+    const { onSubmit } = renderForm({
+      defaultValues: { ...existing, team, support, tenant: 'acme', management_ports: [metrics] },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    const values = onSubmit.mock.calls[0][0]
+    expect([values.team, values.support, values.tenant]).toEqual([team, support, 'acme'])
+    // The id is the API's; it never goes back.
+    expect(values.management_ports).toEqual([writable])
   })
 })

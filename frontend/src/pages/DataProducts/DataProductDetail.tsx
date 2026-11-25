@@ -212,7 +212,7 @@ export default function DataProductDetail() {
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex min-w-0 flex-[999_1_620px] animate-enter flex-col gap-3.5 [animation-delay:0.08s]">
           <Panel title="About">
-            <p className="whitespace-pre-wrap px-4 py-3.5 text-[13px] leading-relaxed text-tx2">{product.description}</p>
+            <p className="whitespace-pre-wrap px-4 py-3.5 text-[13px] leading-relaxed text-tx2">{product.description.purpose}</p>
           </Panel>
           <Panel title="Lineage" icon={<SchemaIcon size={15} />}>
             <ProductLineage product={product} onChange={handleMove} saving={updateMutation.isPending} />

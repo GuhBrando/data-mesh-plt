@@ -139,7 +139,7 @@ describe('InputPortsEditor', () => {
     const onChange = inputs([])
     fireEvent.click(screen.getByRole('button', { name: 'External source' }))
     expect(onChange).toHaveBeenCalledWith([
-      { name: '', contract_id: null, version: null, deprecated: false, authoritative_definitions: [] },
+      { name: '', contract_id: null, version: null, deprecated: false, authoritative_definitions: [], tags: [], custom_properties: [] },
     ])
   })
 

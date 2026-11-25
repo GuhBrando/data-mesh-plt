@@ -158,14 +158,21 @@ export default function DataProductForm({ defaultValues, onSubmit, onCancel, isS
           <label htmlFor="product-domain" className="form-label">
             Domain
           </label>
-          <select id="product-domain" className={`form-input ${errors.domain_id ? 'error' : ''}`} {...register('domain_id')}>
-            <option value="">Select…</option>
-            {domainChoices.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          {/* Controlled: the domain list may arrive after the form opens. */}
+          <Controller
+            name="domain_id"
+            control={control}
+            render={({ field }) => (
+              <select id="product-domain" className={`form-input ${errors.domain_id ? 'error' : ''}`} {...field}>
+                <option value="">Select…</option>
+                {domainChoices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
           {errors.domain_id && <p className="form-error">{errors.domain_id.message}</p>}
         </div>
         <div>

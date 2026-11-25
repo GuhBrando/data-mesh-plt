@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { DomainChip, StatusGlyph } from '../../components/ui/Glyphs'
 import { ArrowRightIcon, ProductIcon } from '../../components/icons'
+import { safeUrl } from '../DataContracts/contractMetadata'
 import {
   isMajorMove,
   newerVersion,
@@ -104,7 +105,8 @@ function ContractFlag({ port }: { port: InputPort }) {
 }
 
 function External({ port }: { port: InputPort }) {
-  const url = port.authoritative_definitions[0]?.url
+  // A link a user typed: only http, https and mailto become clickable.
+  const url = safeUrl(port.authoritative_definitions[0]?.url ?? '')
   if (!url) return <p className="text-tx3">External source</p>
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="text-tx hover:text-accent-fg hover:underline">

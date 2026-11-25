@@ -56,6 +56,23 @@ describe('ProductLineage', () => {
     expect(within(outputs).getByText('No contract — not consumable')).toBeInTheDocument()
   })
 
+  it('never turns an unsafe source link into a clickable link', () => {
+    renderLineage(
+      makeProduct({
+        input_ports: [
+          makeInput({
+            name: 'core',
+            contract_id: null,
+            version: null,
+            authoritative_definitions: [{ type: 'implementation', url: 'javascript:alert(1)' }],
+          }),
+        ],
+      }),
+    )
+    expect(screen.queryByRole('link', { name: 'External source' })).not.toBeInTheDocument()
+    expect(screen.getByText('External source')).toBeInTheDocument()
+  })
+
   it('says when an input has no producer on the platform', () => {
     renderLineage(makeProduct({ input_ports: [makeInput({ contract: cadastro, version: '2.1.0' })] }))
     expect(screen.getByText('No producer on the platform')).toBeInTheDocument()

@@ -178,6 +178,15 @@ describe('DataProductForm — edit', () => {
     expect(screen.getAllByText('older version')).toHaveLength(1)
   })
 
+  it('shows the product domain once the domain list arrives after the form opens', () => {
+    vi.mocked(useAllDomains).mockReturnValue(query(undefined))
+    const props = { defaultValues: existing, onSubmit: vi.fn(), onCancel: vi.fn(), isSubmitting: false }
+    const { rerender } = render(<DataProductForm {...props} />)
+    vi.mocked(useAllDomains).mockReturnValue(query([sales, risk]))
+    rerender(<DataProductForm {...props} />)
+    expect(screen.getByLabelText('Domain')).toHaveValue('d2')
+  })
+
   it('submits pinned versions and nothing the API computes', async () => {
     const { onSubmit } = renderForm({ defaultValues: existing })
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))

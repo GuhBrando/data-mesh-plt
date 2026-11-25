@@ -13,11 +13,32 @@ import { STATUS_LABELS } from '../../lib/contracts'
 import { selectableDomains } from '../../lib/domains'
 import { PRODUCT_STATUSES, producersByContract } from '../../lib/products'
 import { InputPortsEditor, OutputPortsEditor, emptyOutput, type ContractSource } from './PortEditors'
+import MoreFields from './MoreFields'
 import type { DataProduct, DataProductInput, InputPort, OutputPort } from '../../types'
 
 // Mirrors only the rules a user breaks while typing; the API owns the rest.
 // ODPS objects are loose: fields the form does not show go back unchanged.
 const anyObject = z.looseObject({})
+const needed = (message: string) => z.string().trim().min(1, message)
+const team = z.looseObject({
+  members: z.array(z.looseObject({ username: needed('Every team member needs a username') })).optional(),
+})
+const support = z.looseObject({
+  channel: needed('Every support channel needs a channel'),
+  url: needed('Every support channel needs a URL'),
+})
+const context = z.looseObject({
+  constraints: z.array(z.looseObject({ constraint: needed('Every constraint needs a text') })).optional(),
+  verified_statements: z
+    .array(z.looseObject({ question: needed('Every verified statement needs a question') }))
+    .optional(),
+})
+const definition = z.looseObject({ type: needed('Every link needs a type'), url: needed('Every link needs a URL') })
+const customProperty = z.looseObject({
+  property: needed('Every custom property needs a name'),
+  value: z.unknown().refine((v) => v !== '' && v !== undefined && v !== null, 'Every custom property needs a value'),
+})
+const synonym = z.looseObject({ synonym: needed('Every synonym needs a text') })
 const portName = z.string().trim().min(1, 'Every port needs a name')
 const inputPort = z.object({
   name: portName,
@@ -74,12 +95,12 @@ const schema = z
     type: z.string().nullable(),
     tenant: z.string().nullable(),
     tags: z.array(z.string()),
-    synonyms: z.array(anyObject),
-    context: anyObject,
-    team: anyObject,
-    support: z.array(anyObject),
-    custom_properties: z.array(anyObject),
-    authoritative_definitions: z.array(anyObject),
+    synonyms: z.array(synonym),
+    context,
+    team,
+    support: z.array(support),
+    custom_properties: z.array(customProperty),
+    authoritative_definitions: z.array(definition),
     input_ports: z.array(inputPort),
     output_ports: z.array(outputPort).min(1, 'A data product needs at least one output'),
     management_ports: z.array(managementPort),
@@ -277,6 +298,8 @@ export default function DataProductForm({ defaultValues, onSubmit, onCancel, isS
           />
         )}
       />
+
+      <MoreFields control={control} register={register} errors={errors} />
 
       <div className="flex justify-end gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>

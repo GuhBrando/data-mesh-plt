@@ -4,6 +4,7 @@ import ContractPicker from './ContractPicker'
 import Badge from '../../components/ui/Badge'
 import { PlusIcon } from '../../components/icons'
 import { slugify } from '../../lib/products'
+import { TagsInput } from './MoreFields'
 import type { ContractSummary, DataContract, InputPort, OutputPort, ProductRef } from '../../types'
 
 /** The contracts a picker offers, with their loading state. */
@@ -156,6 +157,47 @@ function BuiltFrom({ row, inputs, patch }: { row: OutputPort; inputs: InputPort[
   )
 }
 
+/** The ODPS fields an output carries beyond its contract: tags, context, SBOM. */
+function OutputExtras({ row, patch }: { row: OutputPort; patch: (p: Partial<OutputPort>) => void }) {
+  return (
+    <div className="space-y-2 rounded border border-line p-2">
+      <TagsInput label="Output tags" value={row.tags} onChange={(tags) => patch({ tags })} className={`w-full ${ROW_INPUT_CLASS}`} />
+      <input
+        aria-label="Output context"
+        placeholder="Instructions for AI agents (optional)"
+        className={`w-full ${ROW_INPUT_CLASS}`}
+        value={row.context.instructions ?? ''}
+        onChange={(e) => patch({ context: { ...row.context, instructions: e.target.value || undefined } })}
+      />
+      <EditableRows
+        rows={row.sbom}
+        onChange={(sbom) => patch({ sbom })}
+        emptyRow={() => ({ type: 'external', url: '' })}
+        addLabel="Add SBOM link"
+        emptyText="No SBOM links."
+        renderRow={(link, _i, patchLink) => (
+          <>
+            <input
+              aria-label="SBOM type"
+              placeholder="Type"
+              className={`col-span-3 ${ROW_INPUT_CLASS}`}
+              value={link.type ?? ''}
+              onChange={(e) => patchLink({ type: e.target.value || undefined })}
+            />
+            <input
+              aria-label="SBOM URL"
+              placeholder="URL"
+              className={`col-span-8 ${ROW_INPUT_CLASS}`}
+              value={link.url ?? ''}
+              onChange={(e) => patchLink({ url: e.target.value })}
+            />
+          </>
+        )}
+      />
+    </div>
+  )
+}
+
 export function OutputPortsEditor({
   rows,
   onChange,
@@ -171,6 +213,14 @@ export function OutputPortsEditor({
 }) {
   const typesId = useId()
   const [picking, setPicking] = useState<number | null>(null)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const toggle = (index: number) =>
+    setExpanded((open) => {
+      const next = new Set(open)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
   return (
     <Section
       legend="Outputs · at least one"
@@ -234,6 +284,16 @@ export function OutputPortsEditor({
               onChange={(e) => patch({ description: e.target.value || null })}
             />
             <BuiltFrom row={row} inputs={inputs} patch={patch} />
+            <button
+              type="button"
+              aria-expanded={expanded.has(index)}
+              aria-label={`More about ${row.name || 'this output'}`}
+              onClick={() => toggle(index)}
+              className="text-xs text-tx2 hover:text-tx"
+            >
+              {expanded.has(index) ? 'Less' : 'More'}
+            </button>
+            {expanded.has(index) && <OutputExtras row={row} patch={patch} />}
             {isOlder(rows, index) && <span className="text-xs text-tx3">older version</span>}
           </div>
         )}
@@ -327,6 +387,12 @@ export function InputPortsEditor({
                 <span className="col-span-2 text-xs text-tx3">External source</span>
               </>
             )}
+            <TagsInput
+              label="Input tags"
+              value={row.tags}
+              onChange={(tags) => patch({ tags })}
+              className={`col-span-12 ${ROW_INPUT_CLASS}`}
+            />
             {isOlder(rows, index) && <span className="col-span-12 text-xs text-tx3">older version</span>}
           </div>
         )}

@@ -22,6 +22,7 @@ import {
 import { relativeTime } from '../../lib/format'
 import DataProductForm from './DataProductForm'
 import ProductLineage from './ProductLineage'
+import { productFacts } from './ProductFacts'
 import SaveWarnings from './SaveWarnings'
 import type { DataProduct, DataProductInput } from '../../types'
 
@@ -101,9 +102,38 @@ function Header({
   )
 }
 
+function About({ product }: { product: DataProduct }) {
+  const { purpose, usage, limitations } = product.description
+  const extra: [string, string][] = [
+    ['Usage', usage],
+    ['Limitations', limitations],
+  ]
+  return (
+    <Panel title="About">
+      <div className="space-y-3 px-4 py-3.5 text-[13px] leading-relaxed text-tx2">
+        <p className="whitespace-pre-wrap">{purpose}</p>
+        {extra
+          .filter(([, text]) => text)
+          .map(([label, text]) => (
+            <div key={label}>
+              <h3 className="text-[11.5px] font-medium text-tx3">{label}</h3>
+              <p className="whitespace-pre-wrap">{text}</p>
+            </div>
+          ))}
+      </div>
+    </Panel>
+  )
+}
+
 function Rail({ product }: { product: DataProduct }) {
+  const facts = productFacts(product)
   return (
     <aside aria-label="Product details" className="flex min-w-0 flex-[1_1_300px] animate-enter flex-col gap-3.5 [animation-delay:0.14s]">
+      {facts.length > 0 && (
+        <Panel title="ODPS" icon={<SchemaIcon size={15} />}>
+          <ul className="px-4 py-1 text-[12.5px]">{facts}</ul>
+        </Panel>
+      )}
       <Panel title="Repository" icon={<RepoIcon size={15} />}>
         <div className="px-4 py-3.5 text-[12.5px]">
           {product.repo_url ? (
@@ -211,9 +241,7 @@ export default function DataProductDetail() {
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex min-w-0 flex-[999_1_620px] animate-enter flex-col gap-3.5 [animation-delay:0.08s]">
-          <Panel title="About">
-            <p className="whitespace-pre-wrap px-4 py-3.5 text-[13px] leading-relaxed text-tx2">{product.description}</p>
-          </Panel>
+          <About product={product} />
           <Panel title="Lineage" icon={<SchemaIcon size={15} />}>
             <ProductLineage product={product} onChange={handleMove} saving={updateMutation.isPending} />
             {lineageError && <p className="border-t border-line px-4 py-2.5 text-[13px] text-bad">{lineageError}</p>}

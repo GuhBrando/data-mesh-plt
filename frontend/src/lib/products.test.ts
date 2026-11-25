@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MANAGEMENT_CONTENTS,
   PRODUCT_STATUSES,
+  PRODUCT_TYPES,
   isMajorMove,
   newerVersion,
   producersByContract,
@@ -34,8 +36,9 @@ describe('slugify', () => {
 describe('toInput', () => {
   it('keeps what the API takes and drops what it computes', () => {
     const product = makeProduct({
-      input_ports: [makeInput({ id: 'i1', contract: v11, produced_by: [{ id: 'p9', name: 'X', status: 'active' }] })],
-      output_ports: [makeOutput({ id: 'o1', contract: v11, consumed_by: [] })],
+      input_ports: [makeInput({ id: 'i1', tags: ['raw'], contract: v11, produced_by: [{ id: 'p9', name: 'X', status: 'active' }] })],
+      output_ports: [makeOutput({ id: 'o1', contract: v11, consumed_by: [], sbom: [{ url: 'https://sbom' }] })],
+      management_ports: [{ id: 'm1', name: 'metrics', content: 'observability', type: 'rest', url: null, deprecated: false }],
     })
     const input = toInput(product)
     expect(input).toEqual({
@@ -43,7 +46,27 @@ describe('toInput', () => {
       description: product.description,
       domain_id: product.domain_id,
       status: product.status,
-      input_ports: [{ name: 'orders', contract_id: 'c1', version: '1.0.0', deprecated: false, authoritative_definitions: [] }],
+      version: null,
+      type: null,
+      tenant: null,
+      tags: [],
+      synonyms: [],
+      context: {},
+      team: {},
+      support: [],
+      custom_properties: [],
+      authoritative_definitions: [],
+      input_ports: [
+        {
+          name: 'orders',
+          contract_id: 'c1',
+          version: '1.0.0',
+          deprecated: false,
+          authoritative_definitions: [],
+          tags: ['raw'],
+          custom_properties: [],
+        },
+      ],
       output_ports: [
         {
           name: 'orders',
@@ -54,9 +77,29 @@ describe('toInput', () => {
           deprecated: false,
           authoritative_definitions: [],
           input_contracts: [],
+          tags: [],
+          custom_properties: [],
+          synonyms: [],
+          context: {},
+          sbom: [{ url: 'https://sbom' }],
         },
       ],
+      management_ports: [{ name: 'metrics', content: 'observability', type: 'rest', url: null, deprecated: false }],
     })
+  })
+
+  it('carries the ODPS sections it is given', () => {
+    const team = { name: 'Risk', members: [{ username: 'ana', name: '', role: 'owner', date_in: '2026-01-01' }] }
+    const input = toInput(makeProduct({ version: '${V}', tags: ['risk'], team }))
+    expect(input.team).toEqual(team)
+    expect([input.version, input.tags]).toEqual(['${V}', ['risk']])
+  })
+})
+
+describe('ODPS suggestions', () => {
+  it('lists the product types and management contents ODPS names', () => {
+    expect(PRODUCT_TYPES).toEqual(['sourceAligned', 'aggregate', 'consumerAligned'])
+    expect(MANAGEMENT_CONTENTS).toEqual(['discoverability', 'observability', 'control', 'dictionary'])
   })
 })
 

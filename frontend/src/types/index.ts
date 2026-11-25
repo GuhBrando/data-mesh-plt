@@ -115,7 +115,75 @@ export type ProductStatus = 'proposed' | 'draft' | 'active' | 'deprecated' | 're
 
 // ODPS inputContracts entry: a contract version an output is built from.
 export interface ContractRef { contract_id: string; version: string }
-export interface AuthoritativeDefinition { type: string; url: string }
+
+// ODPS v1.1.0 structures, in the API's snake_case. Optional fields may be absent.
+export interface CustomProperty { property: string; value: unknown; description?: string | null; vendor?: string | null; id?: string | null }
+export interface AuthoritativeDefinition { type: string; url: string; description?: string | null; id?: string | null }
+// The three lists ODPS attaches to most of its objects.
+export interface Annotated {
+  tags?: string[]
+  custom_properties?: CustomProperty[]
+  authoritative_definitions?: AuthoritativeDefinition[]
+}
+export interface ProductDescription {
+  purpose: string
+  usage: string
+  limitations: string
+  authoritative_definitions?: AuthoritativeDefinition[]
+  custom_properties?: CustomProperty[]
+}
+export interface Synonym {
+  synonym: string
+  description?: string | null
+  locale?: string | null
+  source?: string | null
+  status?: string | null
+  id?: string | null
+  custom_properties?: CustomProperty[]
+}
+export interface VerifiedStatement extends Annotated { question: string; answer?: string | null; id?: string | null }
+export interface ContextConstraint extends Annotated { constraint: string; id?: string | null }
+export interface ProductContext {
+  instructions?: string | null
+  verified_statements?: VerifiedStatement[]
+  constraints?: ContextConstraint[]
+}
+export interface ProductTeamMember extends Annotated {
+  username: string
+  name?: string
+  role?: string
+  description?: string | null
+  date_in?: string | null
+  date_out?: string | null
+  replaced_by_username?: string | null
+  id?: string | null
+}
+export interface ProductTeam extends Annotated {
+  name?: string | null
+  description?: string | null
+  members?: ProductTeamMember[]
+  id?: string | null
+}
+export interface ProductSupport extends Annotated {
+  channel: string
+  url: string
+  tool?: string
+  scope?: string
+  description?: string | null
+  invitation_url?: string | null
+  id?: string | null
+}
+export interface Sbom extends Annotated { type?: string | null; url?: string | null; id?: string | null }
+export interface ManagementPort extends Annotated {
+  id?: string
+  name: string
+  content: string
+  type: string            // rest or topic
+  url?: string | null
+  channel?: string | null
+  description?: string | null
+  deprecated: boolean
+}
 // Read-only: the referenced contract as it is now.
 export interface ContractSummary { title: string; status: DataContract['status']; version: string; domain: string }
 // Read-only: another product seen from a port (lineage).
@@ -128,6 +196,8 @@ export interface InputPort {
   version: string | null   // with a contract, the pinned contract version
   deprecated: boolean
   authoritative_definitions: AuthoritativeDefinition[]
+  tags: string[]
+  custom_properties: CustomProperty[]
   contract?: ContractSummary | null
   produced_by?: ProductRef[]
 }
@@ -142,20 +212,40 @@ export interface OutputPort {
   deprecated: boolean
   authoritative_definitions: AuthoritativeDefinition[]
   input_contracts: ContractRef[]
+  tags: string[]
+  custom_properties: CustomProperty[]
+  synonyms: Synonym[]
+  context: ProductContext
+  sbom: Sbom[]
   contract?: ContractSummary | null
   consumed_by?: ProductRef[]
 }
 
-export interface DataProduct {
+// The ODPS sections a product carries besides its name, domain, status and ports.
+export interface ProductSections {
+  version: string | null
+  type: string | null
+  tenant: string | null
+  tags: string[]
+  synonyms: Synonym[]
+  context: ProductContext
+  team: ProductTeam
+  support: ProductSupport[]
+  custom_properties: CustomProperty[]
+  authoritative_definitions: AuthoritativeDefinition[]
+}
+
+export interface DataProduct extends ProductSections {
   id: string
   name: string
-  description: string
+  description: ProductDescription
   domain_id: string
   domain: string             // read-only joined name
   status: ProductStatus
   deprecated: boolean        // derived from status
   input_ports: InputPort[]
   output_ports: OutputPort[]
+  management_ports: ManagementPort[]
   repo_url?: string | null   // provisioned GitHub repo URL; null until backend provisions it
   created_at: string
   updated_at: string
@@ -210,13 +300,14 @@ export interface DomainInput {
 }
 
 // What POST and PUT take: the whole product, ports included.
-export interface DataProductInput {
+export interface DataProductInput extends ProductSections {
   name: string
-  description: string
+  description: ProductDescription
   domain_id: string
   status: ProductStatus
   input_ports: InputPort[]
   output_ports: OutputPort[]
+  management_ports: ManagementPort[]
 }
 
 export interface UserFormData {

@@ -1,4 +1,5 @@
-import type { DataContract, DataProduct, DomainWithMembers, InputPort, OutputPort, User } from '../types'
+import { toInput } from '../lib/products'
+import type { DataContract, DataProduct, DataProductInput, DomainWithMembers, InputPort, OutputPort, User } from '../types'
 
 // Small builders for the catalog types; each test overrides only what it cares about.
 
@@ -32,6 +33,8 @@ export function makeInput(over: Partial<InputPort> = {}): InputPort {
     version: '1.0.0',
     deprecated: false,
     authoritative_definitions: [],
+    tags: [],
+    custom_properties: [],
     contract: null,
     produced_by: [],
     ...over,
@@ -49,6 +52,11 @@ export function makeOutput(over: Partial<OutputPort> = {}): OutputPort {
     deprecated: false,
     authoritative_definitions: [],
     input_contracts: [],
+    tags: [],
+    custom_properties: [],
+    synonyms: [],
+    context: {},
+    sbom: [],
     contract: null,
     consumed_by: [],
     ...over,
@@ -59,18 +67,34 @@ export function makeProduct(over: Partial<DataProduct> = {}): DataProduct {
   return {
     id: 'p1',
     name: 'Orders product',
-    description: 'Orders, one row per order line.',
+    description: { purpose: 'Orders, one row per order line.', usage: '', limitations: '' },
     domain_id: 'd1',
     domain: 'Sales',
     status: 'active',
     deprecated: false,
+    version: null,
+    type: null,
+    tenant: null,
+    tags: [],
+    synonyms: [],
+    context: {},
+    team: {},
+    support: [],
+    custom_properties: [],
+    authoritative_definitions: [],
     input_ports: [],
     output_ports: [makeOutput()],
+    management_ports: [],
     repo_url: 'https://github.com/org/orders',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...over,
   }
+}
+
+/** What the form submits for a product: `makeProduct` without what the API computes. */
+export function makeProductInput(over: Partial<DataProductInput> = {}): DataProductInput {
+  return { ...toInput(makeProduct()), ...over }
 }
 
 export function makeDomain(over: Partial<DomainWithMembers> = {}): DomainWithMembers {

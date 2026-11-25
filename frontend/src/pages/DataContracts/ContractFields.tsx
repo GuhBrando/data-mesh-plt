@@ -1,4 +1,4 @@
-import EditableRows, { ROW_INPUT_CLASS } from './EditableRows'
+import EditableRows, { ROW_INPUT_CLASS } from '../../components/rows/EditableRows'
 import type { FieldClassification, SchemaField } from '../../types'
 
 const FIELD_TYPES = ['string', 'integer', 'float', 'boolean', 'date', 'timestamp'] as const

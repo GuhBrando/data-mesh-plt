@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import EditableRows, { ROW_INPUT_CLASS as INPUT } from './EditableRows'
+import EditableRows, { ROW_INPUT_CLASS as INPUT } from '../../components/rows/EditableRows'
 import {
   DIMENSIONS,
   METRICS,

@@ -17,6 +17,7 @@ from backend.domain.entities.data_product import (
     DataProduct,
     DataProductRuleError,
     InputPort,
+    ManagementPort,
     OutputPort,
     PortUsage,
     ProductRef,
@@ -79,7 +80,6 @@ async def _contract(db, domain_id, title="Orders", versions=("1.0.0",), status="
 def _product(domain_id, name="Risk", **kw):
     fields = {
         "name": name,
-        "description": "d",
         "domain_id": domain_id,
         "status": "active",
         "output_ports": [OutputPort("out")],
@@ -121,7 +121,7 @@ async def test_add_then_get_round_trips_every_port_field(db, repo):
     assert _bare(got.input_ports) == _bare(inputs)
     assert _bare(got.output_ports) == _bare(outputs)
     assert all(p.id is not None for p in got.input_ports + got.output_ports)
-    assert (got.name, got.description, got.status) == ("Risk", "d", "active")
+    assert (got.name, got.status) == ("Risk", "active")
     assert (got.domain_id, got.domain) == (domain_id, "Risco")
     assert got.created_at is not None and got.repo_url is None
 
@@ -186,7 +186,7 @@ async def test_replace_keeps_port_ids_including_null_versions(db, repo):
     ids = {p.name: p.id for p in saved.input_ports + saved.output_ports}
     revised = saved.revised(
         name="Risk",
-        description="d",
+        description={"purpose": "d"},
         domain_id=domain_id,
         status="active",
         input_ports=[InputPort("core", deprecated=True)],
@@ -198,14 +198,12 @@ async def test_replace_keeps_port_ids_including_null_versions(db, repo):
     assert replaced.output_ports[0].description == "now described"
 
 
-async def test_replace_drops_ports_left_out_and_clears_the_legacy_link(db, repo):
+async def test_replace_drops_ports_left_out(db, repo):
     domain_id = await _domain(db)
     cid = await _contract(db, domain_id)
     product_id = await db.fetchval(
-        "INSERT INTO catalog.data_products (name, description, domain_id, data_contracts_id)"
-        " VALUES ('Legacy', 'd', $1, $2) RETURNING id",
+        "INSERT INTO catalog.data_products (name, domain_id) VALUES ('Legacy', $1) RETURNING id",
         domain_id,
-        cid,
     )
     await db.execute(
         "INSERT INTO catalog.data_product_ports (data_product_id, role, name)"
@@ -216,10 +214,6 @@ async def test_replace_drops_ports_left_out_and_clears_the_legacy_link(db, repo)
         _product(domain_id, "Legacy", id=product_id, output_ports=[OutputPort("orders", cid, "1.0.0")])
     )
     assert [p.name for p in replaced.output_ports] == ["orders"]
-    link = await db.fetchval(
-        "SELECT data_contracts_id FROM catalog.data_products WHERE id = $1", product_id
-    )
-    assert link is None
 
 
 async def test_replace_of_a_missing_product_returns_none(db, repo):
@@ -302,20 +296,6 @@ async def test_list_port_usage_returns_both_roles(db, repo):
     ]
 
 
-async def test_list_legacy_products_lists_only_linked_rows(db, repo):
-    domain_id = await _domain(db)
-    cid = await _contract(db, domain_id)
-    legacy_id = await db.fetchval(
-        "INSERT INTO catalog.data_products (name, description, domain_id, status, data_contracts_id)"
-        " VALUES ('Legacy', 'd', $1, 'active', $2) RETURNING id",
-        domain_id,
-        cid,
-    )
-    await repo.add(_product(domain_id, "New"))
-    [legacy] = await repo.list_legacy_products()
-    assert legacy == (legacy_id, "Legacy", "d", domain_id, "active", cid)
-
-
 async def test_contract_delete_reports_the_ports_using_it(db, repo):
     domain_id = await _domain(db)
     cid = await _contract(db, domain_id)
@@ -359,3 +339,102 @@ async def test_domain_delete_mentions_products(db, repo):
     await repo.add(_product(domain_id))
     with pytest.raises(ValueError, match="data contracts or data products"):
         await PostgresDomainRepository(db).delete(domain_id)
+
+
+# ── ODPS plan 2: sections, port extras and management ports ──────────────────
+
+SECTIONS = {
+    "version": "${PRODUCT_VERSION:-1.0.0}",
+    "type": "consumerAligned",
+    "tenant": "${TENANT}",
+    "tags": ["risk", "credit"],
+    "synonyms": [{"synonym": "credit exposure", "status": "approved"}],
+    "context": {
+        "instructions": "Use for credit risk only",
+        "constraints": [{"constraint": "Never join with PII"}],
+        "verified_statements": [{"question": "Total exposure?", "answer": "sum(amount)"}],
+    },
+    "team": {"name": "Risk", "members": [{"username": "ana", "role": "owner", "date_in": "2026-01-01"}]},
+    "support": [{"channel": "#risk", "url": "${SUPPORT_URL}"}],
+    "custom_properties": [{"property": "cost_center", "value": 42}],
+    "authoritative_definitions": [{"type": "businessDefinition", "url": "https://wiki/risk"}],
+}
+DESCRIPTION = {
+    "purpose": "Credit exposure",
+    "usage": "Daily",
+    "limitations": "No intraday",
+    "custom_properties": [{"property": "k", "value": "v"}],
+}
+
+
+async def test_sections_round_trip_and_variables_stay_verbatim(db, repo):
+    domain_id = await _domain(db)
+    saved = await repo.add(_product(domain_id, description=DESCRIPTION, **SECTIONS))
+    got = await repo.get_by_id(saved.id)
+    assert {s: getattr(got, s) for s in SECTIONS} == SECTIONS
+    assert got.description == DESCRIPTION
+
+
+async def test_replace_rewrites_the_sections(db, repo):
+    domain_id = await _domain(db)
+    saved = await repo.add(_product(domain_id, **SECTIONS))
+    replaced = await repo.replace(saved.revised(tags=[], tenant=None, context={}))
+    assert (replaced.tags, replaced.tenant, replaced.context) == ([], None, {})
+    assert replaced.team == SECTIONS["team"]
+
+
+async def test_output_port_extras_round_trip(db, repo):
+    domain_id = await _domain(db)
+    output = OutputPort(
+        "out",
+        tags=("gold",),
+        custom_properties=({"property": "sla", "value": "daily"},),
+        synonyms=({"synonym": "exposure"},),
+        context={"instructions": "Aggregated daily"},
+        sbom=({"type": "external", "url": "https://sbom/out"},),
+    )
+    inp = InputPort("in", tags=("raw",), custom_properties=({"property": "k", "value": 1},))
+    saved = await repo.add(_product(domain_id, input_ports=[inp], output_ports=[output]))
+    assert _bare(saved.output_ports) == [output]
+    assert _bare(saved.input_ports) == [inp]
+
+
+async def test_management_ports_round_trip_and_keep_ids(db, repo):
+    domain_id = await _domain(db)
+    metrics = ManagementPort(
+        "metrics", "observability", url="${METRICS_URL}", tags=("ops",),
+        custom_properties=({"property": "owner", "value": "sre"},),
+    )
+    alerts = ManagementPort("alerts", "control", type="topic", channel="risk.alerts")
+    saved = await repo.add(_product(domain_id, management_ports=[metrics, alerts]))
+    by_name = {m.name: m for m in saved.management_ports}
+    assert dataclasses.replace(by_name["metrics"], id=None) == metrics
+    assert dataclasses.replace(by_name["alerts"], id=None) == alerts
+    replaced = await repo.replace(
+        saved.revised(management_ports=[dataclasses.replace(by_name["metrics"], description="now described")])
+    )
+    [kept] = replaced.management_ports
+    assert (kept.id, kept.description) == (by_name["metrics"].id, "now described")
+
+
+async def test_management_ports_left_out_are_deleted(db, repo):
+    domain_id = await _domain(db)
+    saved = await repo.add(_product(domain_id, management_ports=[ManagementPort("m", "control")]))
+    replaced = await repo.replace(saved.revised(management_ports=[]))
+    assert replaced.management_ports == ()
+    assert await db.fetchval("SELECT count(*) FROM catalog.data_product_management_ports") == 0
+
+
+async def test_duplicate_management_port_is_a_rule_error(db, repo):
+    domain_id = await _domain(db)
+    twice = [ManagementPort("m", "control"), ManagementPort("m", "observability")]
+    with pytest.raises(DataProductRuleError) as e:
+        await repo.add(_product(domain_id, management_ports=twice))
+    assert e.value.messages == ["Two management ports share the name m; each needs its own"]
+
+
+async def test_unknown_management_port_type_is_a_rule_error(db, repo):
+    domain_id = await _domain(db)
+    with pytest.raises(DataProductRuleError) as e:
+        await repo.add(_product(domain_id, management_ports=[ManagementPort("m", "control", type="grpc")]))
+    assert e.value.messages == ["Management port type must be rest or topic"]

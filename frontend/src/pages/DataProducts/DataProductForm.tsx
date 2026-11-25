@@ -13,21 +13,62 @@ import { STATUS_LABELS } from '../../lib/contracts'
 import { selectableDomains } from '../../lib/domains'
 import { PRODUCT_STATUSES, producersByContract } from '../../lib/products'
 import { InputPortsEditor, OutputPortsEditor, emptyOutput, type ContractSource } from './PortEditors'
+import MoreFields from './MoreFields'
 import type { DataProduct, DataProductInput, InputPort, OutputPort } from '../../types'
 
 // Mirrors only the rules a user breaks while typing; the API owns the rest.
+// ODPS objects are loose: fields the form does not show go back unchanged.
+const anyObject = z.looseObject({})
+const needed = (message: string) => z.string().trim().min(1, message)
+const team = z.looseObject({
+  members: z.array(z.looseObject({ username: needed('Every team member needs a username') })).optional(),
+})
+const support = z.looseObject({
+  channel: needed('Every support channel needs a channel'),
+  url: needed('Every support channel needs a URL'),
+})
+const context = z.looseObject({
+  constraints: z.array(z.looseObject({ constraint: needed('Every constraint needs a text') })).optional(),
+  verified_statements: z
+    .array(z.looseObject({ question: needed('Every verified statement needs a question') }))
+    .optional(),
+})
+const definition = z.looseObject({ type: needed('Every link needs a type'), url: needed('Every link needs a URL') })
+const customProperty = z.looseObject({
+  property: needed('Every custom property needs a name'),
+  value: z.unknown().refine((v) => v !== '' && v !== undefined && v !== null, 'Every custom property needs a value'),
+})
+const synonym = z.looseObject({ synonym: needed('Every synonym needs a text') })
 const portName = z.string().trim().min(1, 'Every port needs a name')
 const inputPort = z.object({
   name: portName,
   contract_id: z.string().nullable(),
   version: z.string().nullable(),
   deprecated: z.boolean(),
-  authoritative_definitions: z.array(z.object({ type: z.string(), url: z.string() })),
+  authoritative_definitions: z.array(anyObject),
+  tags: z.array(z.string()),
+  custom_properties: z.array(anyObject),
+})
+// Explicit fields: the id the API assigns is dropped on submit.
+const managementPort = z.object({
+  name: z.string().trim().min(1, 'Every management port needs a name'),
+  content: z.string().trim().min(1, 'Every management port needs a content'),
+  type: z.string(),
+  url: z.string().nullish(),
+  channel: z.string().nullish(),
+  description: z.string().nullish(),
+  deprecated: z.boolean(),
+  tags: z.array(z.string()).optional(),
+  custom_properties: z.array(anyObject).optional(),
+  authoritative_definitions: z.array(anyObject).optional(),
 })
 const outputPort = inputPort.extend({
   type: z.string().nullable(),
   description: z.string().nullable(),
   input_contracts: z.array(z.object({ contract_id: z.string(), version: z.string() })),
+  synonyms: z.array(anyObject),
+  context: anyObject,
+  sbom: z.array(anyObject),
 })
 
 function duplicate(ports: { name: string; version: string | null }[], kind: string): string | null {
@@ -43,11 +84,26 @@ function duplicate(ports: { name: string; version: string | null }[], kind: stri
 const schema = z
   .object({
     name: z.string().min(3, 'Name must be at least 3 characters'),
-    description: z.string().min(10, 'Description must be at least 10 characters'),
+    description: z.looseObject({
+      purpose: z.string().min(10, 'Description must be at least 10 characters'),
+      usage: z.string(),
+      limitations: z.string(),
+    }),
     domain_id: z.string().min(1, 'Choose a domain'),
     status: z.enum(['proposed', 'draft', 'active', 'deprecated', 'retired']),
+    version: z.string().nullable(),
+    type: z.string().nullable(),
+    tenant: z.string().nullable(),
+    tags: z.array(z.string()),
+    synonyms: z.array(synonym),
+    context,
+    team,
+    support: z.array(support),
+    custom_properties: z.array(customProperty),
+    authoritative_definitions: z.array(definition),
     input_ports: z.array(inputPort),
     output_ports: z.array(outputPort).min(1, 'A data product needs at least one output'),
+    management_ports: z.array(managementPort),
   })
   .superRefine((values, ctx) => {
     for (const [key, kind] of [
@@ -66,15 +122,33 @@ function grouped<T extends InputPort | OutputPort>(ports: T[]): T[] {
   )
 }
 
+const EMPTY: DataProductInput = {
+  name: '',
+  description: { purpose: '', usage: '', limitations: '' },
+  domain_id: '',
+  status: 'draft',
+  version: null,
+  type: null,
+  tenant: null,
+  tags: [],
+  synonyms: [],
+  context: {},
+  team: {},
+  support: [],
+  custom_properties: [],
+  authoritative_definitions: [],
+  input_ports: [],
+  output_ports: [],
+  management_ports: [],
+}
+
+/** The form's values. Ports keep their contract summary for display; the
+ *  schema drops it, with every other computed field, on submit. */
 function valuesOf(p?: DataProduct): DataProductInput {
-  if (!p) {
-    return { name: '', description: '', domain_id: '', status: 'draft', input_ports: [], output_ports: [emptyOutput()] }
-  }
+  if (!p) return { ...EMPTY, output_ports: [emptyOutput()] }
+  const editable = Object.fromEntries(Object.keys(EMPTY).map((key) => [key, p[key as keyof DataProduct]]))
   return {
-    name: p.name,
-    description: p.description,
-    domain_id: p.domain_id,
-    status: p.status,
+    ...(editable as unknown as DataProductInput),
     input_ports: grouped(p.input_ports),
     output_ports: grouped(p.output_ports),
   }
@@ -192,8 +266,9 @@ export default function DataProductForm({ defaultValues, onSubmit, onCancel, isS
       <Input
         label="Description"
         placeholder="What this product is for and who uses it..."
-        error={errors.description?.message}
-        {...register('description')}
+        id="description"
+        error={errors.description?.purpose?.message}
+        {...register('description.purpose')}
       />
 
       <Controller
@@ -223,6 +298,8 @@ export default function DataProductForm({ defaultValues, onSubmit, onCancel, isS
           />
         )}
       />
+
+      <MoreFields control={control} register={register} errors={errors} />
 
       <div className="flex justify-end gap-3 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>

@@ -1,24 +1,20 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from backend.domain.contract_metadata import server_problems, support_url_problem
+from backend.domain.contract_metadata import server_problems
 from backend.domain.quality_rules import find_quality_rule_problems
 from backend.domain.service_levels import service_level_problems
+from backend.interface.schemas.common import (
+    STRICT,
+    NonEmptyStr,
+    SupportChannel,
+    TeamMember,
+)
 
-NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-# The nested rows forbid unknown keys, like the ODCS reader: a key the platform
-# does not model must fail loudly instead of being dropped.
-_STRICT = ConfigDict(extra="forbid")
+__all__ = ["NonEmptyStr", "SupportChannel", "TeamMember"]
 
 
 class SchemaField(BaseModel):
@@ -42,7 +38,7 @@ def _reject_bool(value: Any) -> Any:
 class QualityRule(BaseModel):
     """An ODCS quality rule: a library metric the tool can run, or text."""
 
-    model_config = _STRICT
+    model_config = STRICT
 
     type: Literal["library", "text"]
     dimension: (
@@ -102,7 +98,7 @@ class ModelsSection(BaseModel):
 
 
 class ServiceLevelProperty(BaseModel):
-    model_config = _STRICT
+    model_config = STRICT
 
     property: str = Field(min_length=1)
     value: int | float | str
@@ -113,7 +109,7 @@ class ServiceLevelProperty(BaseModel):
 
 class ServiceLevels(BaseModel):
     # forbid: a stale client sending the old four keys gets 422, not an empty SLA.
-    model_config = _STRICT
+    model_config = STRICT
 
     properties: list[ServiceLevelProperty] = []
 
@@ -127,42 +123,17 @@ class ServiceLevels(BaseModel):
 
 
 class ContractDescription(BaseModel):
-    model_config = _STRICT
+    model_config = STRICT
 
     purpose: str = ""
     usage: str = ""
     limitations: str = ""
 
 
-class TeamMember(BaseModel):
-    model_config = _STRICT
-
-    username: NonEmptyStr
-    name: str = ""
-    role: str = ""
-
-
-class SupportChannel(BaseModel):
-    model_config = _STRICT
-
-    channel: NonEmptyStr
-    url: str = ""
-    tool: str = ""
-    scope: str = ""
-
-    @field_validator("url")
-    @classmethod
-    def _linkable(cls, url: str) -> str:
-        problem = support_url_problem(url)
-        if problem:
-            raise ValueError(problem)
-        return url
-
-
 class ContractServer(BaseModel):
     """Where the data lives. Coordinates only: no credential belongs here."""
 
-    model_config = _STRICT
+    model_config = STRICT
 
     server: NonEmptyStr
     type: Literal["databricks", "postgres", "azure", "local"]

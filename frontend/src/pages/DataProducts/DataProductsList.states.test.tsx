@@ -30,7 +30,7 @@ vi.mock('./DataProductForm', () => ({
 const product = makeProduct({
   id: 'prod-1',
   name: 'Sales Product',
-  description: 'A'.repeat(120), // long description -> exercises truncation branch
+  description: { purpose: 'A'.repeat(120), usage: '', limitations: '' }, // long description -> exercises truncation branch
   repo_url: null,
 })
 

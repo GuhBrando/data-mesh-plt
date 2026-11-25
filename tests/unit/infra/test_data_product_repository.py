@@ -39,21 +39,7 @@ def _violation(cls, constraint):
 
 
 def _product(**kw):
-    return DataProduct(
-        name="P", description="d", domain_id=DOMAIN, output_ports=[OutputPort("out")], **kw
-    )
-
-
-async def test_output_only_violation_is_a_rule_error():
-    db = _db()
-    db.execute.side_effect = _violation(
-        asyncpg.CheckViolationError, "chk_dpp_output_only"
-    )
-    with pytest.raises(DataProductRuleError) as e:
-        await PostgresDataProductRepository(db).add(_product())
-    assert e.value.messages == [
-        "Only outputs can have a type, a description or input contracts"
-    ]
+    return DataProduct(name="P", domain_id=DOMAIN, output_ports=[OutputPort("out")], **kw)
 
 
 async def test_status_violation_is_a_rule_error():
@@ -98,9 +84,20 @@ async def test_replace_writes_ports_only_when_the_product_exists():
     db.fetchrow.assert_not_awaited()
 
 
-async def test_replace_clears_the_legacy_contract_link():
+async def test_unknown_management_port_type_is_a_rule_error():
     db = _db()
-    db.fetchval.return_value = uuid.uuid4()
-    db.fetchrow.return_value = None
-    await PostgresDataProductRepository(db).replace(_product(id=uuid.uuid4()))
-    assert "data_contracts_id = NULL" in db.fetchval.call_args.args[0]
+    db.execute.side_effect = _violation(asyncpg.CheckViolationError, "chk_dmp_type")
+    with pytest.raises(DataProductRuleError) as e:
+        await PostgresDataProductRepository(db).add(_product())
+    assert e.value.messages == ["Management port type must be rest or topic"]
+
+
+async def test_output_only_message_names_every_output_only_field():
+    db = _db()
+    db.execute.side_effect = _violation(asyncpg.CheckViolationError, "chk_dpp_output_only")
+    with pytest.raises(DataProductRuleError) as e:
+        await PostgresDataProductRepository(db).add(_product())
+    assert e.value.messages == [
+        "Only outputs can have a type, a description, input contracts,"
+        " synonyms, a context or SBOM links"
+    ]

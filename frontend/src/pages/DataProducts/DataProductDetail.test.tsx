@@ -13,6 +13,7 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDataProduct: vi.fn(),
   useUpdateDataProduct: vi.fn(),
   useDeleteDataProduct: vi.fn(),
+  useDataProductOdps: vi.fn(() => ({ data: undefined, isFetching: false })),
 }))
 
 const baseProduct = makeProduct({ id: 'prod-123', name: 'My Product', description: { purpose: 'A test product', usage: '', limitations: '' }, repo_url: null })

@@ -559,3 +559,40 @@ def test_readme_and_repo_description_use_the_purpose(admin_client):
     admin_client.post("/api/v1/data-products", json=BODY)
     assert github.create_product_repo.await_args.args[1] == "Credit exposure by client"
     assert "Credit exposure by client" in github.push_scaffold.await_args.args[1]["README.md"]
+
+
+# ── ODPS plan 3: export ──────────────────────────────────────────────────────
+
+
+def test_odps_export_is_yaml_of_to_odps(admin_client):
+    import yaml
+
+    from backend.use_cases.data_product.odps import to_odps
+    from tests.fixtures.odps.sample_product import full_product
+
+    product = full_product()
+    _use(get_get_data_product_use_case).execute.return_value = product
+    resp = admin_client.get(f"/api/v1/data-products/{product.id}/odps")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/plain")
+    assert yaml.safe_load(resp.text) == to_odps(product)
+
+
+def test_odps_export_404_for_unknown_product(admin_client):
+    _use(get_get_data_product_use_case).execute.return_value = None
+    resp = admin_client.get(f"/api/v1/data-products/{uuid.uuid4()}/odps")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Data product not found"
+
+
+def test_yaml_keeps_accents(admin_client):
+    _use(get_get_data_product_use_case).execute.return_value = _product(name="Exposição de Crédito")
+    text = admin_client.get(f"/api/v1/data-products/{PRODUCT_ID}/odps").text
+    assert "name: Exposição de Crédito" in text
+
+
+def test_odps_export_does_not_provision_a_repository(admin_client):
+    _use(get_get_data_product_use_case).execute.return_value = _product()
+    github = _github()
+    admin_client.get(f"/api/v1/data-products/{PRODUCT_ID}/odps")
+    github.create_product_repo.assert_not_awaited()

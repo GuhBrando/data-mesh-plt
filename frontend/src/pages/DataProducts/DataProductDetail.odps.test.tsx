@@ -1,8 +1,8 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DataProductDetail from './DataProductDetail'
-import { useDataProduct, useDeleteDataProduct, useUpdateDataProduct } from '../../hooks/useDataProducts'
+import { useDataProduct, useDataProductOdps, useDeleteDataProduct, useUpdateDataProduct } from '../../hooks/useDataProducts'
 import { makeProduct } from '../../test/fixtures'
 import type { DataProduct } from '../../types'
 
@@ -10,6 +10,7 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDataProduct: vi.fn(),
   useUpdateDataProduct: vi.fn(),
   useDeleteDataProduct: vi.fn(),
+  useDataProductOdps: vi.fn(() => ({ data: undefined, isFetching: false })),
 }))
 
 const mutation = { mutateAsync: vi.fn(), isPending: false, isError: false, error: null } as never
@@ -76,5 +77,18 @@ describe('DataProductDetail — ODPS sections', () => {
   it('has no ODPS panel when nothing is filled', () => {
     renderProduct(makeProduct())
     expect(screen.queryByRole('heading', { name: 'ODPS' })).not.toBeInTheDocument()
+  })
+})
+
+describe('DataProductDetail — Export ODPS', () => {
+  it('fetches the ODPS document only when asked, and offers it to copy or download', () => {
+    vi.mocked(useDataProductOdps).mockReturnValue({ data: 'apiVersion: v1.1.0\nkind: DataProduct\n', isFetching: false } as never)
+    renderProduct(makeProduct({ id: 'p9', name: 'Risco de Crédito' }))
+    expect(useDataProductOdps).toHaveBeenLastCalledWith('p9', false)
+    fireEvent.click(screen.getByRole('button', { name: 'Export ODPS' }))
+    expect(useDataProductOdps).toHaveBeenLastCalledWith('p9', true)
+    const dialog = screen.getByRole('dialog', { name: 'ODPS YAML' })
+    expect(dialog).toHaveTextContent('kind: DataProduct')
+    expect(within(dialog).getByRole('button', { name: 'Download' })).toBeInTheDocument()
   })
 })

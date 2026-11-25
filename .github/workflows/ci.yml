@@ -75,7 +75,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        # dev extras: the ODPS check below validates with jsonschema.
+        run: uv sync --extra dev
 
       - name: Generate contracts with the real serializer
         run: |
@@ -98,6 +99,15 @@ jobs:
             fi
           done
           exit "$status"
+
+      # There is no ODPS CLI: the export of products built by the real code is
+      # validated against the vendored ODPS v1.1.0 JSON Schema and its prose rules.
+      - name: Validate the ODPS product export
+        run: |
+          mkdir -p odps-lint
+          uv run python -m tests.fixtures.odps.sample_product odps-lint/sample.yaml
+          uv run python -m tests.fixtures.odps.sample_product odps-lint/full.yaml full
+          uv run python -m tests.fixtures.odps.validator odps-lint/sample.yaml odps-lint/full.yaml
 
   test:
     name: Unit Tests

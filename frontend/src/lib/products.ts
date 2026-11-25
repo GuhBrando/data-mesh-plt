@@ -2,6 +2,7 @@ import type {
   DataProduct,
   DataProductInput,
   InputPort,
+  ManagementPort,
   OutputPort,
   ProductRef,
   ProductStatus,
@@ -9,6 +10,9 @@ import type {
 
 // The ODPS product lifecycle, in order.
 export const PRODUCT_STATUSES: ProductStatus[] = ['proposed', 'draft', 'active', 'deprecated', 'retired']
+// Values ODPS names; any other value is allowed.
+export const PRODUCT_TYPES = ['sourceAligned', 'aggregate', 'consumerAligned']
+export const MANAGEMENT_CONTENTS = ['discoverability', 'observability', 'control', 'dictionary']
 
 type Role = 'input' | 'output'
 
@@ -22,13 +26,21 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function inputOf({ name, contract_id, version, deprecated, authoritative_definitions }: InputPort): InputPort {
-  return { name, contract_id, version, deprecated, authoritative_definitions }
+function inputOf(port: InputPort): InputPort {
+  const { name, contract_id, version, deprecated, authoritative_definitions, tags, custom_properties } = port
+  return { name, contract_id, version, deprecated, authoritative_definitions, tags, custom_properties }
 }
 
 function outputOf(port: OutputPort): OutputPort {
-  const { name, contract_id, version, type, description, deprecated, authoritative_definitions, input_contracts } = port
-  return { name, contract_id, version, type, description, deprecated, authoritative_definitions, input_contracts }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- computed by the API
+  const { id, contract, consumed_by, ...writable } = port
+  return writable
+}
+
+function managementOf(port: ManagementPort): ManagementPort {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- assigned by the API
+  const { id, ...writable } = port
+  return writable
 }
 
 /** What the API takes back: ids, lineage and contract summaries are computed by it. */
@@ -38,8 +50,19 @@ export function toInput(p: DataProduct): DataProductInput {
     description: p.description,
     domain_id: p.domain_id,
     status: p.status,
+    version: p.version,
+    type: p.type,
+    tenant: p.tenant,
+    tags: p.tags,
+    synonyms: p.synonyms,
+    context: p.context,
+    team: p.team,
+    support: p.support,
+    custom_properties: p.custom_properties,
+    authoritative_definitions: p.authoritative_definitions,
     input_ports: p.input_ports.map(inputOf),
     output_ports: p.output_ports.map(outputOf),
+    management_ports: p.management_ports.map(managementOf),
   }
 }
 

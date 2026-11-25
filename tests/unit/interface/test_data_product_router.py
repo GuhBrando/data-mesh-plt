@@ -6,11 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.domain.entities.data_product import (
+    EDITABLE_FIELDS,
     ContractRef,
     ContractSummary,
     DataProduct,
     DataProductRuleError,
     InputPort,
+    ManagementPort,
     OutputPort,
     PortUsage,
     ProductRef,
@@ -46,7 +48,7 @@ def _product(**kw) -> DataProduct:
     fields = {
         "id": PRODUCT_ID,
         "name": "Orders Product",
-        "description": "desc",
+        "description": {"purpose": "desc", "usage": "", "limitations": ""},
         "domain_id": DOMAIN_ID,
         "domain": "Marketing",
         "status": "active",
@@ -78,7 +80,7 @@ def _admin() -> User:
 
 BODY = {
     "name": "Orders Product",
-    "description": "desc",
+    "description": {"purpose": "desc", "usage": "Daily"},
     "domain_id": str(DOMAIN_ID),
     "status": "active",
     "output_ports": [
@@ -223,14 +225,7 @@ def test_put_is_a_full_replace(admin_client):
     assert resp.json()["name"] == "Updated"
     args, kwargs = uc.execute.await_args
     assert args == (PRODUCT_ID,)
-    assert set(kwargs) == {
-        "name",
-        "description",
-        "domain_id",
-        "status",
-        "input_ports",
-        "output_ports",
-    }
+    assert set(kwargs) == set(EDITABLE_FIELDS)
 
 
 def test_put_rule_error_is_422(admin_client):
@@ -454,3 +449,113 @@ def test_delete_without_repo_does_not_archive(admin_client):
     github = _github()
     admin_client.delete(f"/api/v1/data-products/{PRODUCT_ID}")
     github.archive_repo.assert_not_awaited()
+
+
+# ── ODPS plan 2: every other ODPS field ──────────────────────────────────────
+
+SECTIONS_BODY = {
+    "version": "${VERSION:-1.0.0}",
+    "type": "consumerAligned",
+    "tenant": "acme",
+    "tags": ["risk"],
+    "synonyms": [{"synonym": "credit exposure", "status": "approved"}],
+    "context": {
+        "instructions": "Credit risk only",
+        "constraints": [{"constraint": "No PII joins"}],
+        "verified_statements": [{"question": "Total exposure?"}],
+    },
+    "team": {"name": "Risk", "members": [{"username": "ana", "role": "owner", "date_in": "2026-01-01"}]},
+    "support": [{"channel": "#risk", "url": "${SUPPORT_URL}", "tool": "slack"}],
+    "custom_properties": [{"property": "cost_center", "value": 42}],
+    "authoritative_definitions": [{"type": "businessDefinition", "url": "https://wiki"}],
+    "management_ports": [{"name": "metrics", "content": "observability", "url": "https://m"}],
+}
+STORED_SECTIONS = {
+    "version": "${VERSION:-1.0.0}",
+    "type": "consumerAligned",
+    "tenant": "acme",
+    "tags": ["risk"],
+    "synonyms": [{"synonym": "credit exposure", "status": "approved"}],
+    "context": {
+        "instructions": "Credit risk only",
+        "constraints": [{"constraint": "No PII joins"}],
+        "verified_statements": [{"question": "Total exposure?"}],
+    },
+    "team": {"name": "Risk", "members": [{"username": "ana", "role": "owner", "date_in": "2026-01-01"}]},
+    "support": [{"channel": "#risk", "url": "${SUPPORT_URL}", "tool": "slack"}],
+    "custom_properties": [{"property": "cost_center", "value": 42}],
+    "authoritative_definitions": [{"type": "businessDefinition", "url": "https://wiki"}],
+}
+
+
+def test_create_passes_every_section_compacted_to_the_use_case(admin_client):
+    uc = _use(get_create_data_product_use_case)
+    uc.execute.return_value = SavedProduct(_product(), [])
+    resp = admin_client.post("/api/v1/data-products", json={**BODY, **SECTIONS_BODY})
+    assert resp.status_code == 201, resp.text
+    kwargs = uc.execute.await_args.kwargs
+    assert {k: kwargs[k] for k in STORED_SECTIONS} == STORED_SECTIONS
+    assert kwargs["description"] == {"purpose": "desc", "usage": "Daily", "limitations": ""}
+    assert kwargs["management_ports"] == [
+        ManagementPort("metrics", "observability", url="https://m")
+    ]
+
+
+def test_port_extras_reach_the_use_case(admin_client):
+    uc = _use(get_create_data_product_use_case)
+    uc.execute.return_value = SavedProduct(_product(), [])
+    body = {**BODY, "output_ports": [{
+        "name": "o",
+        "tags": ["gold"],
+        "synonyms": [{"synonym": "exp"}],
+        "context": {"instructions": "daily"},
+        "sbom": [{"type": "external", "url": "https://sbom"}],
+        "custom_properties": [{"property": "sla", "value": "daily"}],
+    }], "input_ports": [{"name": "i", "tags": ["raw"]}]}
+    admin_client.post("/api/v1/data-products", json=body)
+    kwargs = uc.execute.await_args.kwargs
+    assert kwargs["output_ports"] == [OutputPort(
+        "o",
+        tags=("gold",),
+        synonyms=({"synonym": "exp"},),
+        context={"instructions": "daily"},
+        sbom=({"type": "external", "url": "https://sbom"},),
+        custom_properties=({"property": "sla", "value": "daily"},),
+    )]
+    assert kwargs["input_ports"] == [InputPort("i", tags=("raw",))]
+
+
+def test_an_input_port_with_synonyms_is_422(admin_client):
+    _use(get_create_data_product_use_case)
+    body = {**BODY, "input_ports": [{"name": "i", "synonyms": [{"synonym": "s"}]}]}
+    assert admin_client.post("/api/v1/data-products", json=body).status_code == 422
+
+
+def test_response_echoes_sections_and_management_ports(admin_client):
+    uc = _use(get_get_data_product_use_case)
+    metrics = ManagementPort("metrics", "observability", type="topic", id=uuid.uuid4())
+    uc.execute.return_value = _product(
+        description={"purpose": "p", "usage": "u", "limitations": "l"},
+        management_ports=[metrics],
+        **STORED_SECTIONS,
+    )
+    body = admin_client.get(f"/api/v1/data-products/{PRODUCT_ID}").json()
+    assert body["description"]["usage"] == "u"
+    assert (body["version"], body["tenant"], body["tags"]) == ("${VERSION:-1.0.0}", "acme", ["risk"])
+    assert body["team"]["members"][0]["date_in"] == "2026-01-01"
+    assert body["support"][0]["url"] == "${SUPPORT_URL}"
+    assert body["context"]["constraints"] == [{"constraint": "No PII joins", "id": None, "tags": [], "custom_properties": [], "authoritative_definitions": []}]
+    assert body["management_ports"][0]["id"] == str(metrics.id)
+    assert body["management_ports"][0]["type"] == "topic"
+
+
+def test_readme_and_repo_description_use_the_purpose(admin_client):
+    uc = _use(get_create_data_product_use_case)
+    uc.execute.return_value = SavedProduct(
+        _product(description={"purpose": "Credit exposure by client", "usage": "", "limitations": ""}), []
+    )
+    _use(get_data_product_repository)
+    github = _github()
+    admin_client.post("/api/v1/data-products", json=BODY)
+    assert github.create_product_repo.await_args.args[1] == "Credit exposure by client"
+    assert "Credit exposure by client" in github.push_scaffold.await_args.args[1]["README.md"]

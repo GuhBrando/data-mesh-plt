@@ -4,13 +4,17 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.domain.entities.data_product import (
+    EDITABLE_FIELDS,
+    PRODUCT_SECTIONS,
     PRODUCT_STATUSES,
     ContractRef,
     DataProduct,
     DataProductRuleError,
     InputPort,
+    ManagementPort,
     OutputPort,
     ProductRef,
+    empty_product_description,
 )
 from backend.domain.naming import slugify
 
@@ -21,7 +25,7 @@ OUT = OutputPort(name="exposure")
 
 
 def _product(**kw) -> DataProduct:
-    fields = {"name": "Risk", "description": "d", "domain_id": DOMAIN, "output_ports": [OUT]}
+    fields = {"name": "Risk", "domain_id": DOMAIN, "output_ports": [OUT]}
     return DataProduct(**{**fields, **kw})
 
 
@@ -124,7 +128,7 @@ def test_revised_keeps_identity_and_read_fields():
     product = DataProduct(
         id=uuid.uuid4(),
         name="Risk",
-        description="d",
+        description={"purpose": "d"},
         domain_id=DOMAIN,
         domain="Risco",
         status="active",
@@ -136,7 +140,7 @@ def test_revised_keeps_identity_and_read_fields():
     other_domain = uuid.uuid4()
     revised = product.revised(
         name="Risk 2",
-        description="d2",
+        description={"purpose": "d2"},
         domain_id=other_domain,
         status="deprecated",
         input_ports=[],
@@ -150,7 +154,7 @@ def test_revised_keeps_identity_and_read_fields():
     assert (revised.created_at, revised.updated_at) == (NOW, NOW)
     assert (revised.name, revised.description, revised.domain_id) == (
         "Risk 2",
-        "d2",
+        {"purpose": "d2"},
         other_domain,
     )
     assert revised.status == "deprecated"
@@ -161,7 +165,7 @@ def test_revised_checks_the_rules_again():
     with pytest.raises(DataProductRuleError):
         _product().revised(
             name="Risk",
-            description="d",
+            description={"purpose": "d"},
             domain_id=DOMAIN,
             status="draft",
             input_ports=[],
@@ -173,7 +177,7 @@ def test_a_retired_product_cannot_leave_retired():
     with pytest.raises(DataProductRuleError) as e:
         _product(status="retired").revised(
             name="Risk",
-            description="d",
+            description={"purpose": "d"},
             domain_id=DOMAIN,
             status="active",
             input_ports=[],
@@ -185,7 +189,7 @@ def test_a_retired_product_cannot_leave_retired():
 def test_a_retired_product_can_still_be_edited():
     revised = _product(status="retired").revised(
         name="New name",
-        description="d",
+        description={"purpose": "d"},
         domain_id=DOMAIN,
         status="retired",
         input_ports=[],
@@ -197,7 +201,7 @@ def test_a_retired_product_can_still_be_edited():
 def test_a_product_can_be_retired():
     revised = _product(status="active").revised(
         name="Risk",
-        description="d",
+        description={"purpose": "d"},
         domain_id=DOMAIN,
         status="retired",
         input_ports=[],
@@ -215,3 +219,86 @@ def test_rule_error_reads_as_its_messages():
     error = DataProductRuleError(["a", "b"])
     assert str(error) == "a; b"
     assert error.messages == ["a", "b"]
+
+
+SECTIONS = {
+    "version": "1.2.0",
+    "type": "consumerAligned",
+    "tenant": "${TENANT}",
+    "tags": ["risk"],
+    "synonyms": [{"synonym": "credit exposure"}],
+    "context": {"instructions": "Use for credit risk only"},
+    "team": {"name": "Risk", "members": [{"username": "ana"}]},
+    "support": [{"channel": "#risk", "url": "https://chat/risk"}],
+    "custom_properties": [{"property": "cost_center", "value": 42}],
+    "authoritative_definitions": [{"type": "businessDefinition", "url": "https://wiki"}],
+}
+
+
+def test_sections_default_to_empty():
+    product = _product()
+    assert (product.version, product.type, product.tenant) == (None, None, None)
+    for section in ("tags", "synonyms", "support", "custom_properties", "authoritative_definitions"):
+        assert getattr(product, section) == []
+    assert (product.context, product.team) == ({}, {})
+    assert product.management_ports == ()
+    assert product.description == empty_product_description()
+
+
+def test_description_defaults_to_the_three_texts():
+    assert empty_product_description() == {"purpose": "", "usage": "", "limitations": ""}
+
+
+def test_the_sections_are_the_odps_ones():
+    assert PRODUCT_SECTIONS == tuple(SECTIONS)
+    assert set(EDITABLE_FIELDS) == {
+        "name", "description", "domain_id", "status", *SECTIONS,
+        "input_ports", "output_ports", "management_ports",
+    }
+
+
+def test_sections_are_stored_as_given():
+    product = _product(**SECTIONS)
+    assert {s: getattr(product, s) for s in SECTIONS} == SECTIONS
+
+
+def test_management_ports_are_kept_as_a_tuple():
+    port = ManagementPort("metrics", "observability", url="https://metrics")
+    assert _product(management_ports=[port]).management_ports == (port,)
+    assert port.type == "rest"
+
+
+def test_revised_carries_every_editable_field():
+    port = ManagementPort("metrics", "observability")
+    values = {
+        "name": "New",
+        "description": {"purpose": "p", "usage": "u", "limitations": "l"},
+        "domain_id": uuid.uuid4(),
+        "status": "active",
+        **SECTIONS,
+        "input_ports": [InputPort("in", tags=("a",))],
+        "output_ports": [OutputPort("out", sbom=({"url": "https://sbom"},))],
+        "management_ports": [port],
+    }
+    revised = _product(id=uuid.uuid4()).revised(**values)
+    for field in EDITABLE_FIELDS:
+        expected = values[field]
+        if field.endswith("_ports"):
+            expected = tuple(expected)
+        assert getattr(revised, field) == expected, field
+
+
+def test_revised_keeps_what_it_is_not_given():
+    product = _product(**SECTIONS)
+    assert product.revised(name="Other").tags == ["risk"]
+
+
+def test_revised_refuses_an_unknown_field():
+    with pytest.raises(TypeError, match="colour"):
+        _product().revised(colour="red")
+
+
+def test_output_port_extras_compare_by_value():
+    a = OutputPort("o", context={"instructions": "x"}, synonyms=({"synonym": "s"},))
+    assert a == OutputPort("o", context={"instructions": "x"}, synonyms=({"synonym": "s"},))
+    assert a != OutputPort("o")

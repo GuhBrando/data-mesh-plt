@@ -159,24 +159,9 @@ class _ProductWriter:
 
 
 class CreateDataProductUseCase(_ProductWriter):
-    async def execute(
-        self,
-        *,
-        name: str,
-        description: str,
-        domain_id: uuid.UUID,
-        status: str,
-        input_ports: list[InputPort],
-        output_ports: list[OutputPort],
-    ) -> SavedProduct:
-        fields = {
-            "name": name,
-            "description": description,
-            "domain_id": domain_id,
-            "status": status,
-            "input_ports": input_ports,
-            "output_ports": output_ports,
-        }
+    async def execute(self, **fields: Any) -> SavedProduct:
+        """`fields` are the product's editable fields (EDITABLE_FIELDS); the
+        aggregate refuses any other name."""
         async with self.products.transaction():
             product, warnings = await self._prepare(fields, None)
             saved = await self.products.add(product)
@@ -185,25 +170,9 @@ class CreateDataProductUseCase(_ProductWriter):
 
 class UpdateDataProductUseCase(_ProductWriter):
     async def execute(
-        self,
-        product_id: uuid.UUID,
-        *,
-        name: str,
-        description: str,
-        domain_id: uuid.UUID,
-        status: str,
-        input_ports: list[InputPort],
-        output_ports: list[OutputPort],
+        self, product_id: uuid.UUID, **fields: Any
     ) -> SavedProduct | None:
         """A full replace of the product and its ports. None when it does not exist."""
-        fields = {
-            "name": name,
-            "description": description,
-            "domain_id": domain_id,
-            "status": status,
-            "input_ports": input_ports,
-            "output_ports": output_ports,
-        }
         async with self.products.transaction():
             previous = await self.products.get_by_id(product_id)
             if previous is None:

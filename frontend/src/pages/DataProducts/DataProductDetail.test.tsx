@@ -15,7 +15,7 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-const baseProduct = makeProduct({ id: 'prod-123', name: 'My Product', description: 'A test product', repo_url: null })
+const baseProduct = makeProduct({ id: 'prod-123', name: 'My Product', description: { purpose: 'A test product', usage: '', limitations: '' }, repo_url: null })
 
 function renderDetail() {
   return render(

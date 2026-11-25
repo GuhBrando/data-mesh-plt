@@ -4,13 +4,17 @@ from collections.abc import Awaitable
 from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from backend.domain.entities.data_product import (
+    PRODUCT_SECTIONS,
     ContractRef,
     DataProduct,
     DataProductRuleError,
     InputPort,
+    ManagementPort,
     OutputPort,
+    empty_product_description,
 )
 from backend.domain.entities.user import User
 from backend.domain.interfaces.data_product_repository import IDataProductRepository
@@ -30,6 +34,7 @@ from backend.interface.schemas.data_product import (
     DataProductResponseModel,
     DataProductWriteModel,
     InputPortModel,
+    ManagementPortModel,
     OutputPortModel,
     PortUsageResponseModel,
 )
@@ -49,10 +54,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _purpose(product: DataProduct) -> str:
+    return product.description.get("purpose", "")
+
+
 def _build_scaffold(product: DataProduct) -> dict[str, str]:
     readme = (
         f"# {product.name}\n\n"
-        f"{product.description}\n\n"
+        f"{_purpose(product)}\n\n"
         f"**Domain:** {product.domain}\n\n"
         "This repository holds the implementation code (pipeline, tests, "
         "infrastructure) for the data product. The public contract YAML lives "
@@ -76,7 +85,7 @@ async def _create_repo_with_fallback(
     """Create the product repo, falling back to a product-unique name when the
     preferred one is held by a repo we must not touch (archived or foreign)."""
     try:
-        return await github.create_product_repo(name, product.description)
+        return await github.create_product_repo(name, _purpose(product))
     except RepoNameUnavailable:
         logger.info(
             "Repo name %s unavailable for product %s; using suffixed name",
@@ -84,7 +93,7 @@ async def _create_repo_with_fallback(
             product.id,
         )
         return await github.create_product_repo(
-            f"{name}-{product.id.hex[:8]}", product.description
+            f"{name}-{product.id.hex[:8]}", _purpose(product)
         )
 
 
@@ -130,8 +139,18 @@ async def _archive_product_repo(
         )
 
 
-def _definitions(port: InputPortModel) -> tuple[dict[str, str], ...]:
-    return tuple(d.model_dump() for d in port.authoritative_definitions)
+def _compact(value: Any) -> Any:
+    """A section as stored: what the request set, without unset or empty fields,
+    as ODPS omits them. Plain values pass through."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_defaults=True)
+    if isinstance(value, list):
+        return [_compact(item) for item in value]
+    return value
+
+
+def _rows(items: list[BaseModel]) -> tuple[dict[str, Any], ...]:
+    return tuple(_compact(items))
 
 
 def _input_port(port: InputPortModel) -> InputPort:
@@ -140,7 +159,9 @@ def _input_port(port: InputPortModel) -> InputPort:
         contract_id=port.contract_id,
         version=port.version,
         deprecated=port.deprecated,
-        authoritative_definitions=_definitions(port),
+        authoritative_definitions=_rows(port.authoritative_definitions),
+        tags=tuple(port.tags),
+        custom_properties=_rows(port.custom_properties),
     )
 
 
@@ -152,21 +173,44 @@ def _output_port(port: OutputPortModel) -> OutputPort:
         type=port.type,
         description=port.description,
         deprecated=port.deprecated,
-        authoritative_definitions=_definitions(port),
+        authoritative_definitions=_rows(port.authoritative_definitions),
         input_contracts=tuple(
             ContractRef(r.contract_id, r.version) for r in port.input_contracts
         ),
+        tags=tuple(port.tags),
+        custom_properties=_rows(port.custom_properties),
+        synonyms=_rows(port.synonyms),
+        context=_compact(port.context),
+        sbom=_rows(port.sbom),
+    )
+
+
+def _management_port(port: ManagementPortModel) -> ManagementPort:
+    return ManagementPort(
+        name=port.name,
+        content=port.content,
+        type=port.type,
+        url=port.url,
+        channel=port.channel,
+        description=port.description,
+        deprecated=port.deprecated,
+        tags=tuple(port.tags),
+        custom_properties=_rows(port.custom_properties),
+        authoritative_definitions=_rows(port.authoritative_definitions),
     )
 
 
 def _fields(body: DataProductWriteModel) -> dict[str, Any]:
     return {
         "name": body.name,
-        "description": body.description,
+        # The three texts always; the lists only when set.
+        "description": {**empty_product_description(), **_compact(body.description)},
         "domain_id": body.domain_id,
         "status": body.status,
+        **{section: _compact(getattr(body, section)) for section in PRODUCT_SECTIONS},
         "input_ports": [_input_port(p) for p in body.input_ports],
         "output_ports": [_output_port(p) for p in body.output_ports],
+        "management_ports": [_management_port(m) for m in body.management_ports],
     }
 
 

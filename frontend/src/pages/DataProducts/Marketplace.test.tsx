@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import DataProductsList from './index'
 import { useDataProducts, useCreateDataProduct, useDeleteDataProduct } from '../../hooks/useDataProducts'
-import { makeInput, makeOutput, makeProduct } from '../../test/fixtures'
+import { makeInput, makeOutput, makeProduct, makeProductInput } from '../../test/fixtures'
 import type { DataProductInput } from '../../types'
 
 vi.mock('../../hooks/useDataProducts', () => ({
@@ -12,14 +12,11 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-const CREATED: DataProductInput = {
+const CREATED: DataProductInput = makeProductInput({
   name: 'New',
-  description: 'A new product',
-  domain_id: 'd1',
+  description: { purpose: 'A new product', usage: '', limitations: '' },
   status: 'draft',
-  input_ports: [],
-  output_ports: [],
-}
+})
 
 // The form has its own tests; here it only hands the page a value.
 vi.mock('./DataProductForm', () => ({

@@ -1,25 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import uuid
     from contextlib import AbstractAsyncContextManager
 
     from backend.domain.entities.data_product import DataProduct, PortUsage
-
-
-class LegacyProduct(NamedTuple):
-    """A product still linked to one contract by `data_contracts_id`, before the
-    backfill gives it an output port. Deleted with that column in ODPS plan 2."""
-
-    id: uuid.UUID
-    name: str
-    description: str
-    domain_id: uuid.UUID
-    status: str
-    contract_id: uuid.UUID
 
 
 class IDataProductRepository(ABC):
@@ -55,6 +43,3 @@ class IDataProductRepository(ABC):
     @abstractmethod
     async def list_port_usage(self, contract_ids: list[uuid.UUID]) -> list[PortUsage]:
         """Every port that references one of `contract_ids`, outputs first."""
-
-    @abstractmethod
-    async def list_legacy_products(self) -> list[LegacyProduct]: ...

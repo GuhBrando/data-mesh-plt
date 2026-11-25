@@ -106,7 +106,6 @@ async def test_product_write_cost_does_not_grow_with_ports(method):
         ("get_by_id", (uuid.uuid4(),), "fetchrow"),
         ("list", (), "fetch"),
         ("list_port_usage", ([uuid.uuid4(), uuid.uuid4(), uuid.uuid4()],), "fetch"),
-        ("list_legacy_products", (), "fetch"),
     ],
 )
 async def test_product_reads_are_single_queries(n1_guard, method, args, guarded):

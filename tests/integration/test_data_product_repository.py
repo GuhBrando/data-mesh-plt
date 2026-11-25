@@ -302,20 +302,6 @@ async def test_list_port_usage_returns_both_roles(db, repo):
     ]
 
 
-async def test_list_legacy_products_lists_only_linked_rows(db, repo):
-    domain_id = await _domain(db)
-    cid = await _contract(db, domain_id)
-    legacy_id = await db.fetchval(
-        "INSERT INTO catalog.data_products (name, description, domain_id, status, data_contracts_id)"
-        " VALUES ('Legacy', 'd', $1, 'active', $2) RETURNING id",
-        domain_id,
-        cid,
-    )
-    await repo.add(_product(domain_id, "New"))
-    [legacy] = await repo.list_legacy_products()
-    assert legacy == (legacy_id, "Legacy", "d", domain_id, "active", cid)
-
-
 async def test_contract_delete_reports_the_ports_using_it(db, repo):
     domain_id = await _domain(db)
     cid = await _contract(db, domain_id)

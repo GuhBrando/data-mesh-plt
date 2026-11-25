@@ -18,10 +18,7 @@ from backend.domain.entities.data_product import (
     PortUsage,
     ProductRef,
 )
-from backend.domain.interfaces.data_product_repository import (
-    IDataProductRepository,
-    LegacyProduct,
-)
+from backend.domain.interfaces.data_product_repository import IDataProductRepository
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator
@@ -314,18 +311,6 @@ class PostgresDataProductRepository(IDataProductRepository):
             list(contract_ids),
         )
         return [PortUsage(**dict(r)) for r in rows]
-
-    async def list_legacy_products(self) -> list[LegacyProduct]:
-        rows = await self.db.fetch(
-            """
-            SELECT id, name, description, domain_id, status,
-                   data_contracts_id AS contract_id
-            FROM catalog.data_products
-            WHERE data_contracts_id IS NOT NULL
-            ORDER BY created_at;
-            """
-        )
-        return [LegacyProduct(**dict(r)) for r in rows]
 
     @asynccontextmanager
     async def _writing(self, product: DataProduct) -> AsyncIterator[None]:

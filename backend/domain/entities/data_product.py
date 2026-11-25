@@ -9,7 +9,7 @@ it. Contracts are another aggregate, referenced by (contract_id, version) only.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import uuid
@@ -19,6 +19,46 @@ if TYPE_CHECKING:
 PRODUCT_STATUSES = ("proposed", "draft", "active", "deprecated", "retired")
 RETIRED_PRODUCT = "retired"
 STATUS_RULE = f"Status must be one of: {', '.join(PRODUCT_STATUSES)}"
+
+# The descriptive ODPS sections, stored as the API validated them. The aggregate
+# carries them without reading them: no product rule depends on their content.
+PRODUCT_SECTIONS = (
+    "version",
+    "type",
+    "tenant",
+    "tags",
+    "synonyms",
+    "context",
+    "team",
+    "support",
+    "custom_properties",
+    "authoritative_definitions",
+)
+_TEXT_SECTIONS = frozenset({"version", "type", "tenant"})
+_OBJECT_SECTIONS = frozenset({"context", "team"})
+# Everything an edit may change; the rest is identity or read-only.
+EDITABLE_FIELDS = (
+    "name",
+    "description",
+    "domain_id",
+    "status",
+    *PRODUCT_SECTIONS,
+    "input_ports",
+    "output_ports",
+    "management_ports",
+)
+
+
+def empty_product_description() -> dict[str, str]:
+    return {"purpose": "", "usage": "", "limitations": ""}
+
+
+def _empty(section: str) -> Any:
+    if section in _TEXT_SECTIONS:
+        return None
+    return {} if section in _OBJECT_SECTIONS else []
+
+
 _DEPRECATED_STATUSES = frozenset({"deprecated", RETIRED_PRODUCT})
 
 
@@ -64,7 +104,9 @@ class InputPort:
     contract_id: uuid.UUID | None = None
     version: str | None = None
     deprecated: bool = False
-    authoritative_definitions: tuple[dict[str, str], ...] = ()
+    authoritative_definitions: tuple[dict[str, Any], ...] = ()
+    tags: tuple[str, ...] = ()
+    custom_properties: tuple[dict[str, Any], ...] = ()
     id: uuid.UUID | None = None
     contract: ContractSummary | None = field(default=None, compare=False)
     # Products whose output ports carry the same contract version.
@@ -79,12 +121,35 @@ class OutputPort:
     type: str | None = None
     description: str | None = None
     deprecated: bool = False
-    authoritative_definitions: tuple[dict[str, str], ...] = ()
+    authoritative_definitions: tuple[dict[str, Any], ...] = ()
     input_contracts: tuple[ContractRef, ...] = ()
+    tags: tuple[str, ...] = ()
+    custom_properties: tuple[dict[str, Any], ...] = ()
+    # ODPS allows these three on output ports only.
+    synonyms: tuple[dict[str, Any], ...] = ()
+    context: dict[str, Any] = field(default_factory=dict)
+    sbom: tuple[dict[str, Any], ...] = ()
     id: uuid.UUID | None = None
     contract: ContractSummary | None = field(default=None, compare=False)
     # Products whose input ports read the same contract version.
     consumed_by: tuple[ProductRef, ...] = field(default=(), compare=False)
+
+
+@dataclass(frozen=True)
+class ManagementPort:
+    """How to observe or control the product: ODPS `managementPorts`."""
+
+    name: str
+    content: str
+    type: str = "rest"
+    url: str | None = None
+    channel: str | None = None
+    description: str | None = None
+    deprecated: bool = False
+    tags: tuple[str, ...] = ()
+    custom_properties: tuple[dict[str, Any], ...] = ()
+    authoritative_definitions: tuple[dict[str, Any], ...] = ()
+    id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -106,25 +171,36 @@ class DataProduct:
         self,
         *,
         name: str,
-        description: str,
         domain_id: uuid.UUID,
+        description: dict[str, Any] | None = None,
         status: str = "draft",
         input_ports: Iterable[InputPort] = (),
         output_ports: Iterable[OutputPort] = (),
+        management_ports: Iterable[ManagementPort] = (),
         id: uuid.UUID | None = None,
         domain: str = "",
         repo_url: str | None = None,
         created_at: datetime | None = None,
         updated_at: datetime | None = None,
+        **sections: Any,
     ):
+        unknown = sorted(set(sections) - set(PRODUCT_SECTIONS))
+        if unknown:
+            raise TypeError(f"Unknown data product field: {', '.join(unknown)}")
         self.id = id
         self.name = name
-        self.description = description
+        self.description = (
+            description if description is not None else empty_product_description()
+        )
         self.domain_id = domain_id
         self.domain = domain
         self.status = status
+        for section in PRODUCT_SECTIONS:
+            value = sections.get(section)
+            setattr(self, section, _empty(section) if value is None else value)
         self.input_ports = tuple(input_ports)
         self.output_ports = tuple(output_ports)
+        self.management_ports = tuple(management_ports)
         self.repo_url = repo_url
         self.created_at = created_at
         self.updated_at = updated_at
@@ -136,26 +212,18 @@ class DataProduct:
     def deprecated(self) -> bool:
         return self.status in _DEPRECATED_STATUSES
 
-    def revised(
-        self,
-        *,
-        name: str,
-        description: str,
-        domain_id: uuid.UUID,
-        status: str,
-        input_ports: Iterable[InputPort],
-        output_ports: Iterable[OutputPort],
-    ) -> DataProduct:
-        """The product after an edit; identity and read-only fields are kept."""
+    def revised(self, **changes: Any) -> DataProduct:
+        """The product after an edit: `changes` replace editable fields, the rest
+        keeps its value, and identity and read-only fields are kept."""
+        unknown = sorted(set(changes) - set(EDITABLE_FIELDS))
+        if unknown:
+            raise TypeError(f"Not an editable field: {', '.join(unknown)}")
+        status = changes.get("status", self.status)
         if self.status == RETIRED_PRODUCT and status != RETIRED_PRODUCT:
             raise DataProductRuleError(["A retired data product cannot change status"])
+        values = {name: getattr(self, name) for name in EDITABLE_FIELDS} | changes
         return DataProduct(
-            name=name,
-            description=description,
-            domain_id=domain_id,
-            status=status,
-            input_ports=input_ports,
-            output_ports=output_ports,
+            **values,
             id=self.id,
             domain=self.domain,
             repo_url=self.repo_url,

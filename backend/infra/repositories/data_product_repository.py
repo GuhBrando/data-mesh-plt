@@ -14,6 +14,7 @@ from backend.domain.entities.data_product import (
     DataProduct,
     DataProductRuleError,
     InputPort,
+    ManagementPort,
     OutputPort,
     PortUsage,
     ProductRef,
@@ -21,16 +22,56 @@ from backend.domain.entities.data_product import (
 from backend.domain.interfaces.data_product_repository import IDataProductRepository
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Callable, Iterable, Iterator
     from contextlib import AbstractAsyncContextManager
 
-# One query reads a product with its ports, each port with the contract it
-# references and, through the same contract version, the products on the other
-# side: producers for an input, consumers for an output.
-_SELECT = """
-    SELECT p.id, p.name, p.description, p.domain_id, d.name AS domain, p.status,
-           p.repo_url, p.created_at, p.updated_at,
-           COALESCE(ports.items, '[]') AS ports
+_TEXT_SECTIONS = ("version", "type", "tenant")
+_JSON_SECTIONS = (
+    "tags",
+    "synonyms",
+    "context",
+    "team",
+    "support",
+    "custom_properties",
+    "authoritative_definitions",
+)
+_ROW_COLUMNS = (
+    "name",
+    "description",
+    "domain_id",
+    "status",
+    *_TEXT_SECTIONS,
+    *_JSON_SECTIONS,
+)
+_JSONB_COLUMNS = frozenset({"description", *_JSON_SECTIONS})
+
+
+def _placeholder(position: int, column: str) -> str:
+    return f"${position}::jsonb" if column in _JSONB_COLUMNS else f"${position}"
+
+
+# Built once from the column list above, never from input.
+_INSERT_PRODUCT = (
+    f"INSERT INTO catalog.data_products ({', '.join(_ROW_COLUMNS)}) VALUES ("
+    + ", ".join(_placeholder(i + 1, c) for i, c in enumerate(_ROW_COLUMNS))
+    + ") RETURNING id;"
+)
+_UPDATE_PRODUCT = (
+    "UPDATE catalog.data_products SET "
+    + ", ".join(f"{c} = {_placeholder(i + 1, c)}" for i, c in enumerate(_ROW_COLUMNS))
+    + f", updated_at = now() WHERE id = ${len(_ROW_COLUMNS) + 1} RETURNING id;"
+)
+
+_PRODUCT_COLUMNS = ", ".join(f"p.{c}" for c in _ROW_COLUMNS if c != "domain_id")
+
+# One query reads a product with its ports and management ports, each port with
+# the contract it references and, through the same contract version, the
+# products on the other side: producers for an input, consumers for an output.
+_SELECT = f"""
+    SELECT p.id, p.domain_id, d.name AS domain, p.repo_url, p.created_at,
+           p.updated_at, {_PRODUCT_COLUMNS},
+           COALESCE(ports.items, '[]') AS ports,
+           COALESCE(management.items, '[]') AS management_ports
     FROM catalog.data_products p
     JOIN catalog.domains d ON d.id = p.domain_id
     LEFT JOIN LATERAL (
@@ -39,7 +80,9 @@ _SELECT = """
             'contract_id', pt.contract_id, 'type', pt.type,
             'description', pt.description, 'deprecated', pt.deprecated,
             'authoritative_definitions', pt.authoritative_definitions,
-            'input_contracts', pt.input_contracts,
+            'input_contracts', pt.input_contracts, 'tags', pt.tags,
+            'custom_properties', pt.custom_properties, 'synonyms', pt.synonyms,
+            'context', pt.context, 'sbom', pt.sbom,
             'contract', CASE WHEN dc.id IS NOT NULL THEN json_build_object(
                 'title', dc.title, 'status', dc.status, 'version', dc.version,
                 'domain', cd.name) END,
@@ -58,6 +101,17 @@ _SELECT = """
         ) other ON true
         WHERE pt.data_product_id = p.id
     ) ports ON true
+    LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+            'id', m.id, 'name', m.name, 'content', m.content, 'type', m.type,
+            'url', m.url, 'channel', m.channel, 'description', m.description,
+            'deprecated', m.deprecated, 'tags', m.tags,
+            'custom_properties', m.custom_properties,
+            'authoritative_definitions', m.authoritative_definitions
+        ) ORDER BY m.name) AS items
+        FROM catalog.data_product_management_ports m
+        WHERE m.data_product_id = p.id
+    ) management ON true
 """
 
 # Ports are written in one statement: the ones left out are deleted and the rest
@@ -66,9 +120,11 @@ _WRITE_PORTS = """
     WITH incoming AS (
         SELECT * FROM unnest($2::text[], $3::text[], $4::text[], $5::uuid[],
                              $6::text[], $7::text[], $8::bool[], $9::text[],
-                             $10::text[])
+                             $10::text[], $11::text[], $12::text[], $13::text[],
+                             $14::text[], $15::text[])
             AS u(role, name, version, contract_id, type, description, deprecated,
-                 authoritative_definitions, input_contracts)
+                 authoritative_definitions, input_contracts, tags,
+                 custom_properties, synonyms, context, sbom)
     ), removed AS (
         DELETE FROM catalog.data_product_ports p
         WHERE p.data_product_id = $1 AND NOT EXISTS (
@@ -78,16 +134,51 @@ _WRITE_PORTS = """
     )
     INSERT INTO catalog.data_product_ports
         (data_product_id, role, name, version, contract_id, type, description,
-         deprecated, authoritative_definitions, input_contracts)
+         deprecated, authoritative_definitions, input_contracts, tags,
+         custom_properties, synonyms, context, sbom)
     SELECT $1, role, name, version, contract_id, type, description, deprecated,
-           authoritative_definitions::jsonb, input_contracts::jsonb
+           authoritative_definitions::jsonb, input_contracts::jsonb, tags::jsonb,
+           custom_properties::jsonb, synonyms::jsonb, context::jsonb, sbom::jsonb
     FROM incoming
     ON CONFLICT ON CONSTRAINT uq_dpp_key DO UPDATE SET
         contract_id = EXCLUDED.contract_id, type = EXCLUDED.type,
         description = EXCLUDED.description, deprecated = EXCLUDED.deprecated,
         authoritative_definitions = EXCLUDED.authoritative_definitions,
-        input_contracts = EXCLUDED.input_contracts, updated_at = now();
+        input_contracts = EXCLUDED.input_contracts, tags = EXCLUDED.tags,
+        custom_properties = EXCLUDED.custom_properties,
+        synonyms = EXCLUDED.synonyms, context = EXCLUDED.context,
+        sbom = EXCLUDED.sbom, updated_at = now();
 """
+_PORT_WIDTH = 14
+
+# Management ports, the same way, keyed by name.
+_WRITE_MANAGEMENT_PORTS = """
+    WITH incoming AS (
+        SELECT * FROM unnest($2::text[], $3::text[], $4::text[], $5::text[],
+                             $6::text[], $7::text[], $8::bool[], $9::text[],
+                             $10::text[], $11::text[])
+            AS u(name, content, type, url, channel, description, deprecated, tags,
+                 custom_properties, authoritative_definitions)
+    ), removed AS (
+        DELETE FROM catalog.data_product_management_ports m
+        WHERE m.data_product_id = $1
+          AND NOT EXISTS (SELECT 1 FROM incoming i WHERE i.name = m.name)
+    )
+    INSERT INTO catalog.data_product_management_ports
+        (data_product_id, name, content, type, url, channel, description,
+         deprecated, tags, custom_properties, authoritative_definitions)
+    SELECT $1, name, content, type, url, channel, description, deprecated,
+           tags::jsonb, custom_properties::jsonb, authoritative_definitions::jsonb
+    FROM incoming
+    ON CONFLICT ON CONSTRAINT uq_dmp_name DO UPDATE SET
+        content = EXCLUDED.content, type = EXCLUDED.type, url = EXCLUDED.url,
+        channel = EXCLUDED.channel, description = EXCLUDED.description,
+        deprecated = EXCLUDED.deprecated, tags = EXCLUDED.tags,
+        custom_properties = EXCLUDED.custom_properties,
+        authoritative_definitions = EXCLUDED.authoritative_definitions,
+        updated_at = now();
+"""
+_MANAGEMENT_WIDTH = 10
 
 _MISSING_REFERENCES = """
     SELECT r.contract_id, r.version, dc.title
@@ -104,11 +195,24 @@ _REFERENCE_CONSTRAINTS = frozenset(
 
 _MESSAGES: dict[str, Callable[[DataProduct], str]] = {
     "chk_dpp_output_only": lambda _: (
-        "Only outputs can have a type, a description or input contracts"
+        "Only outputs can have a type, a description, input contracts,"
+        " synonyms, a context or SBOM links"
     ),
     "chk_dp_status": lambda _: STATUS_RULE,
+    "chk_dmp_type": lambda _: "Management port type must be rest or topic",
     "data_products_domain_id_fkey": lambda p: f"Domain {p.domain_id} does not exist",
 }
+
+
+def _dump(value: Any) -> str:
+    return json.dumps(list(value) if isinstance(value, tuple) else value)
+
+
+def _columns(rows: list[tuple[Any, ...]], width: int) -> list[list[Any]]:
+    """The rows as one array per column, for unnest; empty arrays for no rows."""
+    if not rows:
+        return [[] for _ in range(width)]
+    return [list(column) for column in zip(*rows, strict=True)]
 
 
 def _ports(product: DataProduct) -> Iterator[tuple[str, InputPort | OutputPort]]:
@@ -116,40 +220,75 @@ def _ports(product: DataProduct) -> Iterator[tuple[str, InputPort | OutputPort]]
     yield from (("output", p) for p in product.output_ports)
 
 
-def _port_columns(product: DataProduct) -> list[list[Any]]:
-    """The ports as one array per column, for unnest."""
-    rows = [
-        (
-            role,
-            port.name,
-            port.version,
-            port.contract_id,
-            getattr(port, "type", None),
-            getattr(port, "description", None),
-            port.deprecated,
-            json.dumps(list(port.authoritative_definitions)),
-            json.dumps(
-                [
-                    {"contract_id": str(ref.contract_id), "version": ref.version}
-                    for ref in getattr(port, "input_contracts", ())
-                ]
-            ),
-        )
-        for role, port in _ports(product)
+def _port_row(role: str, port: InputPort | OutputPort) -> tuple[Any, ...]:
+    output = port if isinstance(port, OutputPort) else None
+    return (
+        role,
+        port.name,
+        port.version,
+        port.contract_id,
+        output.type if output else None,
+        output.description if output else None,
+        port.deprecated,
+        _dump(port.authoritative_definitions),
+        _dump(
+            [
+                {"contract_id": str(ref.contract_id), "version": ref.version}
+                for ref in (output.input_contracts if output else ())
+            ]
+        ),
+        _dump(port.tags),
+        _dump(port.custom_properties),
+        _dump(output.synonyms if output else []),
+        _dump(output.context if output else {}),
+        _dump(output.sbom if output else []),
+    )
+
+
+def _management_row(port: ManagementPort) -> tuple[Any, ...]:
+    return (
+        port.name,
+        port.content,
+        port.type,
+        port.url,
+        port.channel,
+        port.description,
+        port.deprecated,
+        _dump(port.tags),
+        _dump(port.custom_properties),
+        _dump(port.authoritative_definitions),
+    )
+
+
+def _row_values(product: DataProduct) -> list[Any]:
+    return [
+        _dump(getattr(product, c)) if c in _JSONB_COLUMNS else getattr(product, c)
+        for c in _ROW_COLUMNS
     ]
-    return [list(column) for column in zip(*rows, strict=True)]
+
+
+def _first_duplicate(keys: Iterable[tuple[Any, ...]]) -> tuple[Any, ...] | None:
+    seen: set[tuple[Any, ...]] = set()
+    for key in keys:
+        if key in seen:
+            return key
+        seen.add(key)
+    return None
 
 
 def _duplicate_message(product: DataProduct) -> str:
-    seen: set[tuple[str, str, str | None]] = set()
-    for role, port in _ports(product):
-        key = (role, port.name, port.version)
-        if key in seen:
-            return (
-                f"Two {role}s share the name {port.name} and version"
-                f" {port.version or '(none)'}; each port needs its own"
-            )
-        seen.add(key)
+    port = _first_duplicate((role, p.name, p.version) for role, p in _ports(product))
+    if port:
+        role, name, version = port
+        return (
+            f"Two {role}s share the name {name} and version"
+            f" {version or '(none)'}; each port needs its own"
+        )
+    management = _first_duplicate((m.name,) for m in product.management_ports)
+    if management:
+        return (
+            f"Two management ports share the name {management[0]}; each needs its own"
+        )
     return "Two ports share a name and version; each port needs its own"
 
 
@@ -181,6 +320,8 @@ def _input(port: dict[str, Any]) -> InputPort:
         version=port["version"],
         deprecated=port["deprecated"],
         authoritative_definitions=tuple(port["authoritative_definitions"]),
+        tags=tuple(port["tags"]),
+        custom_properties=tuple(port["custom_properties"]),
         id=uuid.UUID(port["id"]),
         contract=_summary(port["contract"]),
         produced_by=_refs(port["counterparts"]),
@@ -200,26 +341,51 @@ def _output(port: dict[str, Any]) -> OutputPort:
             ContractRef(uuid.UUID(ref["contract_id"]), ref["version"])
             for ref in port["input_contracts"]
         ),
+        tags=tuple(port["tags"]),
+        custom_properties=tuple(port["custom_properties"]),
+        synonyms=tuple(port["synonyms"]),
+        context=port["context"],
+        sbom=tuple(port["sbom"]),
         id=uuid.UUID(port["id"]),
         contract=_summary(port["contract"]),
         consumed_by=_refs(port["counterparts"]),
     )
 
 
+def _management(port: dict[str, Any]) -> ManagementPort:
+    return ManagementPort(
+        name=port["name"],
+        content=port["content"],
+        type=port["type"],
+        url=port["url"],
+        channel=port["channel"],
+        description=port["description"],
+        deprecated=port["deprecated"],
+        tags=tuple(port["tags"]),
+        custom_properties=tuple(port["custom_properties"]),
+        authoritative_definitions=tuple(port["authoritative_definitions"]),
+        id=uuid.UUID(port["id"]),
+    )
+
+
 def _row_to_entity(row: Any) -> DataProduct:
     ports = json.loads(row["ports"])
+    sections = {s: json.loads(row[s]) for s in _JSON_SECTIONS}
     return DataProduct(
         id=row["id"],
         name=row["name"],
-        description=row["description"],
+        description=json.loads(row["description"]),
         domain_id=row["domain_id"],
         domain=row["domain"],
         status=row["status"],
         input_ports=[_input(p) for p in ports if p["role"] == "input"],
         output_ports=[_output(p) for p in ports if p["role"] == "output"],
+        management_ports=[_management(m) for m in json.loads(row["management_ports"])],
         repo_url=row["repo_url"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        **{s: row[s] for s in _TEXT_SECTIONS},
+        **sections,
     )
 
 
@@ -232,40 +398,18 @@ class PostgresDataProductRepository(IDataProductRepository):
 
     async def add(self, product: DataProduct) -> DataProduct:
         async with self._writing(product):
-            product_id = await self.db.fetchval(
-                """
-                INSERT INTO catalog.data_products (name, description, domain_id, status)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id;
-                """,
-                product.name,
-                product.description,
-                product.domain_id,
-                product.status,
-            )
-            await self.db.execute(_WRITE_PORTS, product_id, *_port_columns(product))
+            product_id = await self.db.fetchval(_INSERT_PRODUCT, *_row_values(product))
+            await self._write_ports(product_id, product)
         return await self.get_by_id(product_id)
 
     async def replace(self, product: DataProduct) -> DataProduct | None:
         async with self._writing(product):
-            # data_contracts_id is gone from the API: every write empties it.
             found = await self.db.fetchval(
-                """
-                UPDATE catalog.data_products
-                SET name = $1, description = $2, domain_id = $3, status = $4,
-                    data_contracts_id = NULL, updated_at = now()
-                WHERE id = $5
-                RETURNING id;
-                """,
-                product.name,
-                product.description,
-                product.domain_id,
-                product.status,
-                product.id,
+                _UPDATE_PRODUCT, *_row_values(product), product.id
             )
             if found is None:
                 return None
-            await self.db.execute(_WRITE_PORTS, product.id, *_port_columns(product))
+            await self._write_ports(product.id, product)
         return await self.get_by_id(product.id)
 
     async def get_by_id(self, product_id: uuid.UUID) -> DataProduct | None:
@@ -312,6 +456,16 @@ class PostgresDataProductRepository(IDataProductRepository):
         )
         return [PortUsage(**dict(r)) for r in rows]
 
+    async def _write_ports(self, product_id: uuid.UUID, product: DataProduct) -> None:
+        ports = [_port_row(role, port) for role, port in _ports(product)]
+        await self.db.execute(_WRITE_PORTS, product_id, *_columns(ports, _PORT_WIDTH))
+        management = [_management_row(m) for m in product.management_ports]
+        await self.db.execute(
+            _WRITE_MANAGEMENT_PORTS,
+            product_id,
+            *_columns(management, _MANAGEMENT_WIDTH),
+        )
+
     @asynccontextmanager
     async def _writing(self, product: DataProduct) -> AsyncIterator[None]:
         """A savepoint whose constraint violations become DataProductRuleError.
@@ -321,7 +475,7 @@ class PostgresDataProductRepository(IDataProductRepository):
             async with self.db.transaction():
                 yield
         except asyncpg.CardinalityViolationError:
-            # Two incoming ports with one key: the upsert would touch a row twice.
+            # Two incoming rows with one key: the upsert would touch a row twice.
             raise DataProductRuleError([_duplicate_message(product)]) from None
         except asyncpg.IntegrityConstraintViolationError as exc:
             raise await self._rule_error(exc, product) from None

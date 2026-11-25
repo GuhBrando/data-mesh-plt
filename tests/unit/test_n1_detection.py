@@ -39,6 +39,7 @@ from unittest.mock import MagicMock  # noqa: E402
 from backend.domain.entities.data_product import (  # noqa: E402
     DataProduct,
     InputPort,
+    ManagementPort,
     OutputPort,
 )
 from backend.infra.repositories.data_contract_repository import (  # noqa: E402
@@ -71,10 +72,10 @@ def _with_ports(n: int) -> DataProduct:
     return DataProduct(
         id=uuid.uuid4(),
         name="P",
-        description="d",
         domain_id=uuid.uuid4(),
         input_ports=[InputPort(f"in{i}") for i in range(n)],
         output_ports=[OutputPort(f"out{i}") for i in range(n)],
+        management_ports=[ManagementPort(f"m{i}", "control") for i in range(n)],
     )
 
 
@@ -95,8 +96,8 @@ async def test_product_write_cost_does_not_grow_with_ports(method):
         db = _db()
         await getattr(PostgresDataProductRepository(db), method)(_with_ports(n))
         counts.append(_calls(db))
-    # One row write, one ports statement, one read-back.
-    assert counts[0] == counts[1] == (1, 0, 1, 1)
+    # One row write, one ports statement, one management ports statement, one read-back.
+    assert counts[0] == counts[1] == (2, 0, 1, 1)
 
 
 @pytest.mark.n1

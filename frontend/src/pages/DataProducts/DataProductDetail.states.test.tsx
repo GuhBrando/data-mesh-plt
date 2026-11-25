@@ -2,11 +2,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DataProductDetail from './DataProductDetail'
-import {
-  useDataProduct,
-  useUpdateDataProduct,
-  useDeleteDataProduct,
-} from '../../hooks/useDataProducts'
+import { useDataProduct, useUpdateDataProduct, useDeleteDataProduct } from '../../hooks/useDataProducts'
+import { makeInput, makeProduct } from '../../test/fixtures'
+import type { DataProductInput } from '../../types'
 
 const mockNavigate = vi.fn()
 
@@ -21,25 +19,33 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-// The detail page joins the product to its contract; these tests cover the product only.
-vi.mock('../../hooks/useDataContracts', () => ({
-  useDataContract: () => ({ data: undefined, isLoading: false, error: null }),
+const EDITED: DataProductInput = {
+  name: 'Edited',
+  description: 'Edited description',
+  domain_id: 'd1',
+  status: 'active',
+  input_ports: [],
+  output_ports: [],
+}
+
+// The form has its own tests; here it only hands the page a value.
+vi.mock('./DataProductForm', () => ({
+  default: ({ onSubmit }: { onSubmit: (v: DataProductInput) => void }) => (
+    <button type="button" onClick={() => onSubmit(EDITED)}>
+      Submit form
+    </button>
+  ),
 }))
 
-// The product form lists the contracts the user can pick; these tests cover the page only.
-vi.mock('../../hooks/useSelectableContracts', () => ({
-  useSelectableContracts: () => ({ contracts: [], isLoading: false, error: null }),
-}))
-
-const product = {
+const product = makeProduct({
   id: 'prod-123',
   name: 'My Product',
   description: 'A test product',
-  data_contracts_id: 'contract-abc',
+  domain: 'Risco',
+  status: 'deprecated',
   repo_url: null,
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-02T00:00:00Z',
-}
+  input_ports: [makeInput({ contract: { title: 'Cadastro', status: 'active', version: '1.1.0', domain: 'Clientes' } })],
+})
 
 function renderDetail() {
   return render(
@@ -51,24 +57,25 @@ function renderDetail() {
   )
 }
 
-function setMutations(overrides: {
-  update?: Record<string, unknown>
-  del?: Record<string, unknown>
-} = {}) {
-  vi.mocked(useUpdateDataProduct).mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+function mutation(over: Record<string, unknown> = {}) {
+  return {
+    mutateAsync: vi.fn().mockResolvedValue({ ...product, warnings: [] }),
     isPending: false,
     isError: false,
     error: null,
-    ...overrides.update,
-  } as never)
-  vi.mocked(useDeleteDataProduct).mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
-    isPending: false,
-    isError: false,
-    error: null,
-    ...overrides.del,
-  } as never)
+    ...over,
+  }
+}
+
+function setMutations({ update = {}, del = {} }: { update?: Record<string, unknown>; del?: Record<string, unknown> } = {}) {
+  const updating = mutation(update)
+  vi.mocked(useUpdateDataProduct).mockReturnValue(updating as never)
+  vi.mocked(useDeleteDataProduct).mockReturnValue(mutation(del) as never)
+  return updating
+}
+
+function showProduct() {
+  vi.mocked(useDataProduct).mockReturnValue({ data: product, isLoading: false, error: null } as never)
 }
 
 describe('DataProductDetail — states & flows', () => {
@@ -78,86 +85,95 @@ describe('DataProductDetail — states & flows', () => {
   })
 
   it('shows a spinner while loading', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      error: null,
-    } as never)
+    vi.mocked(useDataProduct).mockReturnValue({ data: undefined, isLoading: true, error: null } as never)
     renderDetail()
     expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
   it('shows an error state with a back link', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      error: new Error('not found'),
-    } as never)
+    vi.mocked(useDataProduct).mockReturnValue({ data: undefined, isLoading: false, error: new Error('not found') } as never)
     renderDetail()
     expect(screen.getByText('not found')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Back to list' }))
     expect(mockNavigate).toHaveBeenCalledWith('/data-products')
   })
 
-  it('renders product details', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: product,
-      isLoading: false,
-      error: null,
-    } as never)
+  it('shows the product with its own domain, status and lineage', () => {
+    showProduct()
     renderDetail()
-    expect(screen.getByRole('heading', { name: 'My Product' })).toBeInTheDocument()
+    const heading = screen.getByRole('heading', { name: 'My Product' })
+    const header = heading.parentElement as HTMLElement
+    expect(within(header).getByText('Risco')).toBeInTheDocument()
+    expect(within(header).getByText('Deprecated')).toBeInTheDocument()
     expect(screen.getByText('A test product')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Inputs' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Outputs' })).toBeInTheDocument()
   })
 
-  it('navigates to the data contract when the contract id is clicked', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: product,
-      isLoading: false,
-      error: null,
-    } as never)
+  it('saves a version move from the lineage and shows its warnings', async () => {
+    showProduct()
+    const updating = setMutations({
+      update: {
+        mutateAsync: vi.fn().mockResolvedValue({
+          ...product,
+          warnings: ['Input orders uses contract Cadastro, which is deprecated'],
+        }),
+      },
+    })
     renderDetail()
-    fireEvent.click(screen.getByRole('button', { name: 'contract-abc' }))
-    expect(mockNavigate).toHaveBeenCalledWith('/data-contracts/contract-abc')
+    fireEvent.click(screen.getByRole('button', { name: 'Switch' }))
+    await waitFor(() => expect(updating.mutateAsync).toHaveBeenCalledOnce())
+    const sent = updating.mutateAsync.mock.calls[0][0]
+    expect(sent.id).toBe('prod-123')
+    expect(sent.input_ports.map((p: { version: string }) => p.version)).toEqual(['1.0.0', '1.1.0'])
+    expect(await screen.findByRole('status')).toHaveTextContent('which is deprecated')
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('opens the edit modal with prefilled values', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: product,
-      isLoading: false,
-      error: null,
-    } as never)
+  it('shows why a lineage save failed', async () => {
+    showProduct()
+    setMutations({
+      update: {
+        mutateAsync: vi.fn().mockRejectedValue(new Error('Contract retired')),
+        isError: true,
+        error: new Error('Contract retired'),
+      },
+    })
+    renderDetail()
+    fireEvent.click(screen.getByRole('button', { name: 'Switch' }))
+    expect(await screen.findByText('Contract retired')).toBeInTheDocument()
+  })
+
+  it('saves the edit form, closes it and shows the warnings', async () => {
+    showProduct()
+    const updating = setMutations({
+      update: { mutateAsync: vi.fn().mockResolvedValue({ ...product, warnings: ['Contract X belongs to domain Y'] }) },
+    })
     renderDetail()
     fireEvent.click(screen.getByRole('button', { name: /Edit/i }))
-    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Submit form' }))
+    await waitFor(() => expect(updating.mutateAsync).toHaveBeenCalledWith({ id: 'prod-123', ...EDITED }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Contract X belongs to domain Y')
+    expect(screen.queryByRole('button', { name: 'Submit form' })).not.toBeInTheDocument()
   })
 
   it('opens the delete modal and confirms deletion', async () => {
+    showProduct()
     const mutateAsync = vi.fn().mockResolvedValue(undefined)
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: product,
-      isLoading: false,
-      error: null,
-    } as never)
     setMutations({ del: { mutateAsync } })
     renderDetail()
-
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
-    const dialog = screen.getByRole('dialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('prod-123'))
     expect(mockNavigate).toHaveBeenCalledWith('/data-products')
   })
 
   it('renders the update error message inside the edit modal', () => {
-    vi.mocked(useDataProduct).mockReturnValue({
-      data: product,
-      isLoading: false,
-      error: null,
-    } as never)
+    showProduct()
     setMutations({ update: { isError: true, error: new Error('update failed') } })
     renderDetail()
     fireEvent.click(screen.getByRole('button', { name: /Edit/i }))
-    expect(screen.getByText('update failed')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('update failed')).toBeInTheDocument()
   })
 })

@@ -7,6 +7,7 @@ import {
   useCreateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
+import { makeProduct } from '../../test/fixtures'
 
 const mockNavigate = vi.fn()
 
@@ -21,25 +22,17 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDeleteDataProduct: vi.fn(),
 }))
 
-// The marketplace joins each product to its contract for domain, tier and status.
-vi.mock('../../hooks/useDataContracts', () => ({
-  useDataContracts: () => ({ data: [], isLoading: false, error: null }),
+// The form has its own tests; these cover the page only.
+vi.mock('./DataProductForm', () => ({
+  default: () => <button type="button">Create Product</button>,
 }))
 
-// The product form lists the contracts the user can pick; these tests cover the page only.
-vi.mock('../../hooks/useSelectableContracts', () => ({
-  useSelectableContracts: () => ({ contracts: [], isLoading: false, error: null }),
-}))
-
-const product = {
+const product = makeProduct({
   id: 'prod-1',
   name: 'Sales Product',
   description: 'A'.repeat(120), // long description -> exercises truncation branch
-  data_contracts_id: '11111111-1111-1111-1111-111111111111',
   repo_url: null,
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
-}
+})
 
 function renderList() {
   return render(

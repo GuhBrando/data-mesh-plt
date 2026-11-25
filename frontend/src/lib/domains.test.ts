@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getDomainAccess, selectableContracts } from './domains'
+import { getDomainAccess, selectableContracts, selectableDomains } from './domains'
 import { makeContract, makeDomain } from '../test/fixtures'
 import type { DomainWithMembers } from '../types'
 
@@ -104,5 +104,32 @@ describe('selectableContracts', () => {
     const before = ids(contracts)
     selectableContracts(contracts, [sales, risk], { id: 'u-admin', role: 'PLATFORM_ADMIN' })
     expect(ids(contracts)).toEqual(before)
+  })
+})
+
+describe('selectableDomains', () => {
+  const sales = makeDomain({ id: 'd1', name: 'Sales', owner_id: 'u1', members: [] })
+  const risk = makeDomain({ id: 'd2', name: 'Risk', owner_id: 'u9', members: [{ user_id: 'u2', username: 'bob', role: 'member' }] })
+  const hr = makeDomain({ id: 'd3', name: 'HR', owner_id: 'u9', members: [] })
+
+  it('lists the domains a user belongs to, by name', () => {
+    expect(selectableDomains([sales, risk, hr], { id: 'u2', role: 'DATA_OWNER' }).map((d) => d.id)).toEqual(['d2'])
+    expect(selectableDomains([sales, risk, hr], { id: 'u1', role: 'DATA_OWNER' }).map((d) => d.id)).toEqual(['d1'])
+  })
+
+  it('lists every domain for a platform admin', () => {
+    expect(selectableDomains([sales, risk, hr], { id: 'x', role: 'PLATFORM_ADMIN' }).map((d) => d.name)).toEqual([
+      'HR',
+      'Risk',
+      'Sales',
+    ])
+  })
+
+  it('keeps the domain a product already has', () => {
+    expect(selectableDomains([sales, hr], { id: 'u1', role: 'DATA_OWNER' }, 'd3').map((d) => d.id)).toEqual(['d3', 'd1'])
+  })
+
+  it('is empty without a user', () => {
+    expect(selectableDomains([sales], null)).toEqual([])
   })
 })

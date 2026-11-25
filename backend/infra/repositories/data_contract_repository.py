@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import uuid
     from contextlib import AbstractAsyncContextManager
-    from datetime import datetime
+
+    from backend.domain.entities.contract_version import ContractBaseline
 
 import asyncpg
 
@@ -87,26 +88,31 @@ class PostgresDataContractRepository(IDataContractRepository):
                 f"Version {version} already exists for this contract"
             ) from None
 
-    async def add_baseline_version(
-        self,
-        contract_id: uuid.UUID,
-        version: str,
-        yaml_content: str,
-        created_at: datetime,
-    ) -> None:
+    async def add_baseline_versions(self, baselines: list[ContractBaseline]) -> None:
+        if not baselines:
+            return
+        contract_ids, versions, contents, created = zip(*baselines, strict=True)
         # DO NOTHING needs no UPDATE privilege, which the history table lacks.
         await self.db.execute(
             """
             INSERT INTO catalog.contract_versions
                 (contract_id, version, yaml_content, created_at)
-            VALUES ($1, $2, $3, $4)
+            SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::timestamptz[])
             ON CONFLICT (contract_id, version) DO NOTHING;
             """,
-            contract_id,
-            version,
-            yaml_content,
-            created_at,
+            list(contract_ids),
+            list(versions),
+            list(contents),
+            list(created),
         )
+
+    async def list_by_ids(self, contract_ids: list[uuid.UUID]) -> list[DataContract]:
+        if not contract_ids:
+            return []
+        rows = await self.db.fetch(
+            f"{_SELECT} WHERE dc.id = ANY($1::uuid[]);", list(contract_ids)
+        )
+        return [_row_to_entity(r) for r in rows]
 
     async def list_versions(self, contract_id: uuid.UUID) -> list[ContractVersion]:
         rows = await self.db.fetch(
@@ -248,11 +254,16 @@ class PostgresDataContractRepository(IDataContractRepository):
                 )
                 return result == "DELETE 1"
         except asyncpg.ForeignKeyViolationError:
-            raise ValueError(
-                "Cannot delete this contract because it is still"
-                " referenced by one or more data products."
-                " Remove those references first."
+            # The cascade to the version history stops at the ports that use it.
+            ports = await self.db.fetchval(
+                "SELECT count(*) FROM catalog.data_product_ports"
+                " WHERE contract_id = $1;",
+                contract_id,
             )
+            raise ValueError(
+                f"Cannot delete this contract: {ports} data product"
+                f" port{'' if ports == 1 else 's'} use it. Remove those ports first."
+            ) from None
 
     async def list_by_domain_id(self, domain_id: uuid.UUID) -> list[DataContract]:
         rows = await self.db.fetch(

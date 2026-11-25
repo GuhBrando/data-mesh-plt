@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del } from '../lib/api'
-import type { DataProduct, DataProductFormData } from '../types'
+import type { DataProduct, DataProductInput } from '../types'
 
 const KEYS = {
   all: ['data-products'] as const,
   one: (id: string) => ['data-products', id] as const,
 }
+
+// A product write changes who produces and consumes each contract it names.
+const CONTRACTS = ['data-contracts'] as const
 
 // ---- Queries ----
 
@@ -28,10 +31,11 @@ export function useDataProduct(id: string) {
 
 export function useCreateDataProduct() {
   const qc = useQueryClient()
-  return useMutation<DataProduct, Error, DataProductFormData>({
+  return useMutation<DataProduct, Error, DataProductInput>({
     mutationFn: (data) => post<DataProduct>('/data-products', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.all })
+      qc.invalidateQueries({ queryKey: CONTRACTS })
     },
   })
 }
@@ -41,13 +45,14 @@ export function useUpdateDataProduct() {
   return useMutation<
     DataProduct,
     Error,
-    { id: string } & DataProductFormData
+    { id: string } & DataProductInput
   >({
     mutationFn: ({ id, ...data }) =>
       put<DataProduct>(`/data-products/${id}`, data),
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: KEYS.all })
       qc.invalidateQueries({ queryKey: KEYS.one(updated.id) })
+      qc.invalidateQueries({ queryKey: CONTRACTS })
     },
   })
 }
@@ -58,6 +63,7 @@ export function useDeleteDataProduct() {
     mutationFn: (id) => del(`/data-products/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEYS.all })
+      qc.invalidateQueries({ queryKey: CONTRACTS })
     },
   })
 }

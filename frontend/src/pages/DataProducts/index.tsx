@@ -5,16 +5,14 @@ import {
   useCreateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
-import { useDataContracts } from '../../hooks/useDataContracts'
 import PageHeader from '../../components/PageHeader'
 import Table from '../../components/ui/Table'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Spinner from '../../components/ui/Spinner'
-import { DomainChip, StatusGlyph, TierGlyph } from '../../components/ui/Glyphs'
+import { DomainChip, StatusGlyph } from '../../components/ui/Glyphs'
 import {
   ArrowUpRightIcon,
-  ContractIcon,
   FilterIcon,
   GridIcon,
   ListIcon,
@@ -24,33 +22,42 @@ import {
   RepoIcon,
   TrashIcon,
 } from '../../components/icons'
-import { domainColor } from '../../lib/contracts'
+import { STATUS_LABELS, domainColor } from '../../lib/contracts'
 import { relativeTime } from '../../lib/format'
+import { PRODUCT_STATUSES } from '../../lib/products'
 import DataProductForm from './DataProductForm'
-import type { DataContract, DataProduct, DataProductFormData } from '../../types'
+import SaveWarnings from './SaveWarnings'
+import type { DataProduct, DataProductInput, ProductStatus } from '../../types'
 
 type View = 'grid' | 'list'
+const ALL = 'all'
 
-interface Row {
-  product: DataProduct
-  contract?: DataContract
+function portsSummary(p: DataProduct): string {
+  const outputs = p.output_ports.length
+  const inputs = p.input_ports.length
+  return `${outputs} output${outputs === 1 ? '' : 's'} · ${inputs} input${inputs === 1 ? '' : 's'}`
 }
 
-function matches(r: Row, domain: string, needle: string): boolean {
-  if (domain !== 'all' && r.contract?.domain !== domain) return false
+function matches(p: DataProduct, domain: string, status: string, needle: string): boolean {
+  if (domain !== ALL && p.domain !== domain) return false
+  if (status !== ALL && p.status !== status) return false
   if (!needle) return true
-  return [r.product.name, r.product.description, r.contract?.title, r.contract?.domain, r.contract?.owner].some(
+  const ports = [...p.input_ports, ...p.output_ports]
+  return [p.name, p.description, p.domain, ...ports.map((port) => port.name), ...ports.map((port) => port.contract?.title)].some(
     (v) => typeof v === 'string' && v.toLowerCase().includes(needle),
   )
 }
 
-function countDomains(rows: Row[]): [string, number][] {
+function countDomains(products: DataProduct[]): [string, number][] {
   const counts = new Map<string, number>()
-  for (const r of rows) {
-    const name = r.contract?.domain
-    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
-  }
+  for (const p of products) counts.set(p.domain, (counts.get(p.domain) ?? 0) + 1)
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+}
+
+function countStatuses(products: DataProduct[]): [ProductStatus, number][] {
+  return PRODUCT_STATUSES.map((s) => [s, products.filter((p) => p.status === s).length] as [ProductStatus, number]).filter(
+    ([, n]) => n > 0,
+  )
 }
 
 function RepoState({ url }: { url?: string | null }) {
@@ -96,12 +103,12 @@ function DeleteButton({ onClick }: { onClick: () => void }) {
 }
 
 function ProductCard({
-  row: { product: p, contract: c },
+  product: p,
   index,
   onOpen,
   onDelete,
 }: {
-  row: Row
+  product: DataProduct
   index: number
   onOpen: (p: DataProduct) => void
   onDelete: (p: DataProduct) => void
@@ -113,9 +120,9 @@ function ProductCard({
       style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
     >
       <div className="flex items-center justify-between gap-2">
-        {c ? <DomainChip name={c.domain} /> : <span className="text-xs text-tx3">No contract found</span>}
+        <DomainChip name={p.domain} />
         <div className="flex items-center gap-1">
-          {c && <TierGlyph tier={c.tier} />}
+          <StatusGlyph status={p.status} className="!text-xs" />
           <span className="transition-opacity duration-150 md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
             <DeleteButton onClick={() => onDelete(p)} />
           </span>
@@ -138,51 +145,51 @@ function ProductCard({
             />
           </button>
         </h3>
-        {c && <span className="mt-0.5 block truncate font-mono text-[11.5px] text-tx3">{c.title}</span>}
       </div>
       <p className="m-0 line-clamp-2 min-h-[37px] text-[12.5px] leading-normal text-tx2">{p.description}</p>
       <div className="mt-auto flex items-center justify-between gap-2.5 border-t border-line pt-3 text-xs">
-        {c ? (
-          <span className="inline-flex min-w-0 items-center gap-2 text-tx2">
-            <ContractIcon size={14} className="text-tx3" />
-            <span className="font-mono text-[11.5px]">v{c.version}</span>
-            <StatusGlyph status={c.status} className="!text-xs" />
-          </span>
-        ) : (
-          <span className="text-tx3">{relativeTime(p.updated_at)}</span>
-        )}
+        <span className="font-mono text-[11.5px] text-tx2">{portsSummary(p)}</span>
         <RepoState url={p.repo_url} />
       </div>
     </article>
   )
 }
 
-function DomainFilter({
-  domains,
+function ChipFilter<T extends string>({
+  label,
+  allLabel,
+  options,
   total,
   value,
   onChange,
+  swatch,
+  labelOf = (v) => v,
 }: {
-  domains: [string, number][]
+  label: string
+  allLabel: string
+  options: [T, number][]
   total: number
   value: string
-  onChange: (domain: string) => void
+  onChange: (v: string) => void
+  swatch?: (v: T) => string
+  labelOf?: (v: T) => string
 }) {
-  if (domains.length === 0) return null
+  if (options.length === 0) return null
+  const chips: [string, string, number][] = [[ALL, allLabel, total], ...options.map(([v, n]): [string, string, number] => [v, labelOf(v), n])]
   return (
-    <div className="flex flex-wrap gap-1.5" aria-label="Filter by domain">
-      {[['all', total] as [string, number], ...domains].map(([name, n]) => (
+    <div role="group" className="flex flex-wrap gap-1.5" aria-label={label}>
+      {chips.map(([v, text, n]) => (
         <button
-          key={name}
+          key={v}
           type="button"
-          onClick={() => onChange(name)}
-          aria-pressed={value === name}
+          onClick={() => onChange(v)}
+          aria-pressed={value === v}
           className={`inline-flex h-[30px] items-center gap-[7px] rounded-full border px-[11px] text-[12.5px] font-medium transition-colors duration-150 ${
-            value === name ? 'border-tx3 bg-raised text-tx' : 'border-line text-tx2 hover:border-line2 hover:text-tx'
+            value === v ? 'border-tx3 bg-raised text-tx' : 'border-line text-tx2 hover:border-line2 hover:text-tx'
           }`}
         >
-          {name !== 'all' && <span className="h-2 w-2 rounded-sm" style={{ background: domainColor(name) }} />}
-          {name === 'all' ? 'All domains' : name}
+          {swatch && v !== ALL && <span className="h-2 w-2 rounded-sm" style={{ background: swatch(v as T) }} />}
+          {text}
           <span className="font-mono text-[11px] text-tx3">{n}</span>
         </button>
       ))}
@@ -232,68 +239,54 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 }
 
 function Catalog({
-  rows,
+  products,
   query,
   onQuery,
   onOpen,
   onDelete,
 }: {
-  rows: Row[]
+  products: DataProduct[]
   query: string
   onQuery: (q: string) => void
   onOpen: (p: DataProduct) => void
   onDelete: (p: DataProduct) => void
 }) {
   const [view, setView] = useState<View>('grid')
-  const [domain, setDomain] = useState('all')
-  const domains = useMemo(() => countDomains(rows), [rows])
+  const [domain, setDomain] = useState(ALL)
+  const [status, setStatus] = useState(ALL)
+  const domains = useMemo(() => countDomains(products), [products])
+  const statuses = useMemo(() => countStatuses(products), [products])
   const needle = query.trim().toLowerCase()
-  const shown = rows.filter((r) => matches(r, domain, needle))
+  const shown = products.filter((p) => matches(p, domain, status, needle))
 
   const columns = [
     {
       key: 'name',
       header: 'Data product',
-      render: (r: Row) => (
+      render: (p: DataProduct) => (
         <span className="flex items-center gap-2.5">
           <ProductIcon className="text-tx3" />
-          <span className="font-medium text-tx">{r.product.name}</span>
+          <span className="font-medium text-tx">{p.name}</span>
         </span>
       ),
     },
+    { key: 'domain', header: 'Domain', render: (p: DataProduct) => <DomainChip name={p.domain} /> },
+    { key: 'status', header: 'Status', render: (p: DataProduct) => <StatusGlyph status={p.status} /> },
     {
-      key: 'domain',
-      header: 'Domain',
-      render: (r: Row) => (r.contract ? <DomainChip name={r.contract.domain} /> : <span className="text-tx3">—</span>),
+      key: 'ports',
+      header: 'Ports',
+      render: (p: DataProduct) => <span className="font-mono text-[11.5px] text-tx2">{portsSummary(p)}</span>,
     },
-    {
-      key: 'contract',
-      header: 'Contract',
-      render: (r: Row) =>
-        r.contract ? (
-          <span className="inline-flex items-center gap-2.5">
-            <span className="font-mono text-[11.5px] text-tx2">v{r.contract.version}</span>
-            <StatusGlyph status={r.contract.status} />
-          </span>
-        ) : (
-          <span className="font-mono text-xs text-tx3">{r.product.data_contracts_id.slice(0, 8)}…</span>
-        ),
-    },
-    {
-      key: 'tier',
-      header: 'Tier',
-      render: (r: Row) => (r.contract ? <TierGlyph tier={r.contract.tier} /> : <span className="text-tx3">—</span>),
-    },
-    { key: 'repo', header: 'Repository', render: (r: Row) => <RepoState url={r.product.repo_url} /> },
+    { key: 'repo', header: 'Repository', render: (p: DataProduct) => <RepoState url={p.repo_url} /> },
     {
       key: 'updated',
       header: 'Updated',
-      render: (r: Row) => <span className="text-tx3">{relativeTime(r.product.updated_at)}</span>,
+      render: (p: DataProduct) => <span className="text-tx3">{relativeTime(p.updated_at)}</span>,
     },
     {
       key: 'actions',
       header: '',
-      render: (r: Row) => <DeleteButton onClick={() => onDelete(r.product)} />,
+      render: (p: DataProduct) => <DeleteButton onClick={() => onDelete(p)} />,
       className: 'w-12',
     },
   ]
@@ -307,18 +300,35 @@ function Catalog({
             type="text"
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            placeholder="Filter by name, contract or owner"
+            placeholder="Filter by name, port or contract"
             aria-label="Filter data products"
             className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-tx outline-none placeholder:text-tx3"
           />
         </label>
-        <DomainFilter domains={domains} total={rows.length} value={domain} onChange={setDomain} />
+        <ChipFilter
+          label="Filter by domain"
+          allLabel="All domains"
+          options={domains}
+          total={products.length}
+          value={domain}
+          onChange={setDomain}
+          swatch={domainColor}
+        />
         <ViewSwitch value={view} onChange={setView} />
       </div>
+      <ChipFilter
+        label="Filter by status"
+        allLabel="All statuses"
+        options={statuses}
+        total={products.length}
+        value={status}
+        onChange={setStatus}
+        labelOf={(s) => STATUS_LABELS[s]}
+      />
 
       <p className="text-[12.5px] text-tx3">
-        <b className="font-medium tabular-nums text-tx">{shown.length}</b> of {rows.length} data product
-        {rows.length !== 1 ? 's' : ''}
+        <b className="font-medium tabular-nums text-tx">{shown.length}</b> of {products.length} data product
+        {products.length !== 1 ? 's' : ''}
       </p>
 
       {shown.length === 0 && (
@@ -327,9 +337,9 @@ function Catalog({
         </p>
       )}
       {shown.length > 0 && view === 'grid' && (
-        <div key={`${domain}-${needle}`} className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
-          {shown.map((row, i) => (
-            <ProductCard key={row.product.id} row={row} index={i} onOpen={onOpen} onDelete={onDelete} />
+        <div key={`${domain}-${status}-${needle}`} className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+          {shown.map((p, i) => (
+            <ProductCard key={p.id} product={p} index={i} onOpen={onOpen} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -337,8 +347,8 @@ function Catalog({
         <Table
           columns={columns}
           data={shown}
-          keyExtractor={(r) => r.product.id}
-          onRowClick={(r) => onOpen(r.product)}
+          keyExtractor={(p) => p.id}
+          onRowClick={onOpen}
           emptyMessage="No products found."
           mobileCardConfig={{ titleKey: 'name' }}
         />
@@ -350,7 +360,7 @@ function Catalog({
 function subtitle(products: number, domains: number): string {
   const base = `${products} data product${products !== 1 ? 's' : ''}`
   const from = domains ? ` from ${domains} domain${domains !== 1 ? 's' : ''}` : ''
-  return `${base}${from}. Each one ships with a data contract.`
+  return `${base}${from}.`
 }
 
 export default function DataProductsList() {
@@ -358,9 +368,9 @@ export default function DataProductsList() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DataProduct | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
 
   const { data: products = [], isLoading, error } = useDataProducts()
-  const { data: contracts = [] } = useDataContracts()
   const createMutation = useCreateDataProduct()
   const deleteMutation = useDeleteDataProduct()
 
@@ -380,15 +390,14 @@ export default function DataProductsList() {
     setSearchParams(next, { replace: true })
   }
 
-  const rows: Row[] = useMemo(() => {
-    const byId = new Map(contracts.map((c) => [c.id, c]))
-    return [...products]
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      .map((product) => ({ product, contract: byId.get(product.data_contracts_id) }))
-  }, [products, contracts])
+  const sorted = useMemo(
+    () => [...products].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [products],
+  )
 
-  const handleCreate = async (values: DataProductFormData) => {
-    await createMutation.mutateAsync(values)
+  const handleCreate = async (values: DataProductInput) => {
+    const created = await createMutation.mutateAsync(values)
+    setWarnings(created.warnings ?? [])
     setCreateOpen(false)
   }
 
@@ -412,7 +421,7 @@ export default function DataProductsList() {
   } else {
     body = (
       <Catalog
-        rows={rows}
+        products={sorted}
         query={searchParams.get('q') ?? ''}
         onQuery={setQuery}
         onOpen={(p) => navigate(`/data-products/${p.id}`)}
@@ -426,7 +435,7 @@ export default function DataProductsList() {
       <div className="animate-enter">
         <PageHeader
           title="Marketplace"
-          subtitle={subtitle(products.length, countDomains(rows).length)}
+          subtitle={subtitle(products.length, countDomains(products).length)}
           actions={
             <Button onClick={() => setCreateOpen(true)}>
               <PlusIcon size={15} />
@@ -436,10 +445,14 @@ export default function DataProductsList() {
         />
       </div>
 
+      <div className="mb-4">
+        <SaveWarnings warnings={warnings} onDismiss={() => setWarnings([])} />
+      </div>
+
       {body}
 
       {/* Create Modal */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Data Product">
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Data Product" size="lg">
         <DataProductForm
           onSubmit={handleCreate}
           onCancel={() => setCreateOpen(false)}

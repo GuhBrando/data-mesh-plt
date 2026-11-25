@@ -1,4 +1,4 @@
-import type { ContractStatus } from '../../lib/contracts'
+import type { ContractStatus, GlyphStatus } from '../../lib/contracts'
 import type { DataContract, DataProduct, DomainWithMembers } from '../../types'
 
 // Pure builders for the Overview page; the data comes from useOverview.
@@ -103,19 +103,24 @@ export interface RecentRow {
   kind: 'contract' | 'product'
   name: string
   to: string
-  contract?: DataContract
+  domain: string
+  status: GlyphStatus
+  tier?: number    // contracts only
+  owner?: string   // contracts only
   updatedAt: string
 }
 
 export function buildRecent(contracts: DataContract[], products: DataProduct[]): RecentRow[] {
-  const byId = new Map(contracts.map((c) => [c.id, c]))
   const rows: RecentRow[] = [
     ...contracts.map((c) => ({
       key: `c-${c.id}`,
       kind: 'contract' as const,
       name: c.title,
       to: `/data-contracts/${c.id}`,
-      contract: c,
+      domain: c.domain,
+      status: c.status,
+      tier: c.tier,
+      owner: c.owner,
       updatedAt: c.updated_at,
     })),
     ...products.map((p) => ({
@@ -123,7 +128,8 @@ export function buildRecent(contracts: DataContract[], products: DataProduct[]):
       kind: 'product' as const,
       name: p.name,
       to: `/data-products/${p.id}`,
-      contract: byId.get(p.data_contracts_id),
+      domain: p.domain,
+      status: p.status,
       updatedAt: p.updated_at,
     })),
   ]
@@ -146,11 +152,10 @@ export function buildDomainCards(
 ): DomainCard[] {
   return domains.map((d) => {
     const own = contracts.filter((c) => c.domain_id === d.id)
-    const ownIds = new Set(own.map((c) => c.id))
     return {
       domain: d,
       contracts: own.length,
-      products: products.filter((p) => ownIds.has(p.data_contracts_id)).length,
+      products: products.filter((p) => p.domain_id === d.id).length,
       members: (d.members ?? []).length,
       counts: countStatuses(own),
       noMaintainer: !hasMaintainer(d),

@@ -31,4 +31,9 @@ done
 
 cd /app
 unset MIGRATIONS_DB_PASSWORD POSTGRES_PASSWORD APP_USER_PASSWORD USER_PASSWORD
+
+# Gives every pre-ODPS product its output port before the app serves, so no
+# request reads a product without one (ODPS plan 1; idempotent).
+uv run python -m scripts.backfill_output_ports
+
 exec uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000

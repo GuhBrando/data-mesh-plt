@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from backend.domain.contract_evolution import ContractEvolutionError, RetiredContractError
+from backend.domain.entities.contract_version import ContractBaseline
 from backend.domain.entities.data_contract import CONTRACT_VALUE_FIELDS, DataContract
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
 from backend.use_cases.data_contract.update import UpdateDataContractUseCase
@@ -77,7 +78,7 @@ async def test_allowed_change_in_the_same_version_writes_no_snapshot(
 ):
     assert await _put(contract_repo, before, after) == (before, after)
     contract_repo.add_version.assert_not_called()
-    contract_repo.add_baseline_version.assert_not_called()
+    contract_repo.add_baseline_versions.assert_not_called()
 
 
 async def test_bump_snapshots_the_old_version_then_the_new_one(contract_repo):
@@ -85,11 +86,11 @@ async def test_bump_snapshots_the_old_version_then_the_new_one(contract_repo):
     after = _contract(version="1.1.0", models=WITH_AMOUNT)
     await _put(contract_repo, before, after)
     contract_repo.transaction.assert_called_once()
-    contract_repo.add_baseline_version.assert_called_once_with(
-        CID, "1.0.0", assemble_yaml(before), EARLIER)
+    contract_repo.add_baseline_versions.assert_called_once_with(
+        [ContractBaseline(CID, "1.0.0", assemble_yaml(before), EARLIER)])
     contract_repo.add_version.assert_called_once_with(CID, "1.1.0", assemble_yaml(after), USER_ID)
     names = [call[0] for call in contract_repo.method_calls]
-    assert names.index("add_baseline_version") < names.index("add_version")
+    assert names.index("add_baseline_versions") < names.index("add_version")
 
 
 async def test_absent_and_none_fields_keep_the_locked_values(contract_repo):
@@ -128,7 +129,7 @@ async def test_create_writes_the_first_snapshot_without_a_baseline(contract_repo
         status="draft", models=created.models, servicelevels={"properties": []},
         **METADATA, created_by=USER_ID)
     contract_repo.add_version.assert_called_once_with(CID, "1.0.0", assemble_yaml(created), USER_ID)
-    contract_repo.add_baseline_version.assert_not_called()
+    contract_repo.add_baseline_versions.assert_not_called()
 
 
 async def test_create_rejects_a_non_semver_version(contract_repo):

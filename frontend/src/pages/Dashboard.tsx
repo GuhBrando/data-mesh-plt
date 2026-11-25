@@ -315,7 +315,6 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
 type RecentKind = 'all' | 'contract' | 'product'
 
 function RecentRowView({ r, index }: { r: RecentRow; index: number }) {
-  const c = r.contract
   const KindIcon = r.kind === 'product' ? ProductIcon : ContractIcon
   return (
     <tr className="animate-swap transition-colors duration-150 hover:bg-hover" style={delay(index * 0.03)}>
@@ -327,14 +326,14 @@ function RecentRowView({ r, index }: { r: RecentRow; index: number }) {
           </span>
         </Link>
       </td>
-      <td className="border-b border-line px-4">{c ? <DomainChip name={c.domain} /> : <Dash />}</td>
-      <td className="border-b border-line px-4">{c ? <StatusGlyph status={c.status} /> : <Dash />}</td>
-      <td className="border-b border-line px-4">{c ? <TierGlyph tier={c.tier} /> : <Dash />}</td>
+      <td className="border-b border-line px-4"><DomainChip name={r.domain} /></td>
+      <td className="border-b border-line px-4"><StatusGlyph status={r.status} /></td>
+      <td className="border-b border-line px-4">{r.tier ? <TierGlyph tier={r.tier} /> : <Dash />}</td>
       <td className="border-b border-line px-4">
-        {c?.owner ? (
+        {r.owner ? (
           <span className="inline-flex items-center gap-2 text-[12.5px] text-tx2">
-            <Avatar name={c.owner} size={20} />
-            {c.owner}
+            <Avatar name={r.owner} size={20} />
+            {r.owner}
           </span>
         ) : (
           <Dash />

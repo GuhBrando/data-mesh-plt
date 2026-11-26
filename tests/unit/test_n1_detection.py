@@ -135,3 +135,12 @@ async def test_baselines_are_one_statement():
         [ContractBaseline(uuid.uuid4(), "1.0.0", "y", at) for _ in range(5)]
     )
     assert sum(_calls(db)) == 1
+
+
+@pytest.mark.n1
+async def test_member_domain_ids_is_one_query():
+    from backend.interface.permissions import member_domain_ids
+
+    db = _db()
+    await member_domain_ids(uuid.uuid4(), db)
+    assert sum(_calls(db)) == 1

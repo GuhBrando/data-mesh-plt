@@ -17,6 +17,15 @@ def require_roles(*roles: UserRole) -> Callable:
     return dependency
 
 
+async def member_domain_ids(user_id: uuid.UUID, db) -> set[uuid.UUID]:
+    """Every domain the user is a member of, in one query."""
+    rows = await db.fetch(
+        "SELECT domain_id FROM catalog.domain_members WHERE user_id = $1;",
+        user_id,
+    )
+    return {row["domain_id"] for row in rows}
+
+
 async def is_domain_member(user_id: uuid.UUID, domain_id: uuid.UUID, db) -> bool:
     row = await db.fetchrow(
         """

@@ -63,7 +63,7 @@ def _contract(**kw) -> DataContract:
         owner="alice",
         domain="commerce",
         tier=2,
-        status="draft",
+        status=kw.get("status", "draft"),
         models={"fields": []},
         servicelevels={"properties": [
             {"property": "freshness", "value": 24, "unit": "h"},
@@ -471,37 +471,6 @@ def consumer_client():
     app.dependency_overrides.clear()
 
 
-def test_get_data_contract_yaml_forbidden_for_non_stakeholder_consumer(
-    consumer_client,
-):
-    """A DATA_CONSUMER who is not a stakeholder must not read the ODCS YAML.
-
-    The YAML is a superset of the JSON detail endpoint, which already returns
-    403 for this caller. Both endpoints must agree.
-    """
-    mock_uc = AsyncMock()
-    mock_uc.execute.return_value = _contract()
-    mock_sr = AsyncMock()
-    mock_sr.is_stakeholder = AsyncMock(return_value=False)
-    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_uc
-    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
-    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
-    assert resp.status_code == 403
-
-
-def test_get_data_contract_yaml_allowed_for_stakeholder_consumer(consumer_client):
-    """A DATA_CONSUMER who is a registered stakeholder keeps YAML access."""
-    mock_uc = AsyncMock()
-    mock_uc.execute.return_value = _contract()
-    mock_sr = AsyncMock()
-    mock_sr.is_stakeholder = AsyncMock(return_value=True)
-    app.dependency_overrides[get_get_data_contract_use_case] = lambda: mock_uc
-    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
-    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/yaml")
-    assert resp.status_code == 200
-    assert "Orders" in resp.text
-
-
 STORED = dict(
     description={"purpose": "p", "usage": "u", "limitations": ""},
     team_members=[{"username": "alice", "name": "", "role": "owner"}],
@@ -510,23 +479,6 @@ STORED = dict(
               "schema_name": "", "port": None, "database": "", "location": "", "format": "csv",
               "path": "./a.csv"}],
 )
-
-
-@pytest.mark.parametrize("stakeholder_of, shown", [(set(), False), ({CONTRACT_ID}, True)])
-def test_list_hides_who_and_where_from_a_consumer_outside_the_contract(
-    consumer_client, stakeholder_of, shown
-):
-    mock_uc, mock_sr = AsyncMock(), AsyncMock()
-    mock_uc.execute.return_value = [_contract(**STORED)]
-    mock_sr.contract_ids_of.return_value = stakeholder_of
-    app.dependency_overrides[get_list_data_contracts_use_case] = lambda: mock_uc
-    app.dependency_overrides[get_stakeholder_repository] = lambda: mock_sr
-    [listed] = consumer_client.get("/api/v1/data-contracts").json()
-    sections = ("team_members", "support", "servers")
-    assert {k: listed[k] for k in sections} == (
-        {k: STORED[k] for k in sections} if shown else dict.fromkeys(sections, [])
-    )
-    assert listed["description"] == STORED["description"]
 
 
 def _put(admin_client, body):
@@ -719,7 +671,9 @@ def _versions():
 
 
 def _version_reads(yaml_text=VERSION_YAML, stakeholder=True):
-    list_uc, yaml_uc, sr = AsyncMock(), AsyncMock(), AsyncMock()
+    get_uc, list_uc, yaml_uc, sr = AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
+    get_uc.execute.return_value = _contract()
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: get_uc
     list_uc.execute.return_value = _versions()
     yaml_uc.execute.return_value = yaml_text
     sr.is_stakeholder = AsyncMock(return_value=stakeholder)
@@ -758,20 +712,6 @@ def test_get_version_yaml_unknown_version_is_404(admin_client):
     assert admin_client.get(YAML_PATH).status_code == 404
 
 
-@pytest.mark.parametrize("path", [LIST_PATH, YAML_PATH], ids=["list", "yaml"])
-def test_version_reads_forbidden_for_non_stakeholder_consumer(consumer_client, path):
-    list_uc, yaml_uc = _version_reads(stakeholder=False)
-    assert consumer_client.get(path).status_code == 403
-    list_uc.execute.assert_not_called()
-    yaml_uc.execute.assert_not_called()
-
-
-@pytest.mark.parametrize("path", [LIST_PATH, YAML_PATH], ids=["list", "yaml"])
-def test_version_reads_allowed_for_stakeholder_consumer(consumer_client, path):
-    _version_reads(stakeholder=True)
-    assert consumer_client.get(path).status_code == 200
-
-
 def test_sync_read_failure_returns_502(admin_client):
     github = AsyncMock()
     github.list_all_yaml_contents.side_effect = RuntimeError("GitHub API 301: Moved")
@@ -781,3 +721,145 @@ def test_sync_read_failure_returns_502(admin_client):
     resp = admin_client.post("/api/v1/data-contracts/sync")
     assert resp.status_code == 502
     assert "301" in resp.json()["detail"]
+
+
+# ── Contract access layers: readers ──────────────────────────────────────────
+
+DRAFT_MESSAGE = (
+    "This contract is a draft. Only its domain and invited reviewers can read it."
+)
+READ_PATHS = ["", "/yaml", "/versions", "/versions/1.0.0/yaml"]
+OTHER_DOMAIN_ID = uuid.uuid4()
+
+
+def _as(role: UserRole, member_domains=()):
+    """Act as `role`, a member of `member_domains` (membership answered by the db)."""
+    db = AsyncMock()
+    domains = set(member_domains)
+
+    async def fetchrow(_sql, _user_id, domain_id, *args):
+        return {"?column?": 1} if domain_id in domains else None
+
+    db.fetchrow = AsyncMock(side_effect=fetchrow)
+    db.fetch = AsyncMock(return_value=[{"domain_id": d} for d in domains])
+    app.dependency_overrides[get_current_user] = lambda: _user(role)
+    app.dependency_overrides[get_db_connection] = lambda: db
+    return db
+
+
+def _reads(contract, stakeholder=False):
+    get_uc, list_uc, yaml_uc, sr = AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
+    get_uc.execute.return_value = contract
+    list_uc.execute.return_value = _versions()
+    yaml_uc.execute.return_value = VERSION_YAML
+    sr.is_stakeholder = AsyncMock(return_value=stakeholder)
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: get_uc
+    app.dependency_overrides[get_list_contract_versions_use_case] = lambda: list_uc
+    app.dependency_overrides[get_get_contract_version_yaml_use_case] = lambda: yaml_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: sr
+    return sr, list_uc, yaml_uc
+
+
+def _list(contracts, stakeholder_of=()):
+    uc, sr = AsyncMock(), AsyncMock()
+    uc.execute.return_value = contracts
+    sr.contract_ids_of = AsyncMock(return_value=set(stakeholder_of))
+    app.dependency_overrides[get_list_data_contracts_use_case] = lambda: uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: sr
+    return sr
+
+
+def _in_domain(contract: DataContract, domain_id: uuid.UUID) -> DataContract:
+    contract.domain_id = domain_id
+    return contract
+
+
+@pytest.mark.parametrize("status", ["active", "deprecated", "retired"])
+@pytest.mark.parametrize("path", READ_PATHS)
+def test_consumer_reads_a_published_contract(consumer_client, path, status):
+    sr, _, _ = _reads(_contract(status=status))
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}{path}")
+    assert resp.status_code == 200
+    sr.is_stakeholder.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["draft", "in_review"])
+@pytest.mark.parametrize("path", READ_PATHS)
+def test_consumer_outside_a_draft_gets_the_draft_message(consumer_client, path, status):
+    _, list_uc, yaml_uc = _reads(_contract(status=status), stakeholder=False)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}{path}")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == DRAFT_MESSAGE
+    list_uc.execute.assert_not_called()
+    yaml_uc.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("path", READ_PATHS)
+def test_invited_consumer_reads_the_draft(consumer_client, path):
+    _reads(_contract(status="in_review"), stakeholder=True)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}{path}")
+    assert resp.status_code == 200
+
+
+def test_member_consumer_does_not_read_a_draft(consumer_client):
+    _as(UserRole.DATA_CONSUMER, member_domains={DOMAIN_ID})
+    _reads(_contract(status="draft"), stakeholder=False)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}")
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("role", [UserRole.DATA_STEWARD, UserRole.DATA_OWNER])
+@pytest.mark.parametrize("member, code", [(True, 200), (False, 403)])
+def test_the_domain_reads_its_drafts(consumer_client, role, member, code):
+    _as(role, member_domains={DOMAIN_ID} if member else ())
+    _reads(_contract(status="draft"), stakeholder=False)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}")
+    assert resp.status_code == code
+
+
+def test_unknown_contract_is_404_before_any_access_check(consumer_client):
+    sr, list_uc, _ = _reads(None)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}/versions")
+    assert resp.status_code == 404
+    sr.is_stakeholder.assert_not_called()
+    list_uc.execute.assert_not_called()
+
+
+def test_list_shows_published_in_full_and_hides_unreadable_drafts(consumer_client):
+    published = _contract(id=uuid.uuid4(), status="active", **STORED)
+    draft = _contract(id=uuid.uuid4(), status="draft")
+    invited = _contract(id=uuid.uuid4(), status="in_review")
+    _list([published, draft, invited], stakeholder_of={invited.id})
+    listed = consumer_client.get("/api/v1/data-contracts").json()
+    assert [c["id"] for c in listed] == [str(published.id), str(invited.id)]
+    for key in ("team_members", "support", "servers"):
+        assert listed[0][key] == STORED[key]
+
+
+def test_list_shows_a_steward_the_drafts_of_their_domain(consumer_client):
+    _as(UserRole.DATA_STEWARD, member_domains={DOMAIN_ID})
+    mine = _contract(id=uuid.uuid4(), status="draft")
+    other = _in_domain(_contract(id=uuid.uuid4(), status="draft"), OTHER_DOMAIN_ID)
+    _list([mine, other])
+    listed = consumer_client.get("/api/v1/data-contracts").json()
+    assert [c["id"] for c in listed] == [str(mine.id)]
+
+
+def test_list_hides_domain_drafts_from_a_member_consumer(consumer_client):
+    _as(UserRole.DATA_CONSUMER, member_domains={DOMAIN_ID})
+    _list([_contract(status="draft")])
+    assert consumer_client.get("/api/v1/data-contracts").json() == []
+
+
+def test_list_of_published_contracts_asks_nothing_more(consumer_client):
+    db = _as(UserRole.DATA_STEWARD)
+    sr = _list([_contract(status="active"), _contract(id=uuid.uuid4(), status="retired")])
+    assert len(consumer_client.get("/api/v1/data-contracts").json()) == 2
+    sr.contract_ids_of.assert_not_called()
+    db.fetch.assert_not_called()
+
+
+def test_admin_lists_every_draft_without_access_queries(admin_client):
+    sr = _list([_contract(status="draft"), _contract(id=uuid.uuid4(), status="in_review")])
+    assert len(admin_client.get("/api/v1/data-contracts").json()) == 2
+    sr.contract_ids_of.assert_not_called()

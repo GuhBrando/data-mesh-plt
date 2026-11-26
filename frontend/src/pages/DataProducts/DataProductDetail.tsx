@@ -14,6 +14,7 @@ import { DomainChip, StatusGlyph } from '../../components/ui/Glyphs'
 import {
   ArrowUpRightIcon,
   ClockIcon,
+  CodeFileIcon,
   EditIcon,
   PendingIcon,
   ProductIcon,
@@ -91,7 +92,8 @@ function Header({
           </a>
         )}
         <Button variant="secondary" onClick={onExport}>
-          Export ODPS
+          <CodeFileIcon size={14} />
+          View YAML
         </Button>
         <Button variant="secondary" onClick={onEdit}>
           <EditIcon size={14} />

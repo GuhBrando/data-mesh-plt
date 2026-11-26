@@ -33,8 +33,8 @@ const ROLE_META: Record<
     description: 'Governs your domain and its data contracts.',
     permissions: [
       'Add and remove members within your domain',
-      'Approve, reject, and delete contracts in your domain',
-      'View all data contracts',
+      'Approve, deprecate, retire and delete contracts in your domain',
+      "View published contracts and your domain's drafts",
     ],
   },
   DATA_STEWARD: {
@@ -43,16 +43,17 @@ const ROLE_META: Record<
     description: 'Creates and manages data contracts in your domain.',
     permissions: [
       'Create and edit data contracts within your domain',
-      'Assign stakeholders to contracts in your domain',
-      'View all data contracts',
+      'Submit drafts for review and invite reviewers',
+      "View published contracts and your domain's drafts",
     ],
   },
   DATA_CONSUMER: {
     label: 'Data Consumer',
     color: 'bg-raised text-tx2',
-    description: 'Read-only access to contracts where you are a stakeholder.',
+    description: 'Reads every published contract; drafts when invited as a stakeholder.',
     permissions: [
-      'View data contracts where assigned as stakeholder',
+      'View every published data contract',
+      'View drafts you are invited to review',
       'View your own profile and domain memberships',
     ],
   },

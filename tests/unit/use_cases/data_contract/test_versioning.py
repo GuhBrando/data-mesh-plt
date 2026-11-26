@@ -3,7 +3,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.domain.contract_evolution import ContractEvolutionError, RetiredContractError
+from backend.domain.contract_evolution import (
+    ContractEvolutionError,
+    ContractInReviewError,
+    ContractStatusConflictError,
+    RetiredContractError,
+)
 from backend.domain.entities.contract_version import ContractBaseline
 from backend.domain.entities.data_contract import CONTRACT_VALUE_FIELDS, DataContract
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
@@ -138,3 +143,38 @@ async def test_create_rejects_a_non_semver_version(contract_repo):
             title="T", version="1.0", owner="o", domain_id=DOMAIN_ID, tier=3,
             status="draft", models=NO_FIELDS, servicelevels={"properties": []}, **METADATA)
     contract_repo.create.assert_not_called()
+
+
+async def test_status_moves_only_from_the_expected_status(contract_repo):
+    # Someone withdrew it meanwhile: the approval must not land on a draft.
+    contract_repo.get_by_id_for_update.return_value = _contract(status="draft")
+    with pytest.raises(ContractStatusConflictError, match="The contract is now draft"):
+        await UpdateDataContractUseCase(contract_repo).execute(
+            CID, {"status": "active"}, expected_status="in_review")
+    contract_repo.update.assert_not_called()
+
+
+async def test_status_moves_when_the_expected_status_holds(contract_repo):
+    in_review = _contract(status="in_review")
+    contract_repo.get_by_id_for_update.return_value = in_review
+    contract_repo.update.return_value = _contract(status="active")
+    result = await UpdateDataContractUseCase(contract_repo).execute(
+        CID, {"status": "active"}, created_by=USER_ID, expected_status="in_review")
+    assert result.current.status == "active"
+    assert contract_repo.update.call_args.kwargs["status"] == "active"
+
+
+async def test_no_edit_while_in_review(contract_repo):
+    contract_repo.get_by_id_for_update.return_value = _contract(status="in_review")
+    with pytest.raises(ContractInReviewError,
+                       match="This contract is in review. Withdraw it to edit."):
+        await UpdateDataContractUseCase(contract_repo).execute(CID, {"title": "New"})
+    contract_repo.update.assert_not_called()
+
+
+async def test_status_alone_moves_while_in_review(contract_repo):
+    contract_repo.get_by_id_for_update.return_value = _contract(status="in_review")
+    contract_repo.update.return_value = _contract(status="draft")
+    result = await UpdateDataContractUseCase(contract_repo).execute(
+        CID, {"status": "draft", "title": None}, expected_status="in_review")
+    assert result.current.status == "draft"

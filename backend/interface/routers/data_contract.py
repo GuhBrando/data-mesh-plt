@@ -10,7 +10,9 @@ from pydantic import BaseModel
 from backend.domain.contract_access import (
     PUBLISHED_STATUSES,
     ContractActor,
+    TransitionRefused,
     can_read,
+    check_transition,
 )
 from backend.domain.contract_evolution import ContractEvolutionError
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
@@ -40,6 +42,7 @@ from backend.interface.permissions import (
     require_roles,
 )
 from backend.interface.schemas.data_contract import (
+    ContractStatusChangeModel,
     ContractVersionResponseModel,
     DataContractCreateModel,
     DataContractResponseModel,
@@ -377,6 +380,46 @@ async def update_data_contract(
                     exc_info=True,
                 )
     return _to_response(contract)
+
+
+@router.post(
+    "/data-contracts/{contract_id}/status", response_model=DataContractResponseModel
+)
+async def change_data_contract_status(
+    contract_id: uuid.UUID,
+    body: ContractStatusChangeModel,
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
+    use_case: UpdateDataContractUseCase = Depends(get_update_data_contract_use_case),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+    github: GitHubClient | None = Depends(get_github_client),
+    db=Depends(get_db_connection),
+):
+    """Submit, withdraw, approve, send back, deprecate, reactivate or retire."""
+    contract = await get_use_case.execute(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    actor = await _actor(contract, current_user, db, stakeholder_repo)
+    try:
+        check_transition(contract.status, body.status, actor)
+    except TransitionRefused as e:
+        raise HTTPException(status_code=403 if e.forbidden else 409, detail=str(e))
+    try:
+        result = await use_case.execute(
+            contract_id=contract_id,
+            changes={"status": body.status},
+            created_by=current_user.id,
+            expected_status=contract.status,
+        )
+    except ContractEvolutionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    moved = result.current
+    await _push_to_github(github, moved, "Update contract")
+    return _to_response(moved)
 
 
 @router.delete("/data-contracts/{contract_id}", status_code=204)

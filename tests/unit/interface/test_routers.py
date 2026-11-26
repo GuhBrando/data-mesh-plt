@@ -41,6 +41,8 @@ from backend.interface.dependencies import (
 from backend.interface.security import get_current_user
 from backend.domain.contract_evolution import (
     ContractEvolutionError,
+    ContractInReviewError,
+    ContractStatusConflictError,
     ContractVersionConflictError,
     RetiredContractError,
 )
@@ -179,7 +181,6 @@ def test_create_data_contract(admin_client):
         "owner": "bob",
         "domain_id": str(DOMAIN_ID),
         "tier": 2,
-        "status": "draft",
         "models": {"fields": []},
         "servicelevels": {"properties": [
             {"property": "freshness", "value": 24, "unit": "h"},
@@ -599,15 +600,6 @@ def test_update_invalid_version_returns_400(admin_client):
     assert resp.status_code == 400
 
 
-def test_status_only_put_sends_only_the_status(admin_client):
-    # The use case merges the rest under its row lock, never from a stale read.
-    resp, mock_update, _ = _put_contract(admin_client, {"status": "active"})
-    assert resp.status_code == 200
-    kwargs = mock_update.execute.call_args.kwargs
-    assert kwargs["changes"] == {"status": "active"}
-    assert kwargs["created_by"] == USER_ID
-
-
 @pytest.mark.parametrize("member, status", [(True, 200), (False, 403)])
 def test_steward_updates_only_a_contract_of_their_domain(admin_client, member, status):
     app.dependency_overrides[get_current_user] = lambda: _user(UserRole.DATA_STEWARD)
@@ -625,11 +617,6 @@ def test_rename_removes_the_file_at_the_locked_path(admin_client):
     assert resp.status_code == 200
     github.delete.assert_called_once_with(
         "contracts/commerce/orders.yaml", "Remove stale contract file: Orders")
-
-
-def test_update_accepts_retired_status(admin_client):
-    resp, _, _ = _put_contract(admin_client, {"status": "retired"})
-    assert resp.status_code == 200
 
 
 def test_create_rejects_retired_status(admin_client):
@@ -863,3 +850,117 @@ def test_admin_lists_every_draft_without_access_queries(admin_client):
     sr = _list([_contract(status="draft"), _contract(id=uuid.uuid4(), status="in_review")])
     assert len(admin_client.get("/api/v1/data-contracts").json()) == 2
     sr.contract_ids_of.assert_not_called()
+
+
+# ── Contract access layers: approval and owner ───────────────────────────────
+
+STATUS_PATH = f"/api/v1/data-contracts/{CONTRACT_ID}/status"
+
+
+def _status_change(current, result_status=None):
+    get_uc, update_uc, github = AsyncMock(), AsyncMock(), AsyncMock()
+    github.contract_path = MagicMock(return_value="contracts/commerce/orders.yaml")
+    get_uc.execute.return_value = _contract(status=current)
+    moved = _contract(status=result_status or current)
+    update_uc.execute.return_value = UpdatedContract(_contract(status=current), moved)
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: get_uc
+    app.dependency_overrides[get_update_data_contract_use_case] = lambda: update_uc
+    app.dependency_overrides[get_github_client] = lambda: github
+    app.dependency_overrides[get_stakeholder_repository] = lambda: AsyncMock()
+    return update_uc, github
+
+
+@pytest.mark.parametrize("role, member, current, target, code", [
+    (UserRole.DATA_STEWARD, True, "draft", "in_review", 200),
+    (UserRole.DATA_STEWARD, True, "in_review", "draft", 200),
+    (UserRole.DATA_STEWARD, True, "in_review", "active", 403),
+    (UserRole.DATA_STEWARD, False, "draft", "in_review", 403),
+    (UserRole.DATA_OWNER, True, "in_review", "active", 200),
+    (UserRole.DATA_OWNER, True, "in_review", "draft", 200),
+    (UserRole.DATA_OWNER, True, "active", "retired", 200),
+    (UserRole.DATA_OWNER, False, "in_review", "active", 403),
+    (UserRole.PLATFORM_ADMIN, False, "in_review", "active", 200),
+    (UserRole.PLATFORM_ADMIN, False, "active", "draft", 409),
+    (UserRole.DATA_OWNER, True, "retired", "active", 409),
+    (UserRole.DATA_CONSUMER, True, "draft", "in_review", 403),
+])
+def test_status_change(consumer_client, role, member, current, target, code):
+    _as(role, member_domains={DOMAIN_ID} if member else ())
+    update_uc, github = _status_change(current, target)
+    resp = consumer_client.post(STATUS_PATH, json={"status": target})
+    assert resp.status_code == code
+    if code == 200:
+        kwargs = update_uc.execute.call_args.kwargs
+        assert kwargs["changes"] == {"status": target}
+        assert kwargs["expected_status"] == current
+        assert kwargs["created_by"] == USER_ID
+        assert resp.json()["status"] == target
+        github.push.assert_called_once()
+    else:
+        update_uc.execute.assert_not_called()
+        github.push.assert_not_called()
+
+
+def test_status_change_explains_the_refusal(admin_client):
+    _status_change("active")
+    resp = admin_client.post(STATUS_PATH, json={"status": "draft"})
+    assert resp.json()["detail"] == "A active contract cannot move to draft."
+
+
+def test_status_change_of_an_unknown_contract_is_404(admin_client):
+    _status_change("draft")
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: AsyncMock(
+        execute=AsyncMock(return_value=None))
+    assert admin_client.post(STATUS_PATH, json={"status": "in_review"}).status_code == 404
+
+
+def test_status_change_lost_race_is_409(admin_client):
+    update_uc, _ = _status_change("in_review", "active")
+    update_uc.execute.side_effect = ContractStatusConflictError(
+        "The contract is now draft. Reload and try again.")
+    resp = admin_client.post(STATUS_PATH, json={"status": "active"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "The contract is now draft. Reload and try again."
+
+
+def test_status_change_rejects_an_unknown_status(admin_client):
+    _status_change("draft")
+    assert admin_client.post(STATUS_PATH, json={"status": "published"}).status_code == 422
+
+
+def test_put_with_status_is_refused(admin_client):
+    resp, mock_update, _ = _put_contract(admin_client, {"status": "active"})
+    assert resp.status_code == 422
+    assert "Change the status with POST /data-contracts/{id}/status" in resp.text
+    mock_update.execute.assert_not_called()
+
+
+def test_put_while_in_review_is_409(admin_client):
+    error = ContractInReviewError("This contract is in review. Withdraw it to edit.")
+    resp, _, github = _put_contract(admin_client, {"title": "X"}, side_effect=error)
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "This contract is in review. Withdraw it to edit."
+    github.push.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["active", "in_review", "deprecated"])
+def test_create_refuses_any_status_but_draft(admin_client, status):
+    mock_uc = AsyncMock()
+    app.dependency_overrides[get_create_data_contract_use_case] = lambda: mock_uc
+    resp = admin_client.post("/api/v1/data-contracts", json={
+        "title": "Sales", "owner": "bob", "domain_id": str(DOMAIN_ID), "tier": 2,
+        "status": status,
+    })
+    assert resp.status_code == 422
+    mock_uc.execute.assert_not_called()
+
+
+def test_create_is_always_a_draft(admin_client):
+    mock_uc = AsyncMock()
+    mock_uc.execute.return_value = _contract(title="Sales")
+    app.dependency_overrides[get_create_data_contract_use_case] = lambda: mock_uc
+    resp = admin_client.post("/api/v1/data-contracts", json={
+        "title": "Sales", "owner": "bob", "domain_id": str(DOMAIN_ID), "tier": 2,
+    })
+    assert resp.status_code == 201
+    assert mock_uc.execute.call_args.kwargs["status"] == "draft"

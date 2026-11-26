@@ -161,7 +161,8 @@ class DataContractCreateModel(BaseModel):
     owner: str
     domain_id: uuid.UUID
     tier: int = Field(..., ge=1, le=4)
-    status: Literal["draft", "in_review", "active", "deprecated"] = "draft"
+    # Every contract is born a draft; it moves on with POST .../status.
+    status: Literal["draft"] = "draft"
     models: ModelsSection = Field(default_factory=ModelsSection)
     servicelevels: ServiceLevels = Field(default_factory=ServiceLevels)
     description: ContractDescription = Field(default_factory=ContractDescription)
@@ -176,16 +177,26 @@ class DataContractUpdateModel(BaseModel):
     owner: str | None = None
     domain_id: uuid.UUID | None = None
     tier: int | None = Field(default=None, ge=1, le=4)
-    # retired is reachable only by an update: a contract is not born retired.
-    status: Literal["draft", "in_review", "active", "deprecated", "retired"] | None = (
-        None
-    )
+    # Declared only to refuse it: the status moves with POST .../status, which
+    # checks who may make the move.
+    status: Any = None
     models: ModelsSection | None = None
     servicelevels: ServiceLevels | None = None
     description: ContractDescription | None = None
     team_members: list[TeamMember] | None = None
     support: list[SupportChannel] | None = None
     servers: list[ContractServer] | None = None
+
+    @field_validator("status")
+    @classmethod
+    def _status_has_its_own_endpoint(cls, value: Any) -> None:
+        if value is not None:
+            raise ValueError("Change the status with POST /data-contracts/{id}/status")
+        return
+
+
+class ContractStatusChangeModel(BaseModel):
+    status: Literal["draft", "in_review", "active", "deprecated", "retired"]
 
 
 class ContractVersionResponseModel(BaseModel):

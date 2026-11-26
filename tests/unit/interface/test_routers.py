@@ -1009,3 +1009,95 @@ def test_status_response_carries_the_new_permissions(consumer_client):
 def test_list_leaves_permissions_out(admin_client):
     _list([_contract(status="active")])
     assert admin_client.get("/api/v1/data-contracts").json()[0]["permissions"] is None
+
+
+# ── Contract access layers: stakeholders of a draft ──────────────────────────
+
+STAKEHOLDERS_PATH = f"/api/v1/data-contracts/{CONTRACT_ID}/stakeholders"
+PUBLISHED_MESSAGE = "Published contracts are readable by everyone."
+
+
+def _stakeholder_view(**kw):
+    from backend.domain.entities.stakeholder_view import StakeholderView
+
+    return StakeholderView(**{
+        "user_id": USER_ID, "username": "ana", "role": "DATA_CONSUMER",
+        "assigned_by_username": "joao", "assigned_at": NOW, **kw})
+
+
+def _stakeholder_calls(status="draft", stakeholder=False):
+    get_uc, assign_uc, remove_uc, sr = AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
+    get_uc.execute.return_value = _contract(status=status)
+    assign_uc.execute.return_value = _stakeholder()
+    sr.is_stakeholder = AsyncMock(return_value=stakeholder)
+    sr.list_for_contract = AsyncMock(return_value=[_stakeholder_view()])
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: get_uc
+    app.dependency_overrides[get_assign_stakeholder_use_case] = lambda: assign_uc
+    app.dependency_overrides[get_remove_stakeholder_use_case] = lambda: remove_uc
+    app.dependency_overrides[get_stakeholder_repository] = lambda: sr
+    return assign_uc, remove_uc, sr
+
+
+def test_list_stakeholders(admin_client):
+    _, _, sr = _stakeholder_calls()
+    resp = admin_client.get(STAKEHOLDERS_PATH)
+    assert resp.status_code == 200
+    [row] = resp.json()
+    assert row["username"] == "ana"
+    assert row["role"] == "DATA_CONSUMER"
+    assert row["assigned_by_username"] == "joao"
+    assert row["user_id"] == str(USER_ID)
+    sr.list_for_contract.assert_awaited_once_with(CONTRACT_ID)
+
+
+def test_stakeholder_list_follows_the_read_rule(consumer_client):
+    _, _, sr = _stakeholder_calls(status="draft", stakeholder=False)
+    resp = consumer_client.get(STAKEHOLDERS_PATH)
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == DRAFT_MESSAGE
+    sr.list_for_contract.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["active", "deprecated", "retired"])
+@pytest.mark.parametrize("method", ["post", "delete"])
+def test_stakeholders_frozen_once_published(admin_client, method, status):
+    assign_uc, remove_uc, _ = _stakeholder_calls(status=status)
+    if method == "post":
+        resp = admin_client.post(STAKEHOLDERS_PATH, json={"user_id": str(USER_ID)})
+    else:
+        resp = admin_client.delete(f"{STAKEHOLDERS_PATH}/{USER_ID}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == PUBLISHED_MESSAGE
+    assign_uc.execute.assert_not_called()
+    remove_uc.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("role, member, post_code, delete_code", [
+    (UserRole.DATA_STEWARD, True, 201, 204),
+    (UserRole.DATA_STEWARD, False, 403, 403),
+    (UserRole.DATA_OWNER, True, 403, 403),
+    (UserRole.DATA_CONSUMER, True, 403, 403),
+    (UserRole.PLATFORM_ADMIN, False, 201, 204),
+])
+def test_who_invites(consumer_client, role, member, post_code, delete_code):
+    _as(role, member_domains={DOMAIN_ID} if member else ())
+    assign_uc, remove_uc, _ = _stakeholder_calls(status="in_review")
+    post = consumer_client.post(STAKEHOLDERS_PATH, json={"user_id": str(USER_ID)})
+    delete = consumer_client.delete(f"{STAKEHOLDERS_PATH}/{USER_ID}")
+    assert (post.status_code, delete.status_code) == (post_code, delete_code)
+    assert assign_uc.execute.called is (post_code == 201)
+    assert remove_uc.execute.called is (delete_code == 204)
+
+
+@pytest.mark.parametrize("method", ["get", "post", "delete"])
+def test_stakeholders_of_an_unknown_contract_is_404(admin_client, method):
+    _stakeholder_calls()
+    app.dependency_overrides[get_get_data_contract_use_case] = lambda: AsyncMock(
+        execute=AsyncMock(return_value=None))
+    if method == "post":
+        resp = admin_client.post(STAKEHOLDERS_PATH, json={"user_id": str(USER_ID)})
+    elif method == "delete":
+        resp = admin_client.delete(f"{STAKEHOLDERS_PATH}/{USER_ID}")
+    else:
+        resp = admin_client.get(STAKEHOLDERS_PATH)
+    assert resp.status_code == 404

@@ -144,3 +144,14 @@ async def test_member_domain_ids_is_one_query():
     db = _db()
     await member_domain_ids(uuid.uuid4(), db)
     assert sum(_calls(db)) == 1
+
+
+@pytest.mark.n1
+async def test_stakeholder_list_is_one_query():
+    from backend.infra.repositories.stakeholder_repository import (
+        PostgresStakeholderRepository,
+    )
+
+    db = _db()
+    await PostgresStakeholderRepository(db).list_for_contract(uuid.uuid4())
+    assert sum(_calls(db)) == 1

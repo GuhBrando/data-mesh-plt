@@ -56,6 +56,7 @@ from backend.interface.schemas.data_contract import (
 from backend.interface.schemas.stakeholder import (
     StakeholderAssignModel,
     StakeholderResponseModel,
+    StakeholderViewModel,
 )
 from backend.interface.security import get_current_user
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
@@ -496,6 +497,45 @@ async def sync_data_contracts_from_github(
         ) from exc
 
 
+PUBLISHED_STAKEHOLDERS = "Published contracts are readable by everyone."
+
+
+async def _stakeholders_editable(
+    contract_id: uuid.UUID,
+    user: User,
+    get_use_case: GetDataContractUseCase,
+    stakeholder_repo,
+    db,
+) -> None:
+    """Refuse a change to who reviews a contract unless the caller may make it."""
+    contract = await get_use_case.execute(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    if contract.status in PUBLISHED_STATUSES:
+        raise HTTPException(status_code=409, detail=PUBLISHED_STAKEHOLDERS)
+    actor = await _actor(contract, user, db, stakeholder_repo)
+    if not can_manage_stakeholders(contract.status, actor):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
+@router.get(
+    "/data-contracts/{contract_id}/stakeholders",
+    response_model=list[StakeholderViewModel],
+)
+async def list_stakeholders(
+    contract_id: uuid.UUID,
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
+):
+    await _readable_contract(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
+    rows = await stakeholder_repo.list_for_contract(contract_id)
+    return [StakeholderViewModel(**vars(row)) for row in rows]
+
+
 @router.post(
     "/data-contracts/{contract_id}/stakeholders",
     response_model=StakeholderResponseModel,
@@ -506,15 +546,13 @@ async def assign_stakeholder(
     body: StakeholderAssignModel,
     use_case: AssignStakeholderUseCase = Depends(get_assign_stakeholder_use_case),
     get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
-    current_user: User = Depends(_steward_or_admin),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    if current_user.role == UserRole.DATA_STEWARD:
-        contract = await get_use_case.execute(contract_id)
-        if not contract:
-            raise HTTPException(status_code=404, detail="Data contract not found")
-        if not await is_domain_member(current_user.id, contract.domain_id, db):
-            raise HTTPException(status_code=403, detail="Not a member of this domain")
+    await _stakeholders_editable(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     stakeholder = await use_case.execute(
         contract_id=contract_id, user_id=body.user_id, assigned_by=current_user.id
     )
@@ -527,13 +565,11 @@ async def remove_stakeholder(
     user_id: uuid.UUID,
     use_case: RemoveStakeholderUseCase = Depends(get_remove_stakeholder_use_case),
     get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
-    current_user: User = Depends(_steward_or_admin),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    if current_user.role == UserRole.DATA_STEWARD:
-        contract = await get_use_case.execute(contract_id)
-        if not contract:
-            raise HTTPException(status_code=404, detail="Data contract not found")
-        if not await is_domain_member(current_user.id, contract.domain_id, db):
-            raise HTTPException(status_code=403, detail="Not a member of this domain")
+    await _stakeholders_editable(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     await use_case.execute(contract_id=contract_id, user_id=user_id)

@@ -1,6 +1,8 @@
 # RBAC Design — Role-Based Access Control
 
-**Date:** 2026-04-28\n**Branch:** feature/roles\n**Status:** Approved
+**Date:** 2026-04-28\
+**Branch:** feature/roles\
+**Status:** Approved
 
 > Contract access (who reads, who moves a contract's status, what a stakeholder
 > is) is implemented as described in

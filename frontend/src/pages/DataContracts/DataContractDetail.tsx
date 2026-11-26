@@ -35,6 +35,8 @@ import {
 import DataContractForm from './DataContractForm'
 import ContractUsage from './ContractUsage'
 import StatusBar from './StatusBar'
+import StakeholdersPanel from './StakeholdersPanel'
+import { Empty, Panel } from './Panel'
 import { safeUrl, serverLocation } from './contractMetadata'
 import { STATUS_COLORS } from './contractStatus'
 import { describeCheck } from '../../lib/qualityRules'
@@ -59,23 +61,6 @@ function formatDateTime(iso: string) {
 const dash = (value?: string | null) => value || '—'
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
-
-function Panel({ title, icon, aside, children }: { title: string; icon?: ReactNode; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="min-w-0 rounded-[10px] border border-line bg-panel">
-      <header className="flex min-h-[44px] items-center gap-2 border-b border-line px-4 text-tx3">
-        {icon}
-        <h2 className="text-[13px] font-semibold text-tx">{title}</h2>
-        {aside && <span className="ml-auto text-xs text-tx3">{aside}</span>}
-      </header>
-      {children}
-    </section>
-  )
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-6 text-center text-[13px] text-tx3">{children}</p>
-}
 
 function SupportUrl({ url }: { url: string }) {
   if (!url) return <>—</>
@@ -607,6 +592,7 @@ export default function DataContractDetail() {
       <div className="flex flex-wrap items-start gap-5">
         <ContractTabs contract={contract} onViewVersion={setOpenVersion} />
         <aside aria-label="Contract details" className="flex min-w-0 flex-[1_1_300px] animate-enter flex-col gap-3.5 [animation-delay:0.18s]">
+          <StakeholdersPanel contract={contract} />
           <Panel title="Usage" icon={<ProductIcon size={15} />}>
             <ContractUsage contract={contract} />
           </Panel>

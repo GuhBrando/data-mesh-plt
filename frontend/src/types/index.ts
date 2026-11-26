@@ -104,6 +104,15 @@ export interface ContractPermissions {
   manage_stakeholders: boolean
 }
 
+// A person invited to read a draft contract before it is published.
+export interface Stakeholder {
+  user_id: string
+  username: string
+  role: string // platform role
+  assigned_by_username: string
+  assigned_at: string
+}
+
 // The status is not part of the input: it moves with POST /data-contracts/{id}/status.
 export interface DataContractInput {
   title: string

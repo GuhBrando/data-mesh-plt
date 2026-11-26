@@ -16,6 +16,11 @@ vi.mock('../../hooks/useDataContracts', () => ({
   useContractVersions: vi.fn(), useContractVersionYaml: vi.fn(), useChangeContractStatus: vi.fn(),
   useContractPorts: () => ({ data: [], isLoading: false, isError: false }),
 }))
+vi.mock('../../hooks/useContractStakeholders', () => ({
+  useContractStakeholders: () => ({ data: [], isLoading: false, isError: false }),
+  useRemoveStakeholder: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
+  useInviteStakeholders: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
+}))
 vi.mock('./DataContractForm', () => ({
   default: ({ onSubmit }: { onSubmit: (input: object) => void }) => (
     <button type="button" onClick={() => onSubmit({ title: 'New' })}>Submit form</button>
@@ -142,6 +147,16 @@ describe('DataContractDetail states and actions', () => {
     const dialog = screen.getByRole('dialog', { name: 'Retire contract' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Retire' }))
     expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'retired' }, expect.anything())
+  })
+
+  it('shows the stakeholders panel on a draft and hides it once published', () => {
+    renderDetail({ status: 'draft' })
+    expect(screen.getByRole('heading', { name: 'Stakeholders' })).toBeInTheDocument()
+  })
+
+  it('has no stakeholders panel on a published contract', () => {
+    renderDetail({ status: 'active' })
+    expect(screen.queryByRole('heading', { name: 'Stakeholders' })).toBeNull()
   })
 
   it('shows the draft message when the API refuses to read the contract', () => {

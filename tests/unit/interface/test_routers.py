@@ -964,3 +964,48 @@ def test_create_is_always_a_draft(admin_client):
     })
     assert resp.status_code == 201
     assert mock_uc.execute.call_args.kwargs["status"] == "draft"
+
+
+# ── Contract access layers: permissions on the detail ────────────────────────
+
+NOTHING = {"edit": False, "delete": False, "transitions": [], "manage_stakeholders": False}
+
+
+@pytest.mark.parametrize("role, member, stakeholder, status, expected", [
+    (UserRole.DATA_STEWARD, True, False, "draft",
+     {"edit": True, "delete": False, "transitions": ["in_review"],
+      "manage_stakeholders": True}),
+    (UserRole.DATA_STEWARD, True, False, "in_review",
+     {"edit": False, "delete": False, "transitions": ["draft"],
+      "manage_stakeholders": True}),
+    (UserRole.DATA_OWNER, True, False, "in_review",
+     {"edit": False, "delete": True, "transitions": ["draft", "active"],
+      "manage_stakeholders": False}),
+    (UserRole.DATA_OWNER, True, False, "active",
+     {"edit": False, "delete": True, "transitions": ["deprecated", "retired"],
+      "manage_stakeholders": False}),
+    (UserRole.DATA_STEWARD, False, True, "in_review", NOTHING),  # invited, other domain
+    (UserRole.DATA_CONSUMER, False, False, "active", NOTHING),
+    (UserRole.PLATFORM_ADMIN, False, False, "retired",
+     {"edit": False, "delete": True, "transitions": [], "manage_stakeholders": False}),
+])
+def test_detail_carries_the_callers_permissions(
+    consumer_client, role, member, stakeholder, status, expected
+):
+    _as(role, member_domains={DOMAIN_ID} if member else ())
+    _reads(_contract(status=status), stakeholder=stakeholder)
+    resp = consumer_client.get(f"/api/v1/data-contracts/{CONTRACT_ID}")
+    assert resp.status_code == 200
+    assert resp.json()["permissions"] == expected
+
+
+def test_status_response_carries_the_new_permissions(consumer_client):
+    _as(UserRole.DATA_OWNER, member_domains={DOMAIN_ID})
+    _status_change("in_review", "active")
+    resp = consumer_client.post(STATUS_PATH, json={"status": "active"})
+    assert resp.json()["permissions"]["transitions"] == ["deprecated", "retired"]
+
+
+def test_list_leaves_permissions_out(admin_client):
+    _list([_contract(status="active")])
+    assert admin_client.get("/api/v1/data-contracts").json()[0]["permissions"] is None

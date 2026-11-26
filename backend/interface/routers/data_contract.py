@@ -11,6 +11,10 @@ from backend.domain.contract_access import (
     PUBLISHED_STATUSES,
     ContractActor,
     TransitionRefused,
+    allowed_transitions,
+    can_delete,
+    can_edit,
+    can_manage_stakeholders,
     can_read,
     check_transition,
 )
@@ -42,6 +46,7 @@ from backend.interface.permissions import (
     require_roles,
 )
 from backend.interface.schemas.data_contract import (
+    ContractPermissionsModel,
     ContractStatusChangeModel,
     ContractVersionResponseModel,
     DataContractCreateModel,
@@ -127,7 +132,7 @@ async def _readable_contract(
     get_use_case: GetDataContractUseCase,
     stakeholder_repo,
     db,
-) -> DataContract:
+) -> tuple[DataContract, ContractActor]:
     """The contract, when the caller may read it, in any representation.
 
     Every endpoint returning contract detail goes through here, so the JSON,
@@ -139,7 +144,7 @@ async def _readable_contract(
     actor = await _actor(contract, user, db, stakeholder_repo)
     if not can_read(contract.status, actor):
         raise HTTPException(status_code=403, detail=DRAFT_UNREADABLE)
-    return contract
+    return contract, actor
 
 
 def _plain(value: Any) -> Any:
@@ -182,7 +187,18 @@ async def _readable(
     ]
 
 
-def _to_response(contract: DataContract) -> DataContractResponseModel:
+def _permissions(status: str, actor: ContractActor) -> ContractPermissionsModel:
+    return ContractPermissionsModel(
+        edit=can_edit(status, actor),
+        delete=can_delete(actor),
+        transitions=allowed_transitions(status, actor),
+        manage_stakeholders=can_manage_stakeholders(status, actor),
+    )
+
+
+def _to_response(
+    contract: DataContract, actor: ContractActor | None = None
+) -> DataContractResponseModel:
     return DataContractResponseModel(
         id=contract.id,
         title=contract.title,
@@ -200,6 +216,7 @@ def _to_response(contract: DataContract) -> DataContractResponseModel:
         domain_id=contract.domain_id,
         created_at=contract.created_at,
         updated_at=contract.updated_at,
+        permissions=_permissions(contract.status, actor) if actor else None,
     )
 
 
@@ -257,7 +274,7 @@ async def get_data_contract_yaml(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    contract = await _readable_contract(
+    contract, _ = await _readable_contract(
         contract_id, current_user, use_case, stakeholder_repo, db
     )
     return PlainTextResponse(assemble_yaml(contract), media_type="text/plain")
@@ -324,10 +341,10 @@ async def get_data_contract(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    contract = await _readable_contract(
+    contract, actor = await _readable_contract(
         contract_id, current_user, use_case, stakeholder_repo, db
     )
-    return _to_response(contract)
+    return _to_response(contract, actor)
 
 
 @router.put("/data-contracts/{contract_id}", response_model=DataContractResponseModel)
@@ -419,7 +436,7 @@ async def change_data_contract_status(
         raise HTTPException(status_code=404, detail="Data contract not found")
     moved = result.current
     await _push_to_github(github, moved, "Update contract")
-    return _to_response(moved)
+    return _to_response(moved, actor)
 
 
 @router.delete("/data-contracts/{contract_id}", status_code=204)

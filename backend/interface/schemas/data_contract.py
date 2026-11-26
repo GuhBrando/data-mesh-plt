@@ -205,6 +205,15 @@ class ContractVersionResponseModel(BaseModel):
     created_at: datetime
 
 
+class ContractPermissionsModel(BaseModel):
+    """What the caller may do with this contract; the page shows only these."""
+
+    edit: bool
+    delete: bool
+    transitions: list[str]
+    manage_stakeholders: bool
+
+
 class DataContractResponseModel(BaseModel):
     id: uuid.UUID
     title: str
@@ -223,3 +232,5 @@ class DataContractResponseModel(BaseModel):
     domain_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    # Filled on the detail and status responses only; the list leaves it out.
+    permissions: ContractPermissionsModel | None = None

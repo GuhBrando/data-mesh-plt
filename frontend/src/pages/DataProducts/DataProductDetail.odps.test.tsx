@@ -80,12 +80,15 @@ describe('DataProductDetail — ODPS sections', () => {
   })
 })
 
-describe('DataProductDetail — Export ODPS', () => {
+describe('DataProductDetail — ODPS YAML', () => {
   it('fetches the ODPS document only when asked, and offers it to copy or download', () => {
     vi.mocked(useDataProductOdps).mockReturnValue({ data: 'apiVersion: v1.1.0\nkind: DataProduct\n', isFetching: false } as never)
     renderProduct(makeProduct({ id: 'p9', name: 'Risco de Crédito' }))
     expect(useDataProductOdps).toHaveBeenLastCalledWith('p9', false)
-    fireEvent.click(screen.getByRole('button', { name: 'Export ODPS' }))
+    // Same button as the contract page's "View YAML".
+    const viewYaml = screen.getByRole('button', { name: 'View YAML' })
+    expect(viewYaml.querySelector('svg')).not.toBeNull()
+    fireEvent.click(viewYaml)
     expect(useDataProductOdps).toHaveBeenLastCalledWith('p9', true)
     const dialog = screen.getByRole('dialog', { name: 'ODPS YAML' })
     expect(dialog).toHaveTextContent('kind: DataProduct')

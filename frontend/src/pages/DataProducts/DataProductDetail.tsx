@@ -2,16 +2,19 @@ import { useState, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   useDataProduct,
+  useDataProductOdps,
   useUpdateDataProduct,
   useDeleteDataProduct,
 } from '../../hooks/useDataProducts'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
+import YamlModal from '../../components/ui/YamlModal'
 import Spinner from '../../components/ui/Spinner'
 import { DomainChip, StatusGlyph } from '../../components/ui/Glyphs'
 import {
   ArrowUpRightIcon,
   ClockIcon,
+  CodeFileIcon,
   EditIcon,
   PendingIcon,
   ProductIcon,
@@ -20,6 +23,7 @@ import {
   TrashIcon,
 } from '../../components/icons'
 import { relativeTime } from '../../lib/format'
+import { slugify } from '../../lib/products'
 import DataProductForm from './DataProductForm'
 import ProductLineage from './ProductLineage'
 import { productFacts } from './ProductFacts'
@@ -50,10 +54,12 @@ function Panel({ title, icon, children }: { title: string; icon?: ReactNode; chi
 
 function Header({
   product,
+  onExport,
   onEdit,
   onDelete,
 }: {
   product: DataProduct
+  onExport: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -85,6 +91,10 @@ function Header({
             GitHub
           </a>
         )}
+        <Button variant="secondary" onClick={onExport}>
+          <CodeFileIcon size={14} />
+          View YAML
+        </Button>
         <Button variant="secondary" onClick={onEdit}>
           <EditIcon size={14} />
           Edit
@@ -182,10 +192,12 @@ export default function DataProductDetail() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
   const [lineageError, setLineageError] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
 
   const { data: product, isLoading, error } = useDataProduct(id ?? '')
   const updateMutation = useUpdateDataProduct()
   const deleteMutation = useDeleteDataProduct()
+  const odps = useDataProductOdps(id ?? '', exportOpen)
 
   const save = async (values: DataProductInput) => {
     if (!id) return
@@ -235,7 +247,12 @@ export default function DataProductDetail() {
 
   return (
     <div className="flex flex-col gap-[18px]">
-      <Header product={product} onEdit={() => setEditOpen(true)} onDelete={() => setDeleteConfirm(true)} />
+      <Header
+        product={product}
+        onExport={() => setExportOpen(true)}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => setDeleteConfirm(true)}
+      />
 
       <SaveWarnings warnings={warnings} onDismiss={() => setWarnings([])} />
 
@@ -249,6 +266,15 @@ export default function DataProductDetail() {
         </div>
         <Rail product={product} />
       </div>
+
+      <YamlModal
+        title="ODPS YAML"
+        open={exportOpen}
+        content={odps.data}
+        loading={odps.isFetching}
+        onClose={() => setExportOpen(false)}
+        fileName={`${slugify(product.name) || 'data-product'}.odps.yaml`}
+      />
 
       {/* Edit Modal */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Data Product" size="lg">

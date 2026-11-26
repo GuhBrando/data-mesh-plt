@@ -5,6 +5,9 @@
 .ruff_cache
 .pre-commit-config.yaml
 frontend/
+# Terraform: not used by the backend, and local `terraform init` leaves ~650 MB of
+# provider binaries in infra/**/.terraform that would land in the image.
+infra/
 database/data/
 docs/
 tests/

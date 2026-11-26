@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { get, post, put, del } from '../lib/api'
+import { get, getText, post, put, del } from '../lib/api'
 import type { DataProduct, DataProductInput } from '../types'
 
 const KEYS = {
   all: ['data-products'] as const,
   one: (id: string) => ['data-products', id] as const,
+  // Under KEYS.one(id), so an update's invalidation refreshes the export too.
+  odps: (id: string) => ['data-products', id, 'odps'] as const,
 }
 
 // A product write changes who produces and consumes each contract it names.
@@ -24,6 +26,15 @@ export function useDataProduct(id: string) {
     queryKey: KEYS.one(id),
     queryFn: () => get<DataProduct>(`/data-products/${id}`),
     enabled: !!id,
+  })
+}
+
+/** The product as an ODPS v1.1.0 YAML document, fetched only when `enabled`. */
+export function useDataProductOdps(id: string, enabled: boolean) {
+  return useQuery<string>({
+    queryKey: KEYS.odps(id),
+    queryFn: () => getText(`/data-products/${id}/odps`),
+    enabled: !!id && enabled,
   })
 }
 

@@ -12,6 +12,7 @@ import {
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import YamlModal from '../../components/ui/YamlModal'
 import Spinner from '../../components/ui/Spinner'
 import { Avatar, DomainChip, TierGlyph } from '../../components/ui/Glyphs'
 import {
@@ -505,32 +506,6 @@ function DatesPanel({ contract }: { contract: DataContractType }) {
 }
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
-
-function YamlModal({
-  title,
-  open,
-  content,
-  loading,
-  onClose,
-}: {
-  title: string
-  open: boolean
-  content: string | undefined
-  loading: boolean
-  onClose: () => void
-}) {
-  return (
-    <Modal open={open} onClose={onClose} title={title} size="lg">
-      {loading ? (
-        <div className="flex justify-center py-8"><Spinner /></div>
-      ) : (
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-4 font-mono text-xs text-tx2">
-          {content}
-        </pre>
-      )}
-    </Modal>
-  )
-}
 
 function VersionYamlModal({
   contractId,

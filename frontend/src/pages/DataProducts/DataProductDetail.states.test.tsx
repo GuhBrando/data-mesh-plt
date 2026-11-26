@@ -17,6 +17,7 @@ vi.mock('../../hooks/useDataProducts', () => ({
   useDataProduct: vi.fn(),
   useUpdateDataProduct: vi.fn(),
   useDeleteDataProduct: vi.fn(),
+  useDataProductOdps: vi.fn(() => ({ data: undefined, isFetching: false })),
 }))
 
 const EDITED: DataProductInput = makeProductInput({

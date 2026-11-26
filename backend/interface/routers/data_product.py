@@ -4,6 +4,7 @@ from collections.abc import Awaitable
 from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from backend.domain.entities.data_product import (
@@ -43,6 +44,7 @@ from backend.use_cases.data_product.contract_ports import ListContractPortsUseCa
 from backend.use_cases.data_product.delete import DeleteDataProductUseCase
 from backend.use_cases.data_product.get import GetDataProductUseCase
 from backend.use_cases.data_product.list import ListDataProductsUseCase
+from backend.use_cases.data_product.odps import odps_yaml
 from backend.use_cases.data_product.save import (
     CreateDataProductUseCase,
     SavedProduct,
@@ -266,6 +268,19 @@ async def get_data_product(
         raise HTTPException(status_code=404, detail="Data product not found")
     await _ensure_product_repo(github, product, product_repo)
     return _to_response(product)
+
+
+@router.get("/data-products/{product_id}/odps", response_class=PlainTextResponse)
+async def get_data_product_odps(
+    product_id: uuid.UUID,
+    use_case: GetDataProductUseCase = Depends(get_get_data_product_use_case),
+    _: User = Depends(get_current_user),
+):
+    """The product as an ODPS v1.1.0 document, in YAML."""
+    product = await use_case.execute(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Data product not found")
+    return PlainTextResponse(odps_yaml(product), media_type="text/plain")
 
 
 @router.put("/data-products/{product_id}", response_model=DataProductResponseModel)

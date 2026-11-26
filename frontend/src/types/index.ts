@@ -93,15 +93,24 @@ export interface DataContract {
   servers: ContractServer[]
   created_at: string
   updated_at: string
+  // What the signed-in user may do; on the detail only (the list sends null).
+  permissions?: ContractPermissions | null
 }
 
+export interface ContractPermissions {
+  edit: boolean
+  delete: boolean
+  transitions: DataContract['status'][]
+  manage_stakeholders: boolean
+}
+
+// The status is not part of the input: it moves with POST /data-contracts/{id}/status.
 export interface DataContractInput {
   title: string
   version: string
   owner: string
   domain_id: string
   tier: number
-  status: string
   models: { fields: SchemaField[]; quality?: QualityRule[] }
   servicelevels: ServiceLevels
   description: ContractDescription

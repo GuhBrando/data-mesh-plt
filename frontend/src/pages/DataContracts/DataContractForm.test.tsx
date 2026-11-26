@@ -131,13 +131,28 @@ describe('DataContractForm service levels', () => {
 })
 
 describe('DataContractForm status', () => {
-  it('offers Retired only when editing', () => {
-    const props = { onSubmit: vi.fn(), onCancel: vi.fn(), isSubmitting: false }
-    const { unmount } = render(<DataContractForm defaultValues={contract} {...props} />)
-    expect(screen.getByRole('option', { name: 'Retired' })).toBeInTheDocument()
+  const props = { onSubmit: vi.fn(), onCancel: vi.fn(), isSubmitting: false }
+
+  it('has no status field: the status moves with the page actions', () => {
+    render(<DataContractForm defaultValues={contract} {...props} />)
+    expect(screen.queryByText('Status')).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Active' })).toBeNull()
+  })
+
+  it('tells a new contract it is saved as a draft', () => {
+    const { unmount } = render(<DataContractForm {...props} />)
+    expect(screen.getByText('Saved as a draft. Submit it for review when it is ready.')).toBeInTheDocument()
     unmount()
-    render(<DataContractForm {...props} />)
-    expect(screen.queryByRole('option', { name: 'Retired' })).not.toBeInTheDocument()
+    render(<DataContractForm defaultValues={contract} {...props} />)
+    expect(screen.queryByText('Saved as a draft. Submit it for review when it is ready.')).toBeNull()
+  })
+
+  it('saves without a status', async () => {
+    const onSubmit = vi.fn()
+    render(<DataContractForm defaultValues={contract} {...props} onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('status')
   })
 })
 

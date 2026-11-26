@@ -70,7 +70,6 @@ const schema = z
     owner: z.string().min(1, 'Owner is required'),
     domain_id: z.string().min(1, 'Domain is required'),
     tier: z.number().int().min(1).max(4),
-    status: z.enum(['draft', 'in_review', 'active', 'deprecated', 'retired']),
     freshness: z.string(),
     freshnessUnit: z.string(),
     availability: z.string(),
@@ -131,14 +130,14 @@ function normalizeDefaults(v?: DataContract): FormValues {
   if (!v) {
     return {
       title: '', version: '1.0.0', owner: '', domain_id: '',
-      tier: 4, status: 'draft',
+      tier: 4,
       ...slaDefaults(),
       purpose: '', usage: '', limitations: '',
     }
   }
   return {
     title: v.title, version: v.version, owner: v.owner, domain_id: v.domain_id,
-    tier: v.tier, status: v.status,
+    tier: v.tier,
     ...slaDefaults(v),
     purpose: v.description?.purpose ?? '',
     usage: v.description?.usage ?? '',
@@ -362,30 +361,13 @@ function MetadataSections({
   )
 }
 
-function StatusSelect({
-  register,
-  editing,
-}: {
-  register: UseFormRegister<FormValues>
-  editing: boolean
-}) {
+// A new contract is always a draft; it moves on from the contract page.
+function DraftHint({ show }: { show: boolean }) {
+  if (!show) return null
   return (
-    <div>
-      <label className="form-label">
-        Status
-      </label>
-      <select
-        className="form-input"
-        {...register('status')}
-      >
-        <option value="draft">Draft</option>
-        <option value="in_review">In Review</option>
-        <option value="active">Active</option>
-        <option value="deprecated">Deprecated</option>
-        {/* A contract is not born retired; retiring is an edit. */}
-        {editing && <option value="retired">Retired</option>}
-      </select>
-    </div>
+    <p className="self-end pb-2 text-xs text-tx3">
+      Saved as a draft. Submit it for review when it is ready.
+    </p>
   )
 }
 
@@ -464,7 +446,6 @@ export default function DataContractForm({
       owner: values.owner,
       domain_id: values.domain_id,
       tier: values.tier,
-      status: values.status,
       models: {
         fields,
         quality: tierShowsQuality(values.tier) ? quality : [],
@@ -535,7 +516,7 @@ export default function DataContractForm({
                   </select>
                 </div>
               )}
-              <StatusSelect register={register} editing={!!defaultValues} />
+              <DraftHint show={!defaultValues} />
             </div>
           </div>
 

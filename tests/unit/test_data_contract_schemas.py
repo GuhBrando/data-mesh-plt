@@ -15,8 +15,8 @@ from backend.domain.quality_rules import (
 from backend.interface.schemas.data_contract import (
     ContractDescription,
     ContractServer,
+    ContractStatusChangeModel,
     DataContractCreateModel,
-    DataContractUpdateModel,
     ModelsSection,
     QualityRule,
     SchemaField,
@@ -149,9 +149,9 @@ def test_schema_literals_match_the_domain_values():
         # `Literal[...] | None` nests the Literal one level down.
         return tuple(a for arg in args for a in (get_args(arg) or (arg,)) if a is not type(None))
 
-    # A contract is not born retired: creation takes every status but the last.
-    assert literal(DataContractCreateModel, "status") == CONTRACT_STATUSES[:-1]
-    assert literal(DataContractUpdateModel, "status") == CONTRACT_STATUSES
+    # Every contract is born a draft; the status endpoint takes every status.
+    assert literal(DataContractCreateModel, "status") == ("draft",)
+    assert literal(ContractStatusChangeModel, "status") == CONTRACT_STATUSES
     assert literal(SchemaField, "type") == FIELD_TYPES
     assert literal(QualityRule, "dimension") == QUALITY_DIMENSIONS
     assert literal(QualityRule, "metric") == QUALITY_METRICS

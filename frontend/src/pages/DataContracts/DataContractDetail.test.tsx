@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -6,15 +6,20 @@ import DataContractDetail from './DataContractDetail'
 import { emptyServer } from './contractMetadata'
 import { emptyRule, withType } from '../../lib/qualityRules'
 import {
-  useContractVersionYaml, useContractVersions,
+  useChangeContractStatus, useContractVersionYaml, useContractVersions,
   useDataContract, useDataContractYaml, useDeleteDataContract, useUpdateDataContract,
 } from '../../hooks/useDataContracts'
 import type { ContractVersion } from '../../types'
 
 vi.mock('../../hooks/useDataContracts', () => ({
   useDataContract: vi.fn(), useDataContractYaml: vi.fn(), useDeleteDataContract: vi.fn(), useUpdateDataContract: vi.fn(),
-  useContractVersions: vi.fn(), useContractVersionYaml: vi.fn(),
+  useContractVersions: vi.fn(), useContractVersionYaml: vi.fn(), useChangeContractStatus: vi.fn(),
   useContractPorts: () => ({ data: [], isLoading: false, isError: false }),
+}))
+vi.mock('../../hooks/useContractStakeholders', () => ({
+  useContractStakeholders: () => ({ data: [], isLoading: false, isError: false }),
+  useRemoveStakeholder: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
+  useInviteStakeholders: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
 }))
 vi.mock('./DataContractForm', () => ({
   default: ({ onSubmit }: { onSubmit: (input: object) => void }) => (
@@ -28,7 +33,9 @@ const base = {
   servicelevels: { properties: [] },
   description: { purpose: '', usage: '', limitations: '' }, team_members: [], support: [], servers: [],
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+  permissions: { edit: true, delete: true, transitions: [], manage_stakeholders: false },
 }
+const NONE = { edit: false, delete: false, transitions: [], manage_stakeholders: false }
 
 function mockVersions(rows: ContractVersion[]) {
   vi.mocked(useContractVersions).mockReturnValue({ data: rows, isLoading: false, isError: false } as never)
@@ -39,6 +46,7 @@ const mutationOf = (over = {}) => ({
   mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false, isError: false, error: null, ...over,
 })
 let mutation = mutationOf()
+let statusMutation = mutationOf()
 
 function renderDetail(contract: object = {}, query: object = {}) {
   vi.mocked(useDataContract).mockReturnValue(
@@ -56,7 +64,9 @@ function renderDetail(contract: object = {}, query: object = {}) {
 
 beforeEach(() => {
   mutation = mutationOf()
+  statusMutation = mutationOf()
   vi.mocked(useUpdateDataContract).mockReturnValue(mutation as never)
+  vi.mocked(useChangeContractStatus).mockReturnValue(statusMutation as never)
   vi.mocked(useDeleteDataContract).mockReturnValue(mutation as never)
   vi.mocked(useDataContractYaml).mockReturnValue({ data: 'apiVersion: v3.2.0', isFetching: false } as never)
   mockVersions([])
@@ -76,11 +86,83 @@ describe('DataContractDetail states and actions', () => {
   })
 
   it('approves or requests changes on a contract in review', () => {
-    renderDetail({ status: 'in_review' })
+    renderDetail({ status: 'in_review', permissions: { ...NONE, delete: true, transitions: ['draft', 'active'] } })
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
-    expect(mutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'active' })
-    fireEvent.click(screen.getByRole('button', { name: 'Request Changes' }))
-    expect(mutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'draft' })
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'active' })
+    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }))
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'draft' })
+  })
+
+  it('submits a draft for review', () => {
+    renderDetail({ status: 'draft', permissions: { ...NONE, edit: true, transitions: ['in_review'] } })
+    expect(screen.getByText('Draft · only commerce and invited reviewers can see it.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }))
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'in_review' })
+  })
+
+  it('shows the error of a refused move in the bar', () => {
+    statusMutation = mutationOf({ isError: true, error: new Error('The contract is now draft. Reload and try again.') })
+    vi.mocked(useChangeContractStatus).mockReturnValue(statusMutation as never)
+    renderDetail({ status: 'in_review', permissions: { ...NONE, transitions: ['draft', 'active'] } })
+    expect(screen.getByText('The contract is now draft. Reload and try again.')).toBeInTheDocument()
+  })
+
+  it('shows only View YAML without permissions', () => {
+    renderDetail({ status: 'active', permissions: NONE })
+    expect(screen.getByRole('button', { name: /view yaml/i })).toBeInTheDocument()
+    for (const name of [/^edit$/i, /^delete$/i, /deprecate/i, /retire/i]) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+  })
+
+  it('shows only View YAML when the contract comes without permissions', () => {
+    renderDetail({ status: 'active', permissions: undefined })
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^delete$/i })).toBeNull()
+  })
+
+  it('lets the owner deprecate an active contract from the header', () => {
+    renderDetail({ status: 'active', permissions: { ...NONE, delete: true, transitions: ['deprecated', 'retired'] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Deprecate' }))
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'deprecated' })
+  })
+
+  it('retires only after confirmation', () => {
+    renderDetail({ status: 'active', permissions: { ...NONE, transitions: ['deprecated', 'retired'] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Retire' }))
+    expect(statusMutation.mutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Retire contract' })).toHaveTextContent(
+      'Retiring is permanent: the contract can no longer be edited or reactivated.')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Retire contract' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retire' }))
+    const dialog = screen.getByRole('dialog', { name: 'Retire contract' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retire' }))
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'retired' }, expect.anything())
+  })
+
+  it('retires a deprecated contract from the bar after confirmation', () => {
+    renderDetail({ status: 'deprecated', permissions: { ...NONE, transitions: ['active', 'retired'] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Retire' }))
+    const dialog = screen.getByRole('dialog', { name: 'Retire contract' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retire' }))
+    expect(statusMutation.mutate).toHaveBeenLastCalledWith({ id: 'c1', status: 'retired' }, expect.anything())
+  })
+
+  it('shows the stakeholders panel on a draft and hides it once published', () => {
+    renderDetail({ status: 'draft' })
+    expect(screen.getByRole('heading', { name: 'Stakeholders' })).toBeInTheDocument()
+  })
+
+  it('has no stakeholders panel on a published contract', () => {
+    renderDetail({ status: 'active' })
+    expect(screen.queryByRole('heading', { name: 'Stakeholders' })).toBeNull()
+  })
+
+  it('shows the draft message when the API refuses to read the contract', () => {
+    const message = 'This contract is a draft. Only its domain and invited reviewers can read it.'
+    renderDetail({}, { data: undefined, error: new Error(message) })
+    expect(screen.getByText(message)).toBeInTheDocument()
   })
 
   it('opens the YAML, saves an edit and shows the mutation error', async () => {
@@ -211,7 +293,8 @@ describe('DataContractDetail version history', () => {
   })
 
   it('hides Edit on a retired contract, keeps Delete and tells it from a draft', () => {
-    renderDetail({ status: 'retired' })
+    // What the API sends a domain owner for a retired contract.
+    renderDetail({ status: 'retired', permissions: { ...NONE, delete: true } })
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
     expect(screen.getAllByText('retired').some((el) => el.className.includes('purple'))).toBe(true)

@@ -88,6 +88,19 @@ export function useUpdateDataContract() {
   })
 }
 
+export function useChangeContractStatus() {
+  const qc = useQueryClient()
+  return useMutation<DataContract, Error, { id: string; status: DataContract['status'] }>({
+    mutationFn: ({ id, status }) => post<DataContract>(`/data-contracts/${id}/status`, { status }),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: KEYS.all })
+      qc.invalidateQueries({ queryKey: KEYS.one(updated.id) })
+      qc.invalidateQueries({ queryKey: KEYS.yaml(updated.id) })
+      qc.invalidateQueries({ queryKey: KEYS.versions(updated.id) })
+    },
+  })
+}
+
 export function useDeleteDataContract() {
   const qc = useQueryClient()
   return useMutation<void, Error, string>({

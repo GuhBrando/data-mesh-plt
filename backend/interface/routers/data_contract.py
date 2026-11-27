@@ -7,6 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from backend.domain.contract_access import (
+    PUBLISHED_STATUSES,
+    ContractActor,
+    TransitionRefused,
+    allowed_transitions,
+    can_delete,
+    can_edit,
+    can_manage_stakeholders,
+    can_read,
+    check_transition,
+)
 from backend.domain.contract_evolution import ContractEvolutionError
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
 from backend.domain.entities.data_contract import DataContract
@@ -29,8 +40,14 @@ from backend.interface.dependencies import (
     get_stakeholder_repository,
     get_update_data_contract_use_case,
 )
-from backend.interface.permissions import is_domain_member, require_roles
+from backend.interface.permissions import (
+    is_domain_member,
+    member_domain_ids,
+    require_roles,
+)
 from backend.interface.schemas.data_contract import (
+    ContractPermissionsModel,
+    ContractStatusChangeModel,
     ContractVersionResponseModel,
     DataContractCreateModel,
     DataContractResponseModel,
@@ -39,6 +56,7 @@ from backend.interface.schemas.data_contract import (
 from backend.interface.schemas.stakeholder import (
     StakeholderAssignModel,
     StakeholderResponseModel,
+    StakeholderViewModel,
 )
 from backend.interface.security import get_current_user
 from backend.use_cases.data_contract.create import CreateDataContractUseCase
@@ -82,21 +100,52 @@ async def _push_to_github(
         )
 
 
-async def _require_contract_read_access(
-    contract_id: uuid.UUID,
-    current_user: User,
-    stakeholder_repo,
-) -> None:
-    """Authorize reading a single contract, in any representation.
+DRAFT_UNREADABLE = (
+    "This contract is a draft. Only its domain and invited reviewers can read it."
+)
+_DOMAIN_ROLES = {UserRole.DATA_STEWARD, UserRole.DATA_OWNER}
 
-    A DATA_CONSUMER may only read a contract they are a registered stakeholder
-    of. Every endpoint returning contract detail must call this — the JSON and
-    YAML representations expose the same information and must not diverge.
+
+async def _actor(
+    contract: DataContract, user: User, db, stakeholder_repo
+) -> ContractActor:
+    """The caller as the access rules see them for `contract`.
+
+    Asks only what the answer needs: membership for a steward or owner, and
+    the stakeholder row only for a draft the caller cannot read otherwise.
     """
-    if current_user.role != UserRole.DATA_CONSUMER:
-        return
-    if not await stakeholder_repo.is_stakeholder(contract_id, current_user.id):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    is_member = user.role in _DOMAIN_ROLES and await is_domain_member(
+        user.id, contract.domain_id, db
+    )
+    actor = ContractActor(user.role, is_member)
+    if not can_read(contract.status, actor):
+        actor = ContractActor(
+            user.role,
+            is_member,
+            is_stakeholder=await stakeholder_repo.is_stakeholder(contract.id, user.id),
+        )
+    return actor
+
+
+async def _readable_contract(
+    contract_id: uuid.UUID,
+    user: User,
+    get_use_case: GetDataContractUseCase,
+    stakeholder_repo,
+    db,
+) -> tuple[DataContract, ContractActor]:
+    """The contract, when the caller may read it, in any representation.
+
+    Every endpoint returning contract detail goes through here, so the JSON,
+    the YAML and the version history never disagree on who may read them.
+    """
+    contract = await get_use_case.execute(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    actor = await _actor(contract, user, db, stakeholder_repo)
+    if not can_read(contract.status, actor):
+        raise HTTPException(status_code=403, detail=DRAFT_UNREADABLE)
+    return contract, actor
 
 
 def _plain(value: Any) -> Any:
@@ -114,19 +163,43 @@ def _content(body: BaseModel) -> dict[str, Any]:
     return {name: _plain(value) for name, value in body if value is not None}
 
 
-# Who works on a contract and where its data lives: shown in the list only to
-# the readers _require_contract_read_access lets see the contract itself.
-_RESTRICTED_SECTIONS = ("team_members", "support", "servers")
+async def _readable(
+    contracts: list[DataContract], user: User, db, stakeholder_repo
+) -> list[DataContract]:
+    """The contracts of `contracts` the caller may read, in order.
+
+    At most two queries whatever the list size, and none when every contract is
+    published or the caller is an admin.
+    """
+    drafts = [c for c in contracts if c.status not in PUBLISHED_STATUSES]
+    if not drafts or user.role == UserRole.PLATFORM_ADMIN:
+        return contracts
+    domains = (
+        await member_domain_ids(user.id, db) if user.role in _DOMAIN_ROLES else set()
+    )
+    invited = await stakeholder_repo.contract_ids_of(user.id)
+    return [
+        c
+        for c in contracts
+        if can_read(
+            c.status,
+            ContractActor(user.role, c.domain_id in domains, c.id in invited),
+        )
+    ]
 
 
-async def _readable_ids(current_user: User, stakeholder_repo) -> set[uuid.UUID] | None:
-    """The contracts the user may read in full; None means all of them."""
-    if current_user.role != UserRole.DATA_CONSUMER:
-        return None
-    return await stakeholder_repo.contract_ids_of(current_user.id)
+def _permissions(status: str, actor: ContractActor) -> ContractPermissionsModel:
+    return ContractPermissionsModel(
+        edit=can_edit(status, actor),
+        delete=can_delete(actor),
+        transitions=allowed_transitions(status, actor),
+        manage_stakeholders=can_manage_stakeholders(status, actor),
+    )
 
 
-def _to_response(contract: DataContract) -> DataContractResponseModel:
+def _to_response(
+    contract: DataContract, actor: ContractActor | None = None
+) -> DataContractResponseModel:
     return DataContractResponseModel(
         id=contract.id,
         title=contract.title,
@@ -144,6 +217,7 @@ def _to_response(contract: DataContract) -> DataContractResponseModel:
         domain_id=contract.domain_id,
         created_at=contract.created_at,
         updated_at=contract.updated_at,
+        permissions=_permissions(contract.status, actor) if actor else None,
     )
 
 
@@ -186,14 +260,11 @@ async def list_data_contracts(
     use_case: ListDataContractsUseCase = Depends(get_list_data_contracts_use_case),
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
 ):
     contracts = await use_case.execute()
-    readable = await _readable_ids(current_user, stakeholder_repo)
-    responses = [_to_response(c) for c in contracts]
-    if readable is None:
-        return responses
-    hidden = {section: [] for section in _RESTRICTED_SECTIONS}
-    return [r if r.id in readable else r.model_copy(update=hidden) for r in responses]
+    readable = await _readable(contracts, current_user, db, stakeholder_repo)
+    return [_to_response(c) for c in readable]
 
 
 @router.get("/data-contracts/{contract_id}/yaml", response_class=PlainTextResponse)
@@ -202,11 +273,11 @@ async def get_data_contract_yaml(
     use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
 ):
-    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
-    contract = await use_case.execute(contract_id)
-    if not contract:
-        raise HTTPException(status_code=404, detail="Data contract not found")
+    contract, _ = await _readable_contract(
+        contract_id, current_user, use_case, stakeholder_repo, db
+    )
     return PlainTextResponse(assemble_yaml(contract), media_type="text/plain")
 
 
@@ -219,10 +290,14 @@ async def list_data_contract_versions(
     use_case: ListContractVersionsUseCase = Depends(
         get_list_contract_versions_use_case
     ),
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
 ):
-    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    await _readable_contract(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     versions = await use_case.execute(contract_id)
     if versions is None:
         raise HTTPException(status_code=404, detail="Data contract not found")
@@ -244,10 +319,14 @@ async def get_data_contract_version_yaml(
     use_case: GetContractVersionYamlUseCase = Depends(
         get_get_contract_version_yaml_use_case
     ),
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
 ):
-    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
+    await _readable_contract(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     content = await use_case.execute(contract_id, version)
     if content is None:
         raise HTTPException(status_code=404, detail="Contract version not found")
@@ -261,12 +340,12 @@ async def get_data_contract(
     use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
     stakeholder_repo=Depends(get_stakeholder_repository),
     current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
 ):
-    await _require_contract_read_access(contract_id, current_user, stakeholder_repo)
-    contract = await use_case.execute(contract_id)
-    if not contract:
-        raise HTTPException(status_code=404, detail="Data contract not found")
-    return _to_response(contract)
+    contract, actor = await _readable_contract(
+        contract_id, current_user, use_case, stakeholder_repo, db
+    )
+    return _to_response(contract, actor)
 
 
 @router.put("/data-contracts/{contract_id}", response_model=DataContractResponseModel)
@@ -319,6 +398,46 @@ async def update_data_contract(
                     exc_info=True,
                 )
     return _to_response(contract)
+
+
+@router.post(
+    "/data-contracts/{contract_id}/status", response_model=DataContractResponseModel
+)
+async def change_data_contract_status(
+    contract_id: uuid.UUID,
+    body: ContractStatusChangeModel,
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
+    use_case: UpdateDataContractUseCase = Depends(get_update_data_contract_use_case),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+    github: GitHubClient | None = Depends(get_github_client),
+    db=Depends(get_db_connection),
+):
+    """Submit, withdraw, approve, send back, deprecate, reactivate or retire."""
+    contract = await get_use_case.execute(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    actor = await _actor(contract, current_user, db, stakeholder_repo)
+    try:
+        check_transition(contract.status, body.status, actor)
+    except TransitionRefused as e:
+        raise HTTPException(status_code=403 if e.forbidden else 409, detail=str(e))
+    try:
+        result = await use_case.execute(
+            contract_id=contract_id,
+            changes={"status": body.status},
+            created_by=current_user.id,
+            expected_status=contract.status,
+        )
+    except ContractEvolutionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    moved = result.current
+    await _push_to_github(github, moved, "Update contract")
+    return _to_response(moved, actor)
 
 
 @router.delete("/data-contracts/{contract_id}", status_code=204)
@@ -378,6 +497,45 @@ async def sync_data_contracts_from_github(
         ) from exc
 
 
+PUBLISHED_STAKEHOLDERS = "Published contracts are readable by everyone."
+
+
+async def _stakeholders_editable(
+    contract_id: uuid.UUID,
+    user: User,
+    get_use_case: GetDataContractUseCase,
+    stakeholder_repo,
+    db,
+) -> None:
+    """Refuse a change to who reviews a contract unless the caller may make it."""
+    contract = await get_use_case.execute(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Data contract not found")
+    if contract.status in PUBLISHED_STATUSES:
+        raise HTTPException(status_code=409, detail=PUBLISHED_STAKEHOLDERS)
+    actor = await _actor(contract, user, db, stakeholder_repo)
+    if not can_manage_stakeholders(contract.status, actor):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
+@router.get(
+    "/data-contracts/{contract_id}/stakeholders",
+    response_model=list[StakeholderViewModel],
+)
+async def list_stakeholders(
+    contract_id: uuid.UUID,
+    get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db_connection),
+):
+    await _readable_contract(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
+    rows = await stakeholder_repo.list_for_contract(contract_id)
+    return [StakeholderViewModel(**vars(row)) for row in rows]
+
+
 @router.post(
     "/data-contracts/{contract_id}/stakeholders",
     response_model=StakeholderResponseModel,
@@ -388,15 +546,13 @@ async def assign_stakeholder(
     body: StakeholderAssignModel,
     use_case: AssignStakeholderUseCase = Depends(get_assign_stakeholder_use_case),
     get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
-    current_user: User = Depends(_steward_or_admin),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    if current_user.role == UserRole.DATA_STEWARD:
-        contract = await get_use_case.execute(contract_id)
-        if not contract:
-            raise HTTPException(status_code=404, detail="Data contract not found")
-        if not await is_domain_member(current_user.id, contract.domain_id, db):
-            raise HTTPException(status_code=403, detail="Not a member of this domain")
+    await _stakeholders_editable(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     stakeholder = await use_case.execute(
         contract_id=contract_id, user_id=body.user_id, assigned_by=current_user.id
     )
@@ -409,13 +565,11 @@ async def remove_stakeholder(
     user_id: uuid.UUID,
     use_case: RemoveStakeholderUseCase = Depends(get_remove_stakeholder_use_case),
     get_use_case: GetDataContractUseCase = Depends(get_get_data_contract_use_case),
-    current_user: User = Depends(_steward_or_admin),
+    stakeholder_repo=Depends(get_stakeholder_repository),
+    current_user: User = Depends(get_current_user),
     db=Depends(get_db_connection),
 ):
-    if current_user.role == UserRole.DATA_STEWARD:
-        contract = await get_use_case.execute(contract_id)
-        if not contract:
-            raise HTTPException(status_code=404, detail="Data contract not found")
-        if not await is_domain_member(current_user.id, contract.domain_id, db):
-            raise HTTPException(status_code=403, detail="Not a member of this domain")
+    await _stakeholders_editable(
+        contract_id, current_user, get_use_case, stakeholder_repo, db
+    )
     await use_case.execute(contract_id=contract_id, user_id=user_id)

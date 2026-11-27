@@ -2,6 +2,7 @@ import uuid
 from abc import ABC, abstractmethod
 
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
+from backend.domain.entities.stakeholder_view import StakeholderView
 
 
 class IStakeholderRepository(ABC):
@@ -20,3 +21,8 @@ class IStakeholderRepository(ABC):
 
     @abstractmethod
     async def contract_ids_of(self, user_id: uuid.UUID) -> set[uuid.UUID]: ...
+
+    @abstractmethod
+    async def list_for_contract(
+        self, contract_id: uuid.UUID
+    ) -> list[StakeholderView]: ...

@@ -1,7 +1,13 @@
 import uuid
 from typing import Any, NamedTuple
 
-from backend.domain.contract_evolution import RETIRED_STATUS, RetiredContractError
+from backend.domain.contract_evolution import (
+    IN_REVIEW_STATUS,
+    RETIRED_STATUS,
+    ContractInReviewError,
+    ContractStatusConflictError,
+    RetiredContractError,
+)
 from backend.domain.entities.data_contract import CONTRACT_VALUE_FIELDS, DataContract
 from backend.domain.interfaces.data_contract_repository import IDataContractRepository
 from backend.use_cases.data_contract.versioning import (
@@ -26,9 +32,12 @@ class UpdateDataContractUseCase:
         contract_id: uuid.UUID,
         changes: dict[str, Any],
         created_by: uuid.UUID | None = None,
+        expected_status: str | None = None,
     ) -> UpdatedContract | None:
         """Apply `changes`; a field that is absent or None keeps its stored value.
 
+        `expected_status`: the status the caller decided from. A move lands only
+        when the locked row still has it, so two reviewers never both win.
         None when the contract does not exist.
         """
         # Lock, merge, write, check and snapshot in one transaction: the merge
@@ -41,6 +50,15 @@ class UpdateDataContractUseCase:
             if current.status == RETIRED_STATUS:
                 raise RetiredContractError(
                     f"Contract {contract_id} is retired and cannot be changed"
+                )
+            if expected_status is not None and current.status != expected_status:
+                raise ContractStatusConflictError(
+                    f"The contract is now {current.status}. Reload and try again."
+                )
+            edits = {k for k, v in changes.items() if v is not None and k != "status"}
+            if current.status == IN_REVIEW_STATUS and edits:
+                raise ContractInReviewError(
+                    "This contract is in review. Withdraw it to edit."
                 )
             fields = {name: getattr(current, name) for name in _UPDATABLE_FIELDS}
             fields.update((k, v) for k, v in changes.items() if v is not None)

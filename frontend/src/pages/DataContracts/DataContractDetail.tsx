@@ -8,6 +8,7 @@ import {
   useUpdateDataContract,
   useDeleteDataContract,
   useDataContractYaml,
+  useChangeContractStatus,
 } from '../../hooks/useDataContracts'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
@@ -28,10 +29,14 @@ import {
   SupportIcon,
   TrashIcon,
   UsersIcon,
+  XCircleIcon,
   type IconProps,
 } from '../../components/icons'
 import DataContractForm from './DataContractForm'
 import ContractUsage from './ContractUsage'
+import StatusBar from './StatusBar'
+import StakeholdersPanel from './StakeholdersPanel'
+import { Empty, Panel } from './Panel'
 import { safeUrl, serverLocation } from './contractMetadata'
 import { STATUS_COLORS } from './contractStatus'
 import { describeCheck } from '../../lib/qualityRules'
@@ -57,23 +62,6 @@ const dash = (value?: string | null) => value || '—'
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
 
-function Panel({ title, icon, aside, children }: { title: string; icon?: ReactNode; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="min-w-0 rounded-[10px] border border-line bg-panel">
-      <header className="flex min-h-[44px] items-center gap-2 border-b border-line px-4 text-tx3">
-        {icon}
-        <h2 className="text-[13px] font-semibold text-tx">{title}</h2>
-        {aside && <span className="ml-auto text-xs text-tx3">{aside}</span>}
-      </header>
-      {children}
-    </section>
-  )
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-6 text-center text-[13px] text-tx3">{children}</p>
-}
-
 function SupportUrl({ url }: { url: string }) {
   if (!url) return <>—</>
   const href = safeUrl(url)
@@ -89,37 +77,55 @@ function SupportUrl({ url }: { url: string }) {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function DetailActions({
-  retired,
+  contract,
   onYaml,
   onEdit,
   onDelete,
+  onMove,
 }: {
-  retired: boolean
+  contract: DataContractType
   onYaml: () => void
   onEdit: () => void
   onDelete: () => void
+  onMove: (to: DataContractType['status']) => void
 }) {
+  const can = contract.permissions
+  // An active contract has no status bar: its owner finds Deprecate and Retire here.
+  const lifecycle = contract.status === 'active' ? (can?.transitions ?? []) : []
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="secondary" onClick={onYaml}>
         <CodeFileIcon size={14} />
         View YAML
       </Button>
-      {/* Retired is terminal: the API refuses every edit. */}
-      {!retired && (
+      {can?.edit && (
         <Button variant="secondary" onClick={onEdit}>
           <EditIcon size={14} />
           Edit
         </Button>
       )}
-      <button
-        type="button"
-        onClick={onDelete}
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-bad/25 bg-bad/10 px-3 text-[13px] font-medium text-bad transition-colors hover:bg-bad/15 focus:outline-none focus-visible:ring-[3px] focus-visible:ring-bad/30"
-      >
-        <TrashIcon size={14} />
-        Delete
-      </button>
+      {lifecycle.includes('deprecated') && (
+        <Button variant="secondary" onClick={() => onMove('deprecated')}>
+          <AlertIcon size={14} />
+          Deprecate
+        </Button>
+      )}
+      {lifecycle.includes('retired') && (
+        <Button variant="secondary" onClick={() => onMove('retired')}>
+          <XCircleIcon size={14} />
+          Retire
+        </Button>
+      )}
+      {can?.delete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex h-8 items-center gap-2 rounded-lg border border-bad/25 bg-bad/10 px-3 text-[13px] font-medium text-bad transition-colors hover:bg-bad/15 focus:outline-none focus-visible:ring-[3px] focus-visible:ring-bad/30"
+        >
+          <TrashIcon size={14} />
+          Delete
+        </button>
+      )}
     </div>
   )
 }
@@ -153,21 +159,6 @@ function DetailHeader({ contract, actions }: { contract: DataContractType; actio
         </div>
       </div>
       {actions}
-    </div>
-  )
-}
-
-function ReviewBanner({ pending, onApprove, onRequestChanges }: { pending: boolean; onApprove: () => void; onRequestChanges: () => void }) {
-  return (
-    <div className="flex animate-enter flex-wrap items-center gap-3 rounded-[10px] border border-warn/30 bg-warn/10 px-4 py-3 [animation-delay:0.06s]">
-      <AlertIcon className="text-warn" />
-      <p className="flex-1 text-[13px] text-tx">This contract is awaiting review.</p>
-      <Button size="sm" onClick={onApprove} loading={pending}>
-        Approve
-      </Button>
-      <Button size="sm" variant="secondary" onClick={onRequestChanges} loading={pending}>
-        Request Changes
-      </Button>
     </div>
   )
 }
@@ -529,17 +520,29 @@ export default function DataContractDetail() {
   const navigate = useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [retireConfirm, setRetireConfirm] = useState(false)
   const [yamlOpen, setYamlOpen] = useState(false)
   const [openVersion, setOpenVersion] = useState<string | null>(null)
 
   const { data: contract, isLoading, error } = useDataContract(id ?? '')
   const updateMutation = useUpdateDataContract()
   const deleteMutation = useDeleteDataContract()
+  const statusMutation = useChangeContractStatus()
   const { data: yamlContent, isFetching: yamlLoading } = useDataContractYaml(id ?? '', yamlOpen)
 
   const handleUpdate = async (input: DataContractInput) => {
     await updateMutation.mutateAsync({ id: id!, ...input })
     setEditOpen(false)
+  }
+
+  // Retiring is permanent, so it asks first; every other move goes at once.
+  const move = (to: DataContractType['status']) => {
+    if (to === 'retired') setRetireConfirm(true)
+    else statusMutation.mutate({ id: id!, status: to })
+  }
+
+  const handleRetire = () => {
+    statusMutation.mutate({ id: id!, status: 'retired' }, { onSuccess: () => setRetireConfirm(false) })
   }
 
   const handleDelete = async () => {
@@ -568,27 +571,28 @@ export default function DataContractDetail() {
         contract={contract}
         actions={
           <DetailActions
-            retired={contract.status === 'retired'}
+            contract={contract}
             onYaml={() => setYamlOpen(true)}
             onEdit={() => setEditOpen(true)}
             onDelete={() => setDeleteConfirm(true)}
+            onMove={move}
           />
         }
       />
 
-      {contract.status === 'in_review' && (
-        <ReviewBanner
-          pending={updateMutation.isPending}
-          onApprove={() => updateMutation.mutate({ id: id!, status: 'active' })}
-          onRequestChanges={() => updateMutation.mutate({ id: id!, status: 'draft' })}
-        />
-      )}
+      <StatusBar
+        contract={contract}
+        pending={statusMutation.isPending}
+        error={statusMutation.isError ? statusMutation.error.message : null}
+        onMove={move}
+      />
 
       <DescriptionPanel description={contract.description} />
 
       <div className="flex flex-wrap items-start gap-5">
         <ContractTabs contract={contract} onViewVersion={setOpenVersion} />
         <aside aria-label="Contract details" className="flex min-w-0 flex-[1_1_300px] animate-enter flex-col gap-3.5 [animation-delay:0.18s]">
+          <StakeholdersPanel contract={contract} />
           <Panel title="Usage" icon={<ProductIcon size={15} />}>
             <ContractUsage contract={contract} />
           </Panel>
@@ -612,6 +616,17 @@ export default function DataContractDetail() {
           isSubmitting={updateMutation.isPending}
         />
         {updateMutation.isError && <p className="mt-3 text-[13px] text-bad">{updateMutation.error.message}</p>}
+      </Modal>
+
+      <Modal open={retireConfirm} onClose={() => setRetireConfirm(false)} title="Retire contract" size="sm">
+        <p className="mb-6 text-[13px] text-tx2">
+          Retiring is permanent: the contract can no longer be edited or reactivated.
+        </p>
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setRetireConfirm(false)}>Cancel</Button>
+          <Button variant="danger" loading={statusMutation.isPending} onClick={handleRetire}>Retire</Button>
+        </div>
+        {statusMutation.isError && <p className="mt-3 text-[13px] text-bad">{statusMutation.error.message}</p>}
       </Modal>
 
       <Modal open={deleteConfirm} onClose={() => setDeleteConfirm(false)} title="Delete Data Contract" size="sm">

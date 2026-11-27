@@ -8,6 +8,14 @@ class StakeholderAssignModel(BaseModel):
     user_id: uuid.UUID
 
 
+class StakeholderViewModel(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    role: str
+    assigned_by_username: str
+    assigned_at: datetime
+
+
 class StakeholderResponseModel(BaseModel):
     contract_id: uuid.UUID
     user_id: uuid.UUID

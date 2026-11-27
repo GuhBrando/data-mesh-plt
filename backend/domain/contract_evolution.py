@@ -18,6 +18,7 @@ from enum import IntEnum
 from typing import Any
 
 RETIRED_STATUS = "retired"
+IN_REVIEW_STATUS = "in_review"
 GOVERNED_STATUSES = frozenset({"active", "deprecated"})
 
 # Keys that are not content. The first three cannot differ between two versions
@@ -55,6 +56,14 @@ class RetiredContractError(ContractEvolutionError):
 
 class ContractVersionConflictError(ContractEvolutionError):
     pass
+
+
+class ContractInReviewError(ContractEvolutionError):
+    """The text under review is fixed: withdraw the contract to change it."""
+
+
+class ContractStatusConflictError(ContractEvolutionError):
+    """The status moved between the caller's read and the write."""
 
 
 def is_semver(version: Any) -> bool:

@@ -1,6 +1,7 @@
 import uuid
 
 from backend.domain.entities.contract_stakeholder import ContractStakeholder
+from backend.domain.entities.stakeholder_view import StakeholderView
 from backend.domain.interfaces.stakeholder_repository import IStakeholderRepository
 
 
@@ -63,3 +64,18 @@ class PostgresStakeholderRepository(IStakeholderRepository):
             user_id,
         )
         return {row["contract_id"] for row in rows}
+
+    async def list_for_contract(self, contract_id: uuid.UUID) -> list[StakeholderView]:
+        rows = await self.db.fetch(
+            """
+            SELECT s.user_id, u.name AS username, u.role,
+                   COALESCE(a.name, '') AS assigned_by_username, s.assigned_at
+            FROM catalog.contract_stakeholders s
+            JOIN iam.users u ON u.id = s.user_id
+            LEFT JOIN iam.users a ON a.id = s.assigned_by
+            WHERE s.contract_id = $1
+            ORDER BY s.assigned_at, u.name;
+            """,
+            contract_id,
+        )
+        return [StakeholderView(**dict(row)) for row in rows]
